@@ -182,16 +182,9 @@ class TriviaView(TimeoutSafeView):
             if modul_aktif(gid, "economy_enabled"):
                 with get_connection() as conn:
                     eko.tambah_koin(conn, gid, self.author_id, self.hadiah)
-                    row = conn.execute(
-                        "SELECT COALESCE(trivia_menang, 0) FROM economy WHERE user_id = ? AND guild_id = ?",
-                        (self.author_id, gid),
-                    ).fetchone()
-                    n = (row[0] if row else 0) + 1
-                    conn.execute(
-                        "UPDATE economy SET trivia_menang = ? WHERE user_id = ? AND guild_id = ?",
-                        (n, self.author_id, gid),
-                    )
-                    conn.commit()
+                    # Atomik (utils.economy.catat_trivia_menang): dua jawaban
+                    # benar konkuren tidak saling menimpa hitungan.
+                    n = eko.catat_trivia_menang(conn, gid, self.author_id)
                     dibuka = ach.cek_buka(conn, gid, self.author_id, {"trivia": n})
                 hadiah_diberi = self.hadiah
         if benar:

@@ -80,6 +80,7 @@ export default function ResponderManager({
     try {
       const res = await fetch(`/api/guilds/${guildId}/autoresponses?id=${id}`, { method: "DELETE" });
       if (res.ok) reload();
+      else setStatus("error");
     } finally {
       setBusyRows((prev) => {
         const next = new Set(prev);

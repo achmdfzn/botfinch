@@ -11,6 +11,22 @@ from src.utils import achievement as ach
 from src.utils.embeds import base_embed
 
 
+def field_achievement(
+    daftar: list[tuple[str, str, str]], terkunci: list[str]
+) -> list[tuple[str, str]]:
+    """[(nama_field, nilai)] untuk embed /achievement, maks 25 field.
+
+    Pure — gampang dites. Batas field Discord 25: cap defensif agar daftar
+    achievement yang tumbuh di masa depan tidak memicu API 400.
+    """
+    field_dibuka = [(nama, "✅") for _kode, nama, _tgl in daftar[:20]]
+    if len(daftar) > 20:
+        field_dibuka.append((f"+{len(daftar) - 20} lainnya", "🏅"))
+    sisa = max(0, 25 - len(field_dibuka))
+    field_kunci = [("???", "🔒") for _kode in terkunci[:sisa]]
+    return (field_dibuka + field_kunci)[:25]
+
+
 class Achievement(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -41,13 +57,11 @@ class Achievement(commands.Cog):
             f"🏅 Achievement — {target.display_name}",
             f"Total dibuka: **{len(daftar)}**",
         )
-        for _kode, nama, _tgl in daftar:
-            embed.add_field(name=nama, value="✅", inline=True)
         # Hidden achievement yang belum dibuka tampil sebagai ???
         with get_connection() as conn:
             terkunci = ach.hidden_terkunci(conn, gid, target.id)
-        for _kode in terkunci:
-            embed.add_field(name="???", value="🔒", inline=True)
+        for nama, nilai in field_achievement(daftar, terkunci):
+            embed.add_field(name=nama, value=nilai, inline=True)
         await ctx.send(embed=embed)
 
 

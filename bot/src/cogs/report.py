@@ -63,9 +63,14 @@ class Report(commands.Cog):
                     "❌ Bot butuh izin Manage Channels untuk membuat tiket.", ephemeral=True
                 )
                 return
-            except discord.HTTPException as e:
+            except discord.HTTPException:
                 await interaction.response.send_message(
-                    f"❌ Gagal membuat tiket: {e}", ephemeral=True
+                    "❌ Gagal membuat tiket (kesalahan Discord).", ephemeral=True
+                )
+                return
+            except Exception:
+                await interaction.response.send_message(
+                    "❌ Gagal membuat tiket. Coba lagi ya.", ephemeral=True
                 )
                 return
 
@@ -76,7 +81,12 @@ class Report(commands.Cog):
 
         embed = base_embed("🚨 Laporan Baru", isi)
         embed.color = discord.Color.red()
-        embed.add_field(name="Pengirim pesan", value=f"{message.author.mention} (`{message.author}`)", inline=False)
+        embed.add_field(
+            name="Pengirim pesan",
+            value=f"{message.author.mention} "
+            f"(`{discord.utils.escape_markdown(str(message.author))}`)",
+            inline=False,
+        )
         embed.add_field(name="Channel asal", value=f"{message.channel.mention if hasattr(message.channel, 'mention') else message.channel}", inline=True)
         embed.add_field(name="Pelapor", value=member.mention, inline=True)
         embed.add_field(name="Jump link", value=f"[Klik untuk lihat pesan]({message.jump_url})", inline=False)
@@ -85,7 +95,7 @@ class Report(commands.Cog):
 
         try:
             await channel.send(embed=embed)
-        except discord.HTTPException:
+        except (discord.Forbidden, discord.HTTPException):
             await interaction.response.send_message(
                 "❌ Gagal mengirim laporan ke tiket.", ephemeral=True
             )

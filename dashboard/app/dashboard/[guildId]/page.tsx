@@ -5,13 +5,13 @@ import SiteHeader from "@/components/SiteHeader";
 import EmptyState from "@/components/EmptyState";
 import ReloadButton from "@/components/ReloadButton";
 import PageHeader from "@/components/PageHeader";
-import PluginCards, { type PluginCardData, type PluginTab } from "@/components/PluginCards";
+import PluginCards, { type PluginCardData } from "@/components/PluginCards";
 import { getSessionSafe } from "@/lib/access";
 import { canManage } from "@/lib/discord";
 import { fetchUserGuilds } from "@/lib/access";
 import { dbConfigured, getStoredSettings } from "@/lib/db";
 import { mergeSettings } from "@/lib/settings";
-import { PLUGINS, TOGGLEABLE_PLUGINS } from "@/lib/plugins";
+import { PLUGINS, TOGGLEABLE_PLUGINS, parsePluginTab } from "@/lib/plugins";
 import { getDict, getLang, fmt } from "@/lib/i18n";
 
 export const instant = false;
@@ -20,8 +20,6 @@ export async function generateMetadata(): Promise<Metadata> {
   const dict = getDict(await getLang());
   return { title: `${dict.guild.plugins.metaTitle} | Finch Dashboard` };
 }
-
-const TABS: PluginTab[] = ["all", "essentials", "engagement", "moderation", "utilities"];
 
 /**
  * Halaman Plugins utama per-server (dulu duplikat dengan /plugins).
@@ -39,7 +37,7 @@ export default async function GuildPluginsHome({
   await connection(); // halaman dinamis: sesi + API Discord + DB, jangan di-prerender
   const { guildId } = await params;
   const { tab } = await searchParams;
-  const initialTab: PluginTab = TABS.includes(tab as PluginTab) ? (tab as PluginTab) : "all";
+  const initialTab = parsePluginTab(tab);
   const lang = await getLang();
   const dict = getDict(lang);
   const gc = dict.guild.common;
@@ -110,8 +108,10 @@ export default async function GuildPluginsHome({
     (p) => p.toggleKey && settings[p.toggleKey] === true,
   ).length;
 
+  // Label katalog plugin kini dari kamus (dict.guild.plugins).
+
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
       {/* Header kompak: identitas server sudah ada di sidebar */}
       <PageHeader
         title={pl.metaTitle}
@@ -139,8 +139,12 @@ export default async function GuildPluginsHome({
           toggleError: dict.guild.modul.toggleError,
           toggleOn: dict.guild.modul.toggleOn,
           toggleOff: dict.guild.modul.toggleOff,
+          tablistLabel: pl.tablistLabel,
+          alwaysOn: pl.alwaysOn,
+          pluginCount: pl.pluginCount,
+          tabDesc: pl.tabDesc,
         }}
       />
-    </main>
+    </div>
   );
 }

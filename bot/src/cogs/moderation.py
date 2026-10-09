@@ -31,6 +31,29 @@ def _caps_berlebihan(teks: str) -> bool:
     return kapital / len(huruf) > 0.7
 
 
+ALASAN_MAKS = 200  # batas panjang alasan /lockdown (audit-log Discord maks 512)
+
+
+def _batasi_alasan(alasan: str | None) -> str:
+    """Potong alasan ke batas aman; fallback ke default bila kosong."""
+    bersih = (alasan or "").strip()
+    if not bersih:
+        return "Lockdown oleh admin"
+    return bersih[:ALASAN_MAKS]
+
+
+async def _kirim_aman(channel, teks: str, **kwargs) -> None:
+    """Kirim pesan peringatan tanpa crash listener bila izin kurang.
+
+    Dipakai di on_message (peringatan anti-invite/caps/spam): bot tanpa
+    izin kirim pesan tidak boleh melempar exception dari listener.
+    """
+    try:
+        await channel.send(teks, **kwargs)
+    except (discord.Forbidden, discord.HTTPException):
+        pass
+
+
 class ConfirmBersihkanView(TimeoutSafeView):
     def __init__(self, author_id: int, jumlah: int, cog: "Moderation"):
         super().__init__(timeout=30)
@@ -143,8 +166,13 @@ class Moderation(commands.Cog):
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
         gid = member.guild.id
-        with get_connection() as conn:
-            row = conn.execute("SELECT ends_at FROM mutes WHERE user_id = ? AND guild_id = ?", (member.id, gid)).fetchone()
+        try:
+            with get_connection() as conn:
+                row = conn.execute("SELECT ends_at FROM mutes WHERE user_id = ? AND guild_id = ?", (member.id, gid)).fetchone()
+        except Exception:
+            # DB error tidak boleh membunuh listener join
+            log.exception("Gagal baca tabel mutes untuk %s", member)
+            row = None
         if row:
             try:
                 ends_at = datetime.datetime.fromisoformat(row[0])
@@ -208,18 +236,18 @@ class Moderation(commands.Cog):
         if get_guild_setting(gid, "automod_invites", "1") == "1" and config.settings.anti_invite and filters.contains_invite_link(message.content):
             try:
                 await message.delete()
-            except discord.Forbidden:
+            except (discord.Forbidden, discord.HTTPException):
                 pass
-            await message.channel.send(f"🚫 {message.author.mention}, link invite tidak boleh di sini ya!", delete_after=10)
+            await _kirim_aman(message.channel, f"🚫 {message.author.mention}, link invite tidak boleh di sini ya!", delete_after=10)
             await modlog.log_event(self.bot, "🚫 Invite link dihapus", f"{message.author.mention} kirim invite di {message.channel.mention}", discord.Color.orange(), channel_id=log_ch)
             return
 
         if get_guild_setting(gid, "automod_caps", "1") == "1" and _caps_berlebihan(message.content):
             try:
                 await message.delete()
-            except discord.Forbidden:
+            except (discord.Forbidden, discord.HTTPException):
                 pass
-            await message.channel.send(f"🔠 {message.author.mention}, jangan caps berlebihan ya!", delete_after=10)
+            await _kirim_aman(message.channel, f"🔠 {message.author.mention}, jangan caps berlebihan ya!", delete_after=10)
             await modlog.log_event(self.bot, "🔠 Caps dihapus", f"{message.author.mention} kirim caps berlebihan di {message.channel.mention}", discord.Color.orange(), channel_id=log_ch)
             return
 
@@ -234,7 +262,7 @@ class Moderation(commands.Cog):
         if len(riwayat) > config.settings.spam_max_messages:
             try:
                 await message.delete()
-            except discord.Forbidden:
+            except (discord.Forbidden, discord.HTTPException):
                 pass
             duration = max(1, min(10080, get_guild_setting_int(gid, "automod_mute_minutes", config.settings.mute_duration_minutes)))
             until = discord.utils.utcnow() + datetime.timedelta(minutes=duration)
@@ -253,7 +281,7 @@ class Moderation(commands.Cog):
                     self.bot.user.id if self.bot.user else 0,
                     "mute", "auto-mute: spam",
                 )
-            await message.channel.send(f"⚠️ {message.author.mention}, pelan-pelan ya! Jangan spam.{mute_txt}", delete_after=10)
+            await _kirim_aman(message.channel, f"⚠️ {message.author.mention}, pelan-pelan ya! Jangan spam.{mute_txt}", delete_after=10)
             await modlog.log_event(self.bot, "⚠️ Spam + Mute", f"{message.author.mention} kena filter di {message.channel.mention}.", discord.Color.orange(), channel_id=log_ch)
             riwayat.clear()
 
@@ -306,6 +334,12 @@ class Moderation(commands.Cog):
     ):
         if after.author.bot or not after.guild:
             return
+        # Modul message-logging bisa dimatikan per-server via dashboard web.
+        # Import malas mengikuti pola toggle.py (listener tidak lewat cog_check).
+        from src.cogs.dashboard_sync import modul_aktif
+
+        if not modul_aktif(after.guild.id, "msglog_enabled"):
+            return
         if before.content == after.content or not after.content:
             return
         try:
@@ -318,7 +352,8 @@ class Moderation(commands.Cog):
                 discord.Color.gold(),
             )
         except Exception:
-            pass
+            # Tetap diam ke user, tapi error tercatat di log.
+            log.exception("Gagal kirim log pesan diedit ke mod-log")
 
     @commands.Cog.listener()
     async def on_message_delete(self, message: discord.Message):
@@ -326,6 +361,12 @@ class Moderation(commands.Cog):
         if author is None or author.bot:
             return
         if not message.guild or not message.content:
+            return
+        # Modul message-logging bisa dimatikan per-server via dashboard web.
+        # Import malas mengikuti pola toggle.py (listener tidak lewat cog_check).
+        from src.cogs.dashboard_sync import modul_aktif
+
+        if not modul_aktif(message.guild.id, "msglog_enabled"):
             return
         # Anti-banjir: pesan counting yang dihapus tidak di-log
         if message.channel.id == config.settings.counting_channel_id:
@@ -338,7 +379,36 @@ class Moderation(commands.Cog):
                 discord.Color.dark_grey(),
             )
         except Exception:
-            pass
+            # Tetap diam ke user, tapi error tercatat di log.
+            log.exception("Gagal kirim log pesan dihapus ke mod-log")
+
+    @commands.Cog.listener()
+    async def on_bulk_message_delete(self, messages: list[discord.Message]):
+        """Log ringkas bulk-delete: jumlah + channel + waktu, TANPA dump isi pesan."""
+        if not messages:
+            return
+        pertama = messages[0]
+        guild = getattr(pertama, "guild", None)
+        if guild is None:
+            return  # DM tidak pernah di-log (privasi)
+        # Modul message-logging bisa dimatikan per-server via dashboard web.
+        # Import malas mengikuti pola toggle.py (listener tidak lewat cog_check).
+        from src.cogs.dashboard_sync import modul_aktif
+
+        if not modul_aktif(guild.id, "msglog_enabled"):
+            return
+        channel = getattr(pertama, "channel", None)
+        sebutan = channel.mention if channel is not None else "channel tak dikenal"
+        try:
+            await modlog.log_event(
+                self.bot,
+                "🗑️ Pesan dihapus massal",
+                f"**{len(messages)}** pesan dihapus massal di {sebutan}.",
+                discord.Color.dark_grey(),
+            )
+        except Exception:
+            # Tetap diam ke user, tapi error tercatat di log.
+            log.exception("Gagal kirim log bulk-delete ke mod-log")
 
     @commands.hybrid_command(name="lockdown", description="Kunci semua text channel (khusus admin)")
     @commands.has_permissions(administrator=True)
@@ -348,6 +418,9 @@ class Moderation(commands.Cog):
         if not ctx.guild:
             await self._reply(ctx, "❌ Hanya bisa di server.", ephemeral=True)
             return
+        # Batas 200 char: audit-log Discord menolak reason >512 char, dan alasan
+        # panjang membuat SEMUA set_permissions gagal diam-diam (HTTPException).
+        alasan = _batasi_alasan(alasan)
         terkunci = 0
         for ch in ctx.guild.text_channels:
             try:

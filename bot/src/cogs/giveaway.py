@@ -270,13 +270,18 @@ class Giveaway(commands.Cog):
     @tasks.loop(seconds=30)
     async def cek_giveaway(self):
         now = discord.utils.utcnow().isoformat()
-        with get_connection() as conn:
-            rows = conn.execute(
-                "SELECT message_id, channel_id, guild_id, winners_count, prize, "
-                "host_id, COALESCE(prize_coins, 0), COALESCE(hadiah_role, 0) "
-                "FROM giveaways WHERE ended = 0 AND ends_at <= ?",
-                (now,),
-            ).fetchall()
+        try:
+            with get_connection() as conn:
+                rows = conn.execute(
+                    "SELECT message_id, channel_id, guild_id, winners_count, prize, "
+                    "host_id, COALESCE(prize_coins, 0), COALESCE(hadiah_role, 0) "
+                    "FROM giveaways WHERE ended = 0 AND ends_at <= ?",
+                    (now,),
+                ).fetchall()
+        except Exception:
+            # Satu DB error tidak boleh membunuh loop 30-detik selamanya
+            log.exception("Gagal baca giveaways")
+            return
         for message_id, channel_id, guild_id, winners_count, prize, host_id, prize_coins, hadiah_role in rows:
             if message_id in self._memproses:
                 continue  # sedang diproses iterasi sebelumnya — skip
@@ -802,6 +807,9 @@ class Giveaway(commands.Cog):
         if koin < 0:
             await ctx.send("❌ Koin tidak boleh negatif.", ephemeral=True)
             return
+        if len(hadiah.strip()) > 500:
+            await ctx.send("❌ Teks hadiah kepanjangan (maks 500 karakter).", ephemeral=True)
+            return
         pemenang = max(1, min(pemenang, 20))
         with get_connection() as conn:
             cur = conn.execute(
@@ -880,11 +888,16 @@ class Giveaway(commands.Cog):
         from src.cogs.dashboard_sync import modul_aktif
 
         now = discord.utils.utcnow()
-        with get_connection() as conn:
-            rows = conn.execute(
-                "SELECT id, guild_id, channel_id, interval_detik, pemenang, hadiah,"
-                " koin, host_id, terakhir FROM giveaway_rutin"
-            ).fetchall()
+        try:
+            with get_connection() as conn:
+                rows = conn.execute(
+                    "SELECT id, guild_id, channel_id, interval_detik, pemenang, hadiah,"
+                    " koin, host_id, terakhir FROM giveaway_rutin"
+                ).fetchall()
+        except Exception:
+            # Satu DB error tidak boleh membunuh loop 5-menit selamanya
+            log.exception("Gagal baca giveaway_rutin")
+            return
         for rid, gid, ch_id, interval, pemenang, hadiah, koin, host_id, terakhir in rows:
             if not modul_aktif(gid, "giveaway_enabled"):
                 continue  # modul dimatikan: jangan posting giveaway BARU (rutin dijeda)

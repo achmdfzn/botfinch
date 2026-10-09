@@ -73,7 +73,7 @@ export default async function GuildPengumuman({ params }: { params: Promise<{ gu
   const snapGuild = snap?.guilds.find((g) => g.id === guildId);
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
       <PageHeader
         title={guildName}
         description={g.subtitle}
@@ -87,6 +87,6 @@ export default async function GuildPengumuman({ params }: { params: Promise<{ gu
         }
       />
       <AnnouncementsManager guildId={guildId} channels={snapGuild?.channels ?? []} />
-    </main>
+    </div>
   );
 }

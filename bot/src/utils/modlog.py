@@ -11,6 +11,16 @@ from src import config
 
 log = logging.getLogger("finch")
 
+# Kebijakan mention eksplisit untuk mod-log (cermin src.bot.MENTIONS_AMAN):
+# konten user yang di-log (isi pesan yang diedit/dihapus, transkrip, dsb.)
+# TIDAK BOLEH memicu mass-ping @everyone/@here. Didefinisikan di sini (bukan
+# import dari src.bot) karena src/bot.py mengimpor modul ini di level modul —
+# import balik akan circular. Kalau MENTIONS_AMAN di src/bot.py berubah,
+# samakan juga konstanta ini.
+MENTIONS_LOG_AMAN = discord.AllowedMentions(
+    everyone=False, users=True, roles=True, replied_user=True
+)
+
 
 async def log_event(
     bot: commands.Bot,
@@ -40,6 +50,8 @@ async def log_event(
         timestamp=discord.utils.utcnow(),
     )
     try:
-        await channel.send(embed=embed, file=file)
+        await channel.send(
+            embed=embed, file=file, allowed_mentions=MENTIONS_LOG_AMAN
+        )
     except (discord.Forbidden, discord.HTTPException):
         log.warning("Tidak bisa kirim ke mod-log (cek permission/ID channel).")

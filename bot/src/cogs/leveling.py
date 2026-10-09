@@ -286,12 +286,27 @@ class Leveling(commands.Cog):
             )
             return
         with get_connection() as conn:
-            conn.execute(
-                "UPDATE users SET xp = 0, level = 1, prestige = prestige + 1"
-                " WHERE user_id = ? AND guild_id = ?",
+            # Guarded UPDATE: syarat level>=30 dicek DALAM statement yang sama.
+            # Dua /prestige konkuren tidak bisa prestige ganda (yang kalah race
+            # dapat rowcount 0 karena barisnya sudah di-reset duluan).
+            cur = conn.execute(
+                "UPDATE users SET xp = 0, level = 1, prestige = COALESCE(prestige, 0) + 1"
+                " WHERE user_id = ? AND guild_id = ? AND level >= 30",
                 (ctx.author.id, ctx.guild.id),
             )
             conn.commit()
+            if cur.rowcount == 0:
+                # Kalah race (sudah di-prestige barusan) atau level turun di tengah.
+                row = conn.execute(
+                    "SELECT level FROM users WHERE user_id = ? AND guild_id = ?",
+                    (ctx.author.id, ctx.guild.id),
+                ).fetchone()
+                lvl_skr = row[0] if row else 1
+                await ctx.send(
+                    f"❌ Butuh level **30** untuk prestige (levelmu **{lvl_skr}**).",
+                    ephemeral=True,
+                )
+                return
             baru = conn.execute(
                 "SELECT prestige FROM users WHERE user_id = ? AND guild_id = ?",
                 (ctx.author.id, ctx.guild.id),

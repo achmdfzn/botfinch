@@ -58,6 +58,13 @@ def _bersih() -> None:
         conn.execute("DELETE FROM autoresponder WHERE guild_id = ?", (GID,))
         conn.execute("DELETE FROM dashboard_announcements WHERE guild_id = ?", (str(GID),))
         conn.execute("DELETE FROM economy WHERE guild_id = ?", (GID,))
+        # gate idempotensi harian (tandai_harian): reset agar test harian bisa
+        # dijalankan ulang kapan pun, termasuk 2x dalam satu hari UTC
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS loop_state"
+            " (kunci TEXT PRIMARY KEY, tanggal TEXT NOT NULL)"
+        )
+        conn.execute("DELETE FROM loop_state WHERE kunci = 'bunga_bank'")
         conn.commit()
 
 

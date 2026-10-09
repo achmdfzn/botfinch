@@ -18,7 +18,6 @@ import re
 from pathlib import Path
 from unittest.mock import AsyncMock
 
-import discord
 import pytest
 
 SRC = Path(__file__).resolve().parent.parent / "src"

@@ -10,7 +10,6 @@ import {
 import { sql } from "@vercel/postgres";
 import { botAuthorized } from "@/lib/access";
 
-export const instant = false;
 
 /**
  * Satu endpoint tarik untuk bot: pengaturan + self-roles + auto-responder

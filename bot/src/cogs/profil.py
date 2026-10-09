@@ -8,6 +8,7 @@ from discord.ext import commands
 from src.store import get_connection
 from src.utils import achievement as ach
 from src.utils.embeds import base_embed
+from src.utils.teks import nama_member_atau_id
 
 
 class Profil(commands.Cog):
@@ -59,10 +60,12 @@ class Profil(commands.Cog):
             ).fetchone()
             gelar = gelar_nama(conn, gid, target.id)
         job_txt = jobmod.JOBS[job_id]["nama"] if job_id else "-"
+        # Nama pasangan sebagai teks, BUKAN mention: mention di embed ikut
+        # nge-ping (users=True) — /profil tak perlu membangunkan pasangan
+        # setiap ada yang melihat profil.
+        pasangan_txt = nama_member_atau_id(ctx.guild, pas[0]) if pas else "-"
         embed.add_field(name="Job", value=job_txt, inline=True)
-        embed.add_field(
-            name="Pasangan", value=f"<@{pas[0]}>" if pas else "-", inline=True
-        )
+        embed.add_field(name="Pasangan", value=pasangan_txt, inline=True)
         embed.add_field(name="Clan", value=f"**{clan[0]}**" if clan else "-", inline=True)
         embed.add_field(name="Gelar", value=gelar or "-", inline=True)
         if badges:

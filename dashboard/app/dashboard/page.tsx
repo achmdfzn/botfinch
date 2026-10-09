@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import SiteHeader from "@/components/SiteHeader";
-import PageHeader from "@/components/PageHeader";
 import GuildListSync, { type GuildLite } from "@/components/GuildListSync";
 import EmptyState from "@/components/EmptyState";
 import { SignInButton } from "@/components/AuthButtons";
@@ -69,9 +68,9 @@ export default async function Dashboard() {
   for (const g of manageable) {
     const bg = botGuilds.get(g.id);
     if (bg) {
-      inBot.push({ id: g.id, name: bg.name, icon: bg.icon, memberCount: bg.member_count });
+      inBot.push({ id: g.id, name: bg.name, icon: bg.icon, memberCount: bg.member_count, isOwner: g.owner === true });
     } else {
-      notInBot.push({ id: g.id, name: g.name, icon: g.icon, memberCount: null });
+      notInBot.push({ id: g.id, name: g.name, icon: g.icon, memberCount: null, isOwner: g.owner === true });
     }
   }
 
@@ -79,7 +78,11 @@ export default async function Dashboard() {
     <div>
       <SiteHeader />
       <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
-        <PageHeader title={d.title} description={d.subtitle} />
+        {/* Judul rata tengah ala halaman pilih server referensi */}
+        <div className="text-center">
+          <h1 className="text-2xl font-bold tracking-tight text-fg">{d.title}</h1>
+          <p className="mx-auto mt-2 max-w-xl text-sm text-muted">{d.subtitle}</p>
+        </div>
 
         {manageable.length === 0 ? (
           <div className="mt-8">

@@ -63,7 +63,7 @@ export default async function GuildSelfRoles({ params }: { params: Promise<{ gui
   const awal = await getSelfRoles(guildId);
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
       <PageHeader
         title={guildName}
         description={g.subtitle}
@@ -77,6 +77,6 @@ export default async function GuildSelfRoles({ params }: { params: Promise<{ gui
         }
       />
       <SelfRolesManager guildId={guildId} roles={snapGuild?.roles ?? []} initialRows={awal} />
-    </main>
+    </div>
   );
 }

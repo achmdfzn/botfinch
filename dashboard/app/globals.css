@@ -66,3 +66,19 @@ html.light .text-green-400 {
 html.light .text-yellow-400 {
   color: #a16207;
 }
+
+/* A11y kontras: tombol primer bg-brand + text-ink di mode terang hanya
+   ~2.04:1 (teks nyaris putih di atas teal — gagal WCAG AA). Paksa teks gelap
+   #062a27 (≈ 8.9:1 di atas #2ec4b6) di mode terang. Landing page sudah memakai
+   text-[#062a27] hardcoded untuk tombol primernya — ini acuannya.
+   Selektor .bg-brand tidak menyentuh .bg-brand\/15 (badge), jadi aman. */
+html.light .bg-brand {
+  color: #062a27;
+}
+
+/* A11y fokus: outline-brand (#2ec4b6) di atas permukaan terang hanya ~2:1
+   (butuh ≥3:1 per WCAG 2.4.13 untuk indikator fokus). Paksa varian lebih
+   gelap #0c7c71 (≈ 5.4:1 di atas putih) di mode terang. */
+html.light :is(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline-color: #0c7c71;
+}

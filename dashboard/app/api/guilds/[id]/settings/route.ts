@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { dbConfigured, getStoredSettings, putStoredSettings } from "@/lib/db";
 import { botAuthorized, requireManager } from "@/lib/access";
 import { SETTING_DEFAULTS, cleanValue } from "@/lib/settings";
+import { parseJsonBody } from "@/lib/validate";
 
 export async function GET(
   req: Request,
@@ -28,12 +29,8 @@ export async function PUT(
   // sebagai belum login (401), bukan crash 500 via JWTSessionError.
   const denied = await requireManager(id);
   if (denied) return denied;
-  let body: Record<string, unknown>;
-  try {
-    body = (await req.json()) as Record<string, unknown>;
-  } catch {
-    return NextResponse.json({ error: "invalid_json" }, { status: 400 });
-  }
+  const body = await parseJsonBody(req);
+  if (!body) return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   const clean: Record<string, boolean | string | number> = {};
   for (const key of Object.keys(SETTING_DEFAULTS)) {
     const v = cleanValue(key, body[key]);

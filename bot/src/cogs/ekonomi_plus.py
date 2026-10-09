@@ -338,6 +338,12 @@ class EkonomiPlus(commands.Cog):
                 embed=error_embed("Jumlah koin harus lebih dari 0."), ephemeral=True
             )
             return
+        if koin > 1_000_000_000:
+            # Batas sama seperti /transfer — cegah nilai absurd.
+            await ctx.send(
+                embed=error_embed("Jumlah terlalu besar."), ephemeral=True
+            )
+            return
         with get_connection() as conn:
             # Validasi saldo saja (tanpa potong): potong saat target klik Terima.
             # Ini anti hangus bila bot restart dalam window tawaran.
@@ -882,6 +888,17 @@ class EkonomiPlus(commands.Cog):
         from src.cogs.dashboard_sync import modul_aktif
 
         now = discord.utils.utcnow()
+        # Bunga pinjaman idempoten per hari: loop jalan lagi tiap restart bot
+        # — tanpa gate, bunga dibayar ganda dalam sehari yang sama.
+        # Auto-debit & panen deposito tetap jalan tiap loop (tidak di-gate).
+        bunga_hari_ini = False
+        try:
+            with get_connection() as conn:
+                bunga_hari_ini = eko.tandai_harian(
+                    conn, "bunga_pinjaman", now.date().isoformat()
+                )
+        except Exception:
+            log.exception("Gagal tandai bunga pinjaman harian")
         # Pinjaman: bunga harian + auto-debit saat jatuh tempo
         try:
             with get_connection() as conn:
@@ -905,14 +922,15 @@ class EkonomiPlus(commands.Cog):
                         "SELECT sisa FROM pinjaman WHERE id = ?", (pid,)
                     ).fetchone()
                     sisa_kini = row[0] if row else 0
-                    bunga = hitung_bunga(sisa_kini, pct)
-                    if bunga > 0:
-                        conn.execute(
-                            "UPDATE pinjaman SET sisa = sisa + ? WHERE id = ?",
-                            (bunga, pid),
-                        )
-                        conn.commit()
-                        sisa_kini += bunga
+                    if bunga_hari_ini:
+                        bunga = hitung_bunga(sisa_kini, pct)
+                        if bunga > 0:
+                            conn.execute(
+                                "UPDATE pinjaman SET sisa = sisa + ? WHERE id = ?",
+                                (bunga, pid),
+                            )
+                            conn.commit()
+                            sisa_kini += bunga
                 if jt is not None and now >= jt and sisa_kini > 0:
                     # Auto-debit: lunasi paksa bila saldo cukup
                     with get_connection() as conn:

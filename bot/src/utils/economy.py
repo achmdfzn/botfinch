@@ -210,6 +210,54 @@ def kerja(conn, guild_id: int, user_id: int,
     )
 
 
+def tandai_harian(conn, kunci: str, tanggal: str) -> bool:
+    """Tandai proses `kunci` sudah jalan pada `tanggal` (ISO date UTC).
+
+    Return True bila ini pertama kalinya hari ini (caller lanjut proses),
+    False bila sudah diproses (caller lewati). Idempoten per hari —
+    mencegah proses harian (mis. bunga bank / bunga pinjaman) dibayar
+    ganda saat bot restart, karena tasks.loop jalan lagi saat startup.
+    """
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS loop_state"
+        " (kunci TEXT PRIMARY KEY, tanggal TEXT NOT NULL)"
+    )
+    row = conn.execute(
+        "SELECT tanggal FROM loop_state WHERE kunci = ?", (kunci,)
+    ).fetchone()
+    if row and row[0] == tanggal:
+        return False
+    conn.execute(
+        "INSERT INTO loop_state (kunci, tanggal) VALUES (?, ?)"
+        " ON CONFLICT(kunci) DO UPDATE SET tanggal = excluded.tanggal",
+        (kunci, tanggal),
+    )
+    conn.commit()
+    return True
+
+
+def catat_trivia_menang(conn, guild_id: int, user_id: int) -> int:
+    """Tambah 1 kemenangan trivia. Return total kemenangan baru.
+
+    Atomik: UPDATE relatif (bukan baca-lalu-SET) — dua jawaban benar
+    konkuren tidak saling menimpa hitungan (dulu: SELECT lalu
+    UPDATE trivia_menang = <basi>+1, satu kemenangan hilang).
+    """
+    get_akun(conn, guild_id, user_id)  # pastikan baris ada
+    conn.execute(
+        "UPDATE economy SET trivia_menang = COALESCE(trivia_menang, 0) + 1"
+        " WHERE user_id = ? AND guild_id = ?",
+        (user_id, guild_id),
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT COALESCE(trivia_menang, 0) FROM economy"
+        " WHERE user_id = ? AND guild_id = ?",
+        (user_id, guild_id),
+    ).fetchone()
+    return row[0] if row else 0
+
+
 def peringkat(conn, guild_id: int, user_id: int) -> int:
     """Peringkat saldo user di server (1 = terkaya)."""
     akun = get_akun(conn, guild_id, user_id)

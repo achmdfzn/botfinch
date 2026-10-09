@@ -41,19 +41,28 @@ export default async function GuildLayout({
   if (!guildName) return <>{children}</>;
 
   const sub = dict.guild.subnav;
+  // navItems adalah daftar kanonis 12 halaman per-server; DashboardShell
+  // mengelompokkannya menjadi: item atas (Plugins/home, Ringkasan,
+  // Leaderboard, Template, Pengaturan), seksi plugin berkelompok
+  // (selfroles, responder, giveaway, embed, pengumuman, ...), lalu divider +
+  // item bawah (Mod Log, Modul). navItems[0] HARUS tetap home per-server
+  // karena DashboardShell memakainya sebagai basis hrefFor().
   const navItems: SidebarNavItem[] = [
+    // — Item atas —
     { href: `/dashboard/${guildId}`, label: sub.plugins },
     { href: `/dashboard/${guildId}/overview`, label: sub.overview },
     { href: `/dashboard/${guildId}/leaderboard`, label: sub.leaderboard },
+    { href: `/dashboard/${guildId}/template`, label: dict.templates.navLabel },
+    { href: `/dashboard/${guildId}/settings`, label: sub.settings },
+    // — Seksi plugin (dikelompokkan DashboardShell per grup plugin) —
     { href: `/dashboard/${guildId}/selfroles`, label: sub.selfroles },
     { href: `/dashboard/${guildId}/responder`, label: sub.responder },
     { href: `/dashboard/${guildId}/giveaway`, label: sub.giveaway },
     { href: `/dashboard/${guildId}/embed`, label: sub.embed },
     { href: `/dashboard/${guildId}/pengumuman`, label: sub.pengumuman },
-    { href: `/dashboard/${guildId}/template`, label: dict.templates.navLabel },
+    // — Item bawah (setelah divider) —
     { href: `/dashboard/${guildId}/modlog`, label: sub.modlog },
     { href: `/dashboard/${guildId}/modul`, label: sub.modul },
-    { href: `/dashboard/${guildId}/settings`, label: sub.settings },
   ];
 
   return (

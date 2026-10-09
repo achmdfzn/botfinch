@@ -7,6 +7,7 @@
 """
 import asyncio
 import io
+import logging
 import re
 
 import discord
@@ -16,6 +17,8 @@ from src import config
 from src.store import get_connection
 from src.utils import modlog
 from src.utils.embeds import base_embed
+
+log = logging.getLogger("finch")
 
 from src.utils.constants import KATEGORI_TIKET  # sumber tunggal; diimpor ulang oleh tests
 TICKET_CREATE_ID = "finch:ticket-create"
@@ -299,6 +302,18 @@ async def _buat_tiket(interaction: discord.Interaction) -> None:
             "❌ Bot butuh izin Manage Channels.", ephemeral=True
         )
         return
+    except discord.HTTPException:
+        await interaction.followup.send(
+            "❌ Gagal membuat tiket (kesalahan Discord). Coba lagi ya.",
+            ephemeral=True,
+        )
+        return
+    except Exception:
+        log.exception("Gagal membuat tiket untuk %s di guild %s", user.id, guild.id)
+        await interaction.followup.send(
+            "❌ Gagal membuat tiket. Coba lagi ya.", ephemeral=True
+        )
+        return
 
     await interaction.followup.send(f"✅ Tiket dibuat: {channel.mention}", ephemeral=True)
 
@@ -400,8 +415,10 @@ class TicketCloseView(discord.ui.View):
         await kirim_dm_rating(interaction.client, guild_id, row[0], channel.id)
         try:
             await channel.delete(reason="Tiket ditutup")
-        except discord.HTTPException:
-            pass
+        except (discord.Forbidden, discord.HTTPException):
+            # Tiket sudah ditutup di DB + transcript terkirim; channel yang
+            # gagal dihapus bukan kegagalan fatal (admin bisa hapus manual).
+            log.warning("Gagal hapus channel tiket %s setelah ditutup.", channel.id)
 
 
 class Tickets(commands.Cog):

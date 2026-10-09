@@ -25,6 +25,22 @@ def format_menit(menit: int) -> str:
     return f"{menit} mnt"
 
 
+def sendiri_di_voice(channel, user_id: int) -> bool:
+    """True bila tidak ada member non-bot lain di channel voice.
+
+    Dipakai sebagai anti-farm: user yang idle sendirian di voice (atau
+    deaf) tidak dapat XP/koin. Pure-ish — gampang dites.
+    """
+    try:
+        members = channel.members
+    except AttributeError:
+        return True
+    for m in members:
+        if getattr(m, "id", None) != user_id and not getattr(m, "bot", False):
+            return False
+    return True
+
+
 class VoiceXP(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -52,6 +68,13 @@ class VoiceXP(commands.Cog):
             durasi = time.time() - start
             menit = hitung_menit(durasi)
             if menit <= 0:
+                return
+            # Anti-farm: idle sendirian di voice, atau deaf (tidak
+            # berpartisipasi) -> tidak dapat XP/koin/voice_total sama sekali.
+            if sendiri_di_voice(before.channel, uid) or before.self_deaf or before.deaf:
+                log.info(
+                    "Voice XP dilewati untuk %s (sendirian/deaf)", member.name
+                )
                 return
             from src.cogs.dashboard_sync import modul_aktif
 

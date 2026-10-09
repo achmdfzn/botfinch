@@ -95,7 +95,7 @@ export default async function GuildModlog({ params }: { params: Promise<{ guildI
   const entries = asEntries(snapGuild?.modlog);
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
       <PageHeader
         title={guildName}
         description={g.subtitle}
@@ -174,6 +174,6 @@ export default async function GuildModlog({ params }: { params: Promise<{ guildI
           </ul>
         </>
       )}
-    </main>
+    </div>
   );
 }

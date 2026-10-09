@@ -78,3 +78,19 @@ export function isoDateTime(v: unknown): string | null | undefined {
   const s = v.trim();
   return Number.isNaN(Date.parse(s)) ? undefined : s;
 }
+
+/**
+ * Parse body JSON request menjadi objek. Kembalikan null bila body bukan
+ * objek JSON (parse gagal, literal null, atau array) — pemanggil sebaiknya
+ * menjawab 400 invalid_json. Mencegah crash 500 akibat `body.key` pada null.
+ */
+export async function parseJsonBody(req: Request): Promise<Record<string, unknown> | null> {
+  let parsed: unknown;
+  try {
+    parsed = await req.json();
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  return parsed as Record<string, unknown>;
+}

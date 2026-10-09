@@ -108,7 +108,7 @@ export interface GiveawayRequest {
 
 export async function getSelfRoles(guildId: string): Promise<SelfRole[]> {
   if (!dbConfigured()) return [];
-  const { rows } = await sql`SELECT * FROM selfroles WHERE guild_id = ${guildId} ORDER BY id`;
+  const { rows } = await sql`SELECT * FROM selfroles WHERE guild_id = ${guildId} ORDER BY id LIMIT 200`;
   return rows as SelfRole[];
 }
 

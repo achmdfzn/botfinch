@@ -262,6 +262,11 @@ class Events(commands.Cog):
             channel = self.bot.get_channel(cid)
             if channel is None:
                 continue  # coba lagi loop berikut
+            if not isinstance(channel, discord.abc.Messageable):
+                # ID menunjuk ke voice channel / kategori: .send tidak ada
+                # (AttributeError) dan dulu membunuh loop 5-menit selamanya.
+                log.warning("Event #%s: channel %s bukan channel teks.", eid, cid)
+                continue
             mentions = " ".join(f"<@{u}>" for u in hadir)
             teks = f"⏰ **Reminder:** event **{nama}** dimulai <t:{ts}:R>!"
             if mentions:

@@ -91,6 +91,7 @@ export default function SelfRolesManager({
         body: JSON.stringify({ message_id, emoji: em }),
       });
       if (res.ok) reload();
+      else setStatus("error");
     } finally {
       setBusyRows((prev) => {
         const next = new Set(prev);

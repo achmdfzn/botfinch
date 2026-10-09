@@ -113,6 +113,11 @@ class Bump(commands.Cog):
             bumper_id = ekstrak_bumper_id([e.description for e in message.embeds])
             koin = config.settings.bump_koin
             if bumper_id and koin > 0:
+                from src.cogs.dashboard_sync import modul_aktif
+
+                # Hormat toggle ekonomi: bump tetap dicatat, koin diskip.
+                if not modul_aktif(message.guild.id, "economy_enabled"):
+                    return
                 with get_connection() as conn:
                     eko.tambah_koin(conn, message.guild.id, bumper_id, koin)
                 log.info(

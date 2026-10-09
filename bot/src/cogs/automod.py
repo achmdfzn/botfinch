@@ -5,6 +5,9 @@
   (pakai Discord timeout, persisten seperti auto-mute spam).
 - Moderator (Manage Messages) bypass filter.
 - `/warnings [@user]` cek warning, `/reset-warn @user` reset (khusus mod).
+- Anti-hoist ala Dyno/MEE6: display_name yang diawali karakter dekoratif
+  non-alfanumerik (agar nangkring di atas member list) di-strip otomatis
+  saat member join / ganti nama. Ikut toggle `automod_enabled`.
 """
 import datetime
 import logging
@@ -20,6 +23,36 @@ from src.utils.embeds import base_embed
 log = logging.getLogger("finch")
 
 
+async def _kirim_aman(channel, teks: str, **kwargs) -> None:
+    """Kirim peringatan tanpa crash listener bila izin kirim kurang.
+
+    Lokal di modul ini (duplikat kecil dari moderation.py disengaja —
+    import antar-cog dilarang ARCHITECTURE.md).
+    """
+    try:
+        await channel.send(teks, **kwargs)
+    except (discord.Forbidden, discord.HTTPException):
+        pass
+
+
+def _strip_hoist(nama: str) -> str | None:
+    """Strip karakter dekoratif non-alfanumerik di depan nama (trik hoist).
+
+    Return nama bersih bila `nama` diawali karakter non-alfanumerik;
+    return None bila nama sudah bersih (jangan disentuh). Maksimal
+    10 karakter di-strip; bila sisa kosong, kembalikan "Member".
+    Pure function — gampang dites.
+    """
+    if not nama or nama[0].isalnum():
+        return None
+    i = 0
+    for ch in nama:
+        if i >= 10 or ch.isalnum():
+            break
+        i += 1
+    return nama[i:] or "Member"
+
+
 async def _mute(
     member: discord.Member, alasan: str, durasi_menit: int | None = None
 ) -> str:
@@ -31,18 +64,61 @@ async def _mute(
     except discord.Forbidden:
         log.warning("Gagal mute %s (izin kurang).", member)
         return ""
-    with get_connection() as conn:
-        conn.execute(
-            "INSERT OR REPLACE INTO mutes (user_id, guild_id, ends_at) VALUES (?, ?, ?)",
-            (member.id, member.guild.id, until.isoformat()),
-        )
-        conn.commit()
+    except (discord.NotFound, discord.HTTPException):
+        log.warning("Gagal mute %s (error Discord).", member)
+        return ""
+    # Timeout BERHASIL: catat ke DB. DB error tidak boleh melempar keluar —
+    # mute sudah jalan di Discord, cukup catat warning.
+    try:
+        with get_connection() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO mutes (user_id, guild_id, ends_at) VALUES (?, ?, ?)",
+                (member.id, member.guild.id, until.isoformat()),
+            )
+            conn.commit()
+    except Exception:
+        log.exception("Gagal catat mute %s ke DB (mute Discord tetap jalan)", member)
     return f" 🔇 Di-mute {duration} menit."
 
 
 class AutoMod(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+
+    async def _dehoist(self, member: discord.Member) -> None:
+        """Strip dekorasi hoist dari display_name bila automod aktif."""
+        # Import malas: pola yang sama dipakai listener lain di repo ini.
+        from src.cogs.dashboard_sync import modul_aktif
+
+        if not modul_aktif(member.guild.id, "automod_enabled"):
+            return
+        bersih = _strip_hoist(member.display_name)
+        if bersih is None:
+            return
+        me = member.guild.me
+        if me is None or not me.guild_permissions.manage_nicknames:
+            return
+        try:
+            if member.top_role.position >= me.top_role.position:
+                return  # target lebih tinggi hierarkinya
+        except (AttributeError, TypeError):
+            pass
+        try:
+            await member.edit(nick=bersih, reason="Anti-hoist otomatis")
+            log.debug("Anti-hoist: %s → %s", member.display_name, bersih)
+        except (discord.Forbidden, discord.HTTPException) as e:
+            log.debug("Anti-hoist gagal untuk %s: %s", member, e)
+
+    @commands.Cog.listener()
+    async def on_member_join(self, member: discord.Member):
+        await self._dehoist(member)
+
+    @commands.Cog.listener()
+    async def on_member_update(
+        self, before: discord.Member, after: discord.Member
+    ):
+        if before.display_name != after.display_name:
+            await self._dehoist(after)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -66,21 +142,32 @@ class AutoMod(commands.Cog):
         kata = filters.find_bad_word(message.content, words)
         try:
             await message.delete()
-        except discord.Forbidden:
+        except (discord.Forbidden, discord.HTTPException):
             pass
 
-        with get_connection() as conn:
-            conn.execute(
-                "INSERT INTO warnings (user_id, guild_id, count) VALUES (?, ?, 1) "
-                "ON CONFLICT(user_id, guild_id) DO UPDATE SET "
-                "count = count + 1, updated_at = CURRENT_TIMESTAMP",
-                (message.author.id, message.guild.id),
+        try:
+            with get_connection() as conn:
+                conn.execute(
+                    "INSERT INTO warnings (user_id, guild_id, count) VALUES (?, ?, 1) "
+                    "ON CONFLICT(user_id, guild_id) DO UPDATE SET "
+                    "count = count + 1, updated_at = CURRENT_TIMESTAMP",
+                    (message.author.id, message.guild.id),
+                )
+                conn.commit()
+                row = conn.execute(
+                    "SELECT count FROM warnings WHERE user_id = ? AND guild_id = ?",
+                    (message.author.id, message.guild.id),
+                ).fetchone()
+        except Exception:
+            # DB gagal: pesan sudah dihapus, kirim teguran tanpa hitungan
+            # (jangan crash listener).
+            log.exception("Gagal catat warning kata kasar untuk %s", message.author)
+            await _kirim_aman(
+                message.channel,
+                f"⚠️ {message.author.mention}, bahasa tidak pantas tidak boleh di sini!",
+                delete_after=10,
             )
-            conn.commit()
-            row = conn.execute(
-                "SELECT count FROM warnings WHERE user_id = ? AND guild_id = ?",
-                (message.author.id, message.guild.id),
-            ).fetchone()
+            return
         count = row[0] if row else 1
         maks = max(1, config.settings.warn_max)
         # Override per-server via dashboard (batas aman 1–10080 menit)
@@ -107,7 +194,8 @@ class AutoMod(commands.Cog):
                     self.bot.user.id if self.bot.user else 0,
                     "mute", f"auto-mute: {maks}x warning kata kasar",
                 )
-            await message.channel.send(
+            await _kirim_aman(
+                message.channel,
                 f"🚫 {message.author.mention}, sudah {maks}x kena warning kata kasar.{mute_txt}",
                 delete_after=10,
             )
@@ -120,7 +208,8 @@ class AutoMod(commands.Cog):
                 channel_id=log_ch,
             )
         else:
-            await message.channel.send(
+            await _kirim_aman(
+                message.channel,
                 f"⚠️ {message.author.mention}, bahasa tidak pantas tidak boleh di sini! "
                 f"Warning {count}/{maks}.",
                 delete_after=10,

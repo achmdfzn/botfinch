@@ -65,6 +65,11 @@ export const SETTING_DEFAULTS: Record<string, boolean | string | number> = {
   responder_enabled: true,
   announcements_enabled: true,
   embed_enabled: true,
+  // toggle plugin baru: custom commands, slowmode, message log, auto-publish
+  customcmd_enabled: true,
+  slowmode_enabled: true,
+  msglog_enabled: true,
+  autopublish_enabled: true,
 };
 
 export const SETTING_RULES: Record<string, Rule> = {
@@ -100,6 +105,10 @@ export const SETTING_RULES: Record<string, Rule> = {
   responder_enabled: { kind: "bool" },
   announcements_enabled: { kind: "bool" },
   embed_enabled: { kind: "bool" },
+  customcmd_enabled: { kind: "bool" },
+  slowmode_enabled: { kind: "bool" },
+  msglog_enabled: { kind: "bool" },
+  autopublish_enabled: { kind: "bool" },
 };
 
 export const MODULES: ModuleDef[] = [

@@ -11,6 +11,8 @@ export interface GuildLite {
   name: string;
   icon: string | null;
   memberCount: number | null;
+  /** True bila user login adalah owner server ini. */
+  isOwner?: boolean;
 }
 
 interface Props {
@@ -70,7 +72,9 @@ export default function GuildListSync({ initialInBot, initialNotInBot, initialHa
         pendingRef.current = pendingRef.current.filter((g) => {
           const s = seen.get(g.id);
           if (s) {
-            moved.push({ id: s.id, name: s.name, icon: s.icon, memberCount: s.member_count });
+            // Snapshot bot tidak membawa info owner: pertahankan isOwner
+            // dari data Discord awal (undefined = badge "Kelola Server").
+            moved.push({ id: s.id, name: s.name, icon: s.icon, memberCount: s.member_count, isOwner: g.isOwner });
             return false;
           }
           return true;
@@ -106,6 +110,7 @@ export default function GuildListSync({ initialInBot, initialNotInBot, initialHa
               openLabel={d.cardOpen}
               inviteLabel={d.cardInvite}
               noDataLabel={d.cardNoData}
+              isOwner={g.isOwner}
             />
           ))}
         </div>
@@ -131,6 +136,7 @@ export default function GuildListSync({ initialInBot, initialNotInBot, initialHa
                 openLabel={d.cardOpen}
                 inviteLabel={d.cardInvite}
                 noDataLabel={d.cardNoData}
+                isOwner={g.isOwner}
               />
             ))}
           </div>

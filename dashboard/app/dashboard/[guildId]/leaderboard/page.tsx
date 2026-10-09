@@ -63,7 +63,7 @@ export default async function GuildLeaderboard({ params }: { params: Promise<{ g
   const snapGuild = snap?.guilds.find((g) => g.id === guildId);
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
       <PageHeader
         title={guildName}
         description={dict.guild.leaderboard.subtitle}
@@ -81,12 +81,12 @@ export default async function GuildLeaderboard({ params }: { params: Promise<{ g
           <EmptyState title={gc.waitingTitle} body={dict.guild.leaderboard.waitingBody} />
         ) : (
           <LeaderboardTabs
-            levels={snapGuild.leaderboards.levels}
-            coins={snapGuild.leaderboards.coins}
+            levels={snapGuild.leaderboards?.levels ?? []}
+            coins={snapGuild.leaderboards?.coins ?? []}
             updatedAt={snap?.pushed_at ?? ""}
           />
         )}
       </div>
-    </main>
+    </div>
   );
 }

@@ -81,6 +81,16 @@ class Responder(commands.Cog):
         if not trigger or not respons.strip():
             await ctx.send("❌ Trigger dan respons tidak boleh kosong.", ephemeral=True)
             return
+        # Batas panjang: selaras kontrak dashboard (trigger ≤100, respons ≤500
+        # setelah sinkron) dan di bawah limit pesan Discord 2000 — respons
+        # lebih panjang pasti gagal terkirim (HTTP 400) tapi user sudah
+        # diberi tahu "berhasil" tanpa validasi ini.
+        if len(trigger) > 100:
+            await ctx.send("❌ Trigger kepanjangan (maks 100 karakter).", ephemeral=True)
+            return
+        if len(respons.strip()) > 1500:
+            await ctx.send("❌ Respons kepanjangan (maks 1500 karakter).", ephemeral=True)
+            return
         with get_connection() as conn:
             conn.execute(
                 "INSERT INTO autoresponder (guild_id, trigger, respons) VALUES (?, ?, ?) "

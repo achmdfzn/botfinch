@@ -277,6 +277,12 @@ class Turnamen(commands.Cog):
         if ctx.guild is None:
             await ctx.send(embed=error_embed("Hanya bisa di server."), ephemeral=True)
             return
+        if len(jawaban or "") > 200:
+            await ctx.send(
+                embed=error_embed("Jawaban kepanjangan (maks 200 karakter)."),
+                ephemeral=True,
+            )
+            return
         key = (ctx.guild.id, ctx.author.id)
         if key not in self._kata:
             await ctx.send(
@@ -437,15 +443,25 @@ class Turnamen(commands.Cog):
         if top and top[1] > 0:
             uid, skor = top
             hadiah = config.settings.turnamen_hadiah
-            try:
-                with get_connection() as conn:
-                    eko.tambah_koin(conn, gid, uid, hadiah)
-            except Exception:
-                log.exception("Gagal kasih hadiah turnamen %s", tid)
-                return
+            from src.cogs.dashboard_sync import modul_aktif
+
+            # Hormat toggle ekonomi: tanpa ini koin dibayar walau modul mati.
+            dibayar = False
+            if modul_aktif(gid, "economy_enabled"):
+                try:
+                    with get_connection() as conn:
+                        eko.tambah_koin(conn, gid, uid, hadiah)
+                    dibayar = True
+                except Exception:
+                    log.exception("Gagal kasih hadiah turnamen %s", tid)
+            hadiah_txt = (
+                koin_text(hadiah)
+                if dibayar
+                else "_tanpa hadiah (modul ekonomi dimatikan)_"
+            )
             embed = finch_embed(
                 "🏆 Turnamen Berakhir!",
-                f"## 🥇 <@{uid}>\nSkor: **{skor}** • Hadiah: {koin_text(hadiah)}",
+                f"## 🥇 <@{uid}>\nSkor: **{skor}** • Hadiah: {hadiah_txt}",
                 warna="game",
             )
         else:
@@ -626,8 +642,9 @@ class Turnamen(commands.Cog):
                         eko.tambah_koin(conn, st["guild_id"], uid, hadiah)
                     dibayar = True
                 except Exception:
+                    # Jangan return diam-diam: peserta butuh pengumuman hasil
+                    # akhir walau payout gagal — embed di bawah menjelaskan.
                     log.exception("Gagal kasih hadiah kuis")
-                    return
             hadiah_txt = (
                 koin_text(hadiah)
                 if dibayar

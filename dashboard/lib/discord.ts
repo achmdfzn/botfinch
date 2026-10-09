@@ -5,6 +5,8 @@ export interface DiscordGuild {
   name: string;
   icon: string | null;
   permissions: string;
+  /** True bila user login adalah owner server (dari API Discord /users/@me/guilds). */
+  owner?: boolean;
 }
 
 export function canManage(guild: DiscordGuild): boolean {

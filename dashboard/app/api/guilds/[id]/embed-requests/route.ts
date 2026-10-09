@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { createEmbedRequest, listEmbedRequests } from "@/lib/db";
 import { requireManager } from "@/lib/access";
-import { discordId, embedFields, hexColor, httpUrl, optStr } from "@/lib/validate";
+import { discordId, embedFields, hexColor, httpUrl, optStr, parseJsonBody } from "@/lib/validate";
 
-export const instant = false;
 
 /** Daftar permintaan embed terbaru (manager). */
 export async function GET(
@@ -28,12 +27,8 @@ export async function POST(
   const { id } = await params;
   const denied = await requireManager(id);
   if (denied) return denied;
-  let body: Record<string, unknown>;
-  try {
-    body = (await req.json()) as Record<string, unknown>;
-  } catch {
-    return NextResponse.json({ error: "invalid_json" }, { status: 400 });
-  }
+  const body = await parseJsonBody(req);
+  if (!body) return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   const channelId = discordId(body.channel_id);
   const title = optStr(body.title, 256);
   const description = optStr(body.description, 4000);

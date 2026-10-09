@@ -22,6 +22,40 @@ log = logging.getLogger("finch")
 
 MAX_OPSI = 5
 
+POLL_COOLDOWN_DETIK = 60
+
+
+def _klaim_cooldown_poll(conn, guild_id: int, user_id: int) -> float:
+    """Klaim cooldown /poll atomik. Return 0 bila boleh, sisa detik bila tidak.
+
+    Pola UPSERT yang sama seperti sosial._cooldown_klaim (duplikasi lokal yang
+    disengaja — import antar-cog dilarang ARCHITECTURE.md).
+    """
+    sekarang = discord.utils.utcnow().isoformat()
+    cur = conn.execute(
+        "INSERT INTO cooldown_aksi (user_id, guild_id, aksi, terakhir) VALUES (?, ?, 'poll', ?) "
+        "ON CONFLICT(user_id, guild_id, aksi) DO UPDATE SET terakhir = excluded.terakhir "
+        "WHERE (strftime('%s', 'now') - strftime('%s', terakhir)) >= ?",
+        (user_id, guild_id, sekarang, POLL_COOLDOWN_DETIK),
+    )
+    conn.commit()
+    if cur.rowcount == 1:
+        return 0
+    row = conn.execute(
+        "SELECT terakhir FROM cooldown_aksi WHERE user_id = ? AND guild_id = ? AND aksi = 'poll'",
+        (user_id, guild_id),
+    ).fetchone()
+    if not row:
+        return 0
+    try:
+        dt = datetime.datetime.fromisoformat(row[0])
+    except ValueError:
+        return 0
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    sisa = (dt + datetime.timedelta(seconds=POLL_COOLDOWN_DETIK) - discord.utils.utcnow()).total_seconds()
+    return max(0, sisa)
+
 
 def parse_opsi(teks: str) -> list[str]:
     """'a, b, c' -> ['a', 'b', 'c']. Pure function — gampang dites."""
@@ -377,10 +411,23 @@ class Polls(commands.Cog):
                 ephemeral=True,
             )
             return
+        if not (pertanyaan or "").strip():
+            await ctx.send("❌ Pertanyaan tidak boleh kosong.", ephemeral=True)
+            return
         err_teks = validasi_teks_poll(pertanyaan, options)
         if err_teks:
             await ctx.send(err_teks, ephemeral=True)
             return
+        # Cooldown anti-spam poll (atomik, persisten di DB).
+        if ctx.guild is not None:
+            with get_connection() as conn:
+                sisa = _klaim_cooldown_poll(conn, ctx.guild.id, ctx.author.id)
+            if sisa > 0:
+                await ctx.send(
+                    f"❌ Tunggu **{sisa:.0f}** detik sebelum membuat poll lagi.",
+                    ephemeral=True,
+                )
+                return
         ends_at = None
         ends_ts = None
         if durasi:

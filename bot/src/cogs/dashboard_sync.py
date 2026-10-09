@@ -274,7 +274,14 @@ class DashboardSync(commands.Cog):
         """
         if not self._jalan:
             return
-        data = [self._snapshot_guild(g) for g in guilds]
+        data = []
+        for g in guilds:
+            try:
+                data.append(self._snapshot_guild(g))
+            except Exception:
+                # Satu guild gagal (DB error, dst.) tidak boleh membunuh
+                # loop push 5-menit selamanya — lewati guild itu saja.
+                log.warning("dashboard: gagal snapshot guild %s", g.id, exc_info=True)
         payload = {"bot_name": self.bot.user.name if self.bot.user else "Finch", "guilds": data}
         try:
             async with aiohttp.ClientSession() as sesi:
@@ -435,7 +442,11 @@ class DashboardSync(commands.Cog):
             return
         cog = self.bot.get_cog("Giveaway")
         if cog is None:
-            log.warning("dashboard: cog Giveaway tidak ada, %d permintaan dilewati", len(requests))
+            # Tanpa ack, permintaan pending menumpuk & di-retry tiap 5 menit
+            # selamanya — tolak eksplisit agar antrean dashboard bersih.
+            log.warning("dashboard: cog Giveaway tidak ada, %d permintaan ditolak", len(requests))
+            for r in requests:
+                await self._ack_giveaway(guild.id, r.get("id"), "failed", "cog giveaway tidak aktif")
             return
         for r in requests:
             req_id = r.get("id")
@@ -457,6 +468,8 @@ class DashboardSync(commands.Cog):
                 await self._ack_giveaway(guild.id, req_id, "failed", str(e)[:200])
 
     async def _ack_giveaway(self, guild_id: int, req_id, status: str, note: str) -> None:
+        if req_id is None:
+            return
         try:
             async with aiohttp.ClientSession() as sesi:
                 async with sesi.post(

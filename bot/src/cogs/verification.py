@@ -54,9 +54,9 @@ async def _do_verify(member: discord.Member) -> str | None:
         await member.add_roles(verified, reason="Verifikasi via tombol")
         if unverified is not None and unverified in member.roles:
             await member.remove_roles(unverified, reason="Verifikasi via tombol")
-    except discord.Forbidden:
+    except (discord.Forbidden, discord.HTTPException):
         log.warning(
-            "Gagal verifikasi %s — role bot harus DI ATAS role verifikasi.", member
+            "Gagal verifikasi %s — cek izin/hierarki role bot.", member
         )
         return "❌ Bot tidak punya izin (role bot harus di atas role verifikasi)."
     return None
@@ -125,9 +125,9 @@ class Verification(commands.Cog):
         if unverified not in member.roles:
             try:
                 await member.add_roles(unverified, reason="Menunggu verifikasi")
-            except discord.Forbidden:
+            except (discord.Forbidden, discord.HTTPException):
                 log.warning(
-                    "Gagal kasih role ke %s — role bot harus DI ATAS role verifikasi.",
+                    "Gagal kasih role ke %s — cek izin/hierarki role bot.",
                     member,
                 )
 
@@ -146,7 +146,7 @@ class Verification(commands.Cog):
             await channel.send(
                 embed=build_verify_panel(nama_server), view=VerifyButtonView()
             )
-        except discord.Forbidden:
+        except (discord.Forbidden, discord.HTTPException):
             await ctx.send(
                 "❌ Bot tidak bisa kirim pesan ke channel itu (cek izin).",
                 ephemeral=True,

@@ -160,7 +160,7 @@ export default async function GuildTemplate({
       : t.applyError;
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
       <Link
         href="/dashboard"
         className="inline-flex min-h-[44px] items-center text-sm text-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-brand"
@@ -260,11 +260,13 @@ export default async function GuildTemplate({
                       className={`${inputCls} mt-1 w-full`}
                     >
                       <option value="">{t.selectChannel}</option>
-                      {channels.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          #{c.name}
-                        </option>
-                      ))}
+                      {channels
+                        .filter((c) => c.type === 0 || c.type === 5)
+                        .map((c) => (
+                          <option key={c.id} value={c.id}>
+                            #{c.name}
+                          </option>
+                        ))}
                     </select>
                     {channels.length === 0 && (
                       <p className="mt-1 text-xs text-muted">{t.noChannelsHint}</p>
@@ -289,6 +291,6 @@ export default async function GuildTemplate({
           );
         })}
       </div>
-    </main>
+    </div>
   );
 }

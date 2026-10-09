@@ -36,7 +36,7 @@ KATEGORI_BANTUAN = {
 #: Urutan tampil kategori di select menu & halaman "Semua".
 URUTAN_KATEGORI = ["umum", "level", "ekonomi", "sosial", "moderasi", "utilitas", "event", "server"]
 
-#: Nama class Cog -> kunci kategori. WAJIB mencakup semua 41 cog;
+#: Nama class Cog -> kunci kategori. WAJIB mencakup semua 44 cog;
 #: cog yang tak terpetakan jatuh ke "lainnya" (seharusnya selalu kosong).
 COG_KE_KATEGORI = {
     # Umum
@@ -73,9 +73,11 @@ COG_KE_KATEGORI = {
     "AutoMod": "moderasi",
     "Verification": "moderasi",
     "Report": "moderasi",
+    "Slowmode": "moderasi",
     # Utilitas
     "Utilitas": "utilitas",
     "TempVC": "utilitas",
+    "AutoPublish": "utilitas",
     # Event & Giveaway
     "Giveaway": "event",
     "Events": "event",
@@ -88,6 +90,7 @@ COG_KE_KATEGORI = {
     "Youtube": "server",
     "DashboardSync": "server",
     "ServerStats": "server",
+    "CustomCmd": "server",
 }
 
 _BATAS_FIELD = 950  # jaga-jaga di bawah limit Discord 1024 char/field
@@ -369,10 +372,9 @@ class General(commands.Cog):
         if isinstance(target, discord.Member):
             if target.joined_at:
                 embed.add_field(name="Gabung server", value=target.joined_at.strftime("%d %b %Y"), inline=True)
-            roles = [r.mention for r in target.roles if r.name != "@everyone"][:5]
             embed.add_field(
                 name=f"Roles ({len(target.roles) - 1})",
-                value=" ".join(roles) if roles else "-",
+                value=teks_roles_member(target),
                 inline=True,
             )
         await ctx.send(embed=embed)
@@ -394,6 +396,17 @@ class General(commands.Cog):
         await bind_view_message(ctx, view, sent)
 
 
+def teks_roles_member(member) -> str:
+    """Daftar nama role member sebagai teks polos (maks 5).
+
+    BUKAN mention: bot memakai allowed_mentions roles=True, jadi r.mention
+    bisa nge-ping role yang mentionable setiap ada yang menjalankan
+    /userinfo. Duck-typed agar gampang dites.
+    """
+    roles = [r.name for r in (member.roles or []) if r.name != "@everyone"][:5]
+    return ", ".join(f"`{r}`" for r in roles) if roles else "-"
+
+
 def build_serverinfo_embed(guild: discord.Guild) -> discord.Embed:
     """Embed info server yang kaya: ID, owner, tanggal, boost, channel, role,
     emoji, dan breakdown member manusia/bot (kalau cache member tersedia)."""
@@ -405,9 +418,11 @@ def build_serverinfo_embed(guild: discord.Guild) -> discord.Embed:
     embed.add_field(
         name="Dibuat", value=guild.created_at.strftime("%d %b %Y"), inline=True
     )
-    embed.add_field(
-        name="Owner", value=guild.owner.mention if guild.owner else "-", inline=True
-    )
+    # Owner sebagai nama teks, BUKAN mention: mention user di embed ikut
+    # nge-ping karena allowed_mentions users=True — /serverinfo tak perlu
+    # membangunkan owner setiap dijalankan.
+    owner_txt = guild.owner.display_name if guild.owner else "-"
+    embed.add_field(name="Owner", value=owner_txt, inline=True)
     # Member: total + breakdown manusia/bot bila cache tersedia
     total = guild.member_count if guild.member_count else len(guild.members or [])
     if guild.members:

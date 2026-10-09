@@ -387,6 +387,13 @@ class Economy(commands.Cog):
         bunga = config.settings.bank_bunga_harian
         if bunga <= 0:
             return
+        # Idempoten per hari: loop jalan lagi tiap restart bot — tanpa gate,
+        # bunga dibayar ganda dalam sehari yang sama.
+        hari_ini = discord.utils.utcnow().date().isoformat()
+        with get_connection() as conn:
+            if not eko.tandai_harian(conn, "bunga_bank", hari_ini):
+                log.info("Bunga bank sudah dibayar hari ini; lewati.")
+                return
         try:
             with get_connection() as conn:
                 mati = {

@@ -79,7 +79,7 @@ export default async function GuildModul({ params }: { params: Promise<{ guildId
   }
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
       <PageHeader
         title={guildName}
         description={dict.guild.modul.subtitle}
@@ -95,6 +95,6 @@ export default async function GuildModul({ params }: { params: Promise<{ guildId
       <div>
         <ModuleToggles guildId={guildId} modules={MODULES} initial={toggles} />
       </div>
-    </main>
+    </div>
   );
 }

@@ -59,7 +59,7 @@ export default async function GuildResponder({ params }: { params: Promise<{ gui
   guildName = mine.name;
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
       <PageHeader
         title={guildName}
         description={g.subtitle}
@@ -73,6 +73,6 @@ export default async function GuildResponder({ params }: { params: Promise<{ gui
         }
       />
       <ResponderManager guildId={guildId} initialRows={await getAutoResponses(guildId)} />
-    </main>
+    </div>
   );
 }

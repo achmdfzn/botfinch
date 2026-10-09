@@ -4,6 +4,28 @@
 // Catatan: /dashboard/[guildId]/plugins kini redirect ke halaman utama.
 export type PluginGroup = "essentials" | "engagement" | "moderation" | "utilities";
 
+/** Tab kategori katalog plugin: "Semua" + 4 grup. */
+export type PluginTab = "all" | PluginGroup;
+
+/** Urutan tab kategori di halaman utama per-server. */
+export const PLUGIN_TABS: readonly PluginTab[] = [
+  "all",
+  "essentials",
+  "engagement",
+  "moderation",
+  "utilities",
+];
+
+/**
+ * Validasi query ?tab=: nilai asing (atau kosong) jatuh ke "all"
+ * agar link share selalu mendarat di tab yang valid.
+ */
+export function parsePluginTab(value: string | null | undefined): PluginTab {
+  return (PLUGIN_TABS as readonly string[]).includes(value ?? "")
+    ? (value as PluginTab)
+    : "all";
+}
+
 export interface PluginDef {
   /** Kunci kamus di dict.guild.plugins.cards. */
   id: string;
@@ -14,14 +36,15 @@ export interface PluginDef {
   toggleKey: string | null;
   /**
    * Tujuan tombol Configure, relatif terhadap /dashboard/[guildId].
-   * "" = halaman overview (tab Pengaturan); null = tanpa tombol.
+   * "settings#welcome" = seksi welcome di halaman pengaturan;
+   * null = tanpa tombol.
    */
   configure: string | null;
 }
 
 export const PLUGINS: PluginDef[] = [
   // Essentials
-  { id: "welcome", emoji: "👋", group: "essentials", toggleKey: "welcome_enabled", configure: "" },
+  { id: "welcome", emoji: "👋", group: "essentials", toggleKey: "welcome_enabled", configure: "settings#welcome" },
   { id: "leveling", emoji: "⭐", group: "essentials", toggleKey: "leveling_enabled", configure: null },
   { id: "selfroles", emoji: "🎭", group: "essentials", toggleKey: "selfroles_enabled", configure: "selfroles" },
   { id: "responder", emoji: "💬", group: "essentials", toggleKey: "responder_enabled", configure: "responder" },
@@ -30,10 +53,14 @@ export const PLUGINS: PluginDef[] = [
   { id: "starboard", emoji: "🌟", group: "engagement", toggleKey: "starboard_enabled", configure: null },
   { id: "giveaway", emoji: "🎉", group: "engagement", toggleKey: "giveaway_enabled", configure: "giveaway" },
   { id: "announcements", emoji: "📣", group: "engagement", toggleKey: "announcements_enabled", configure: "pengumuman" },
+  { id: "customcmd", emoji: "⌨️", group: "engagement", toggleKey: "customcmd_enabled", configure: null },
   // Moderation
   { id: "automod", emoji: "🛡️", group: "moderation", toggleKey: "automod_enabled", configure: null },
+  { id: "slowmode", emoji: "🐌", group: "moderation", toggleKey: "slowmode_enabled", configure: null },
+  { id: "msglog", emoji: "📜", group: "moderation", toggleKey: "msglog_enabled", configure: null },
   // Utilities
   { id: "embed", emoji: "📝", group: "utilities", toggleKey: "embed_enabled", configure: "embed" },
+  { id: "autopublish", emoji: "📢", group: "utilities", toggleKey: "autopublish_enabled", configure: null },
   { id: "templates", emoji: "📋", group: "utilities", toggleKey: null, configure: "template" },
 ];
 

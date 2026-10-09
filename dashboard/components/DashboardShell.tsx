@@ -22,10 +22,10 @@ interface Props {
  * sidebar sticky di desktop, drawer geser di mobile. Bersifat aditif: halaman
  * di dalamnya tetap me-render kontennya sendiri.
  *
- * Sidebar ala MEE6 dibangun di sini dari navItems (untuk href) + dict
+ * Sidebar dibangun di sini dari navItems (untuk href) + dict
  * (untuk label): item utama (Plugins, Ringkasan, Leaderboard, Templates,
  * Pengaturan), seksi plugin berkelompok (Esensial, Engagement & Fun,
- * Moderasi, Utilitas), lalu item bawah (Mod Log, Modul).
+ * Moderasi, Utilitas), lalu divider + item bawah (Mod Log, Modul).
  *
  * Tujuan link per plugin:
  * - punya halaman konfigurasi (selfroles, responder, giveaway, pengumuman,
@@ -122,8 +122,12 @@ export default function DashboardShell({ guildName, guildIconUrl, navItems, chil
     starboard: "starboard",
     giveaway: "giveaway",
     announcements: "announcements",
+    customcmd: "customCommands",
     automod: "automod",
+    slowmode: "automod",
+    msglog: "modlog",
     embed: "embedBuilder",
+    autopublish: "announcements",
     templates: "templates",
   };
 
@@ -200,16 +204,22 @@ export default function DashboardShell({ guildName, guildIconUrl, navItems, chil
         <span className="min-w-0 flex-1 truncate text-sm font-semibold text-fg">{guildName}</span>
       </div>
 
-      <div className="mx-auto flex max-w-6xl">
+      <div className="mx-auto flex max-w-7xl">
         {/* Sidebar desktop: kolom kiri sticky */}
-        <aside className="hidden w-60 shrink-0 md:block">
+        <aside className="hidden w-64 shrink-0 md:block">
           <div className="sticky top-0 h-screen border-r border-edge bg-panel">
             <Sidebar {...sidebarProps} />
           </div>
         </aside>
 
-        {/* Konten halaman */}
-        <div className="min-w-0 flex-1">{children}</div>
+        {/* Konten halaman: padding konsisten + max-width terpusat, senada
+            area konten referensi. Halaman di dalamnya tetap me-render
+            kontennya sendiri. */}
+        <main className="min-w-0 flex-1">
+          <div className="mx-auto w-full max-w-5xl px-4 py-5 sm:px-6 md:px-8 md:py-7">
+            {children}
+          </div>
+        </main>
       </div>
 
       {/* Drawer mobile */}

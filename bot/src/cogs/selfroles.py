@@ -61,7 +61,9 @@ class SelfRoleSelect(discord.ui.Select):
                 else:
                     await member.add_roles(role, reason="Self-role dipasang")
                     ditambah.append(nama)
-            except discord.Forbidden:
+            except (discord.Forbidden, discord.HTTPException):
+                # Forbidden: izin/hierarki kurang. HTTPException lain (500/429):
+                # jangan biarkan callback interaction meledak tanpa balasan.
                 gagal.append(nama)
         bagian = []
         if ditambah:

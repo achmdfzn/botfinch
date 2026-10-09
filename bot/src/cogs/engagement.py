@@ -144,6 +144,11 @@ class Engagement(commands.Cog):
         if ctx.guild is None:
             await ctx.send(embed=error_embed("Hanya bisa di server."), ephemeral=True)
             return
+        from src.cogs.dashboard_sync import modul_aktif
+
+        if not modul_aktif(ctx.guild.id, "economy_enabled"):
+            await ctx.send(embed=error_embed("Modul ekonomi dimatikan oleh admin server ini."), ephemeral=True)
+            return
         jenis = (jenis or "").lower()
         if jenis not in JENIS_PET:
             await ctx.send(
@@ -397,6 +402,10 @@ class Engagement(commands.Cog):
         """Reward penjawab daily question (maks N pertama per hari)."""
         if message.content.startswith(config.settings.prefix):
             return
+        from src.cogs.dashboard_sync import modul_aktif
+
+        if not modul_aktif(gid, "economy_enabled"):
+            return  # modul ekonomi mati: tidak ada reward, jawaban tidak dicatat
         tanggal = discord.utils.utcnow().strftime("%Y-%m-%d")
         with get_connection() as conn:
             # BEGIN IMMEDIATE: serialkan cek-cap + INSERT. Tanpa ini dua penjawab
@@ -515,34 +524,44 @@ class Engagement(commands.Cog):
         gid = message.guild.id
         uid = message.author.id
 
-        # 1) Pet XP (+1 per pesan), umumkan naik level sekali & ringkas
-        try:
-            with get_connection() as conn:
-                row = conn.execute(
-                    "SELECT nama, jenis, xp FROM pet WHERE user_id = ? AND guild_id = ?",
-                    (uid, gid),
-                ).fetchone()
-                naik = False
-                nama_pet, emoji_pet, lvl_baru = "", "", 0
-                if row:
-                    nama_pet, jenis, xp = row
-                    emoji_pet = JENIS_PET.get(jenis, "🐾")
-                    lvl_lama = pet_level(xp)
-                    # Increment atomik: dua pesan bersamaan tidak saling menimpa
-                    # (dulu: baca xp lalu SET xp+1 — satu XP hilang).
-                    conn.execute(
-                        "UPDATE pet SET xp = xp + 1 WHERE user_id = ? AND guild_id = ?",
+        # 1) Pet XP (+1 per pesan), umumkan naik level sekali & ringkas.
+        # Hormat toggle modul — XP sampingan tidak jalan saat leveling mati,
+        # reward/pool koin tidak jalan saat ekonomi mati (konvensi turnamen.py).
+        from src.cogs.dashboard_sync import modul_aktif as _modul_aktif
+
+        _leveling_on = _modul_aktif(gid, "leveling_enabled")
+        _ekonomi_on = _modul_aktif(gid, "economy_enabled")
+        if _leveling_on:
+            try:
+                with get_connection() as conn:
+                    row = conn.execute(
+                        "SELECT nama, jenis, xp FROM pet WHERE user_id = ? AND guild_id = ?",
                         (uid, gid),
+                    ).fetchone()
+                    naik = False
+                    nama_pet, emoji_pet, lvl_baru = "", "", 0
+                    if row:
+                        nama_pet, jenis, xp = row
+                        emoji_pet = JENIS_PET.get(jenis, "🐾")
+                        lvl_lama = pet_level(xp)
+                        # Increment atomik: dua pesan bersamaan tidak saling menimpa
+                        # (dulu: baca xp lalu SET xp+1 — satu XP hilang).
+                        conn.execute(
+                            "UPDATE pet SET xp = xp + 1 WHERE user_id = ? AND guild_id = ?",
+                            (uid, gid),
+                        )
+                        conn.commit()
+                        lvl_baru = pet_level(xp + 1)
+                        naik = lvl_baru > lvl_lama
+                if naik:
+                    # allowed_mentions=none: nama_pet adalah input user — tanpa
+                    # ini `<@id>` di nama pet bisa dipakai untuk nge-ping orang.
+                    await message.channel.send(
+                        f"🎉 Pet **{nama_pet}** {emoji_pet} naik ke level **{lvl_baru}**!",
+                        allowed_mentions=discord.AllowedMentions.none(),
                     )
-                    conn.commit()
-                    lvl_baru = pet_level(xp + 1)
-                    naik = lvl_baru > lvl_lama
-            if naik:
-                await message.channel.send(
-                    f"🎉 Pet **{nama_pet}** {emoji_pet} naik ke level **{lvl_baru}**!"
-                )
-        except Exception:
-            log.exception("Gagal tambah pet xp")
+            except Exception:
+                log.exception("Gagal tambah pet xp")
 
         # 2) Quest guild: progres +1, selesaikan & umumkan bila tercapai
         try:
@@ -578,17 +597,27 @@ class Engagement(commands.Cog):
                                 (qid,),
                             )
                             if cur2.rowcount:
-                                conn.execute(
-                                    "INSERT INTO server_pool (guild_id, koin) VALUES (?, ?)"
-                                    " ON CONFLICT(guild_id) DO UPDATE SET koin = koin + ?",
-                                    (gid, hadiah, hadiah),
-                                )
-                                selesai_info = hadiah
+                                # Hormat toggle ekonomi: pool koin hanya diisi
+                                # bila modul ekonomi menyala.
+                                if _ekonomi_on:
+                                    conn.execute(
+                                        "INSERT INTO server_pool (guild_id, koin) VALUES (?, ?)"
+                                        " ON CONFLICT(guild_id) DO UPDATE SET koin = koin + ?",
+                                        (gid, hadiah, hadiah),
+                                    )
+                                    selesai_info = (hadiah, True)
+                                else:
+                                    selesai_info = (hadiah, False)
                         conn.commit()
             if selesai_info:
+                hadiah_q, pool_masuk = selesai_info
+                teks_pool = (
+                    f"\n🎁 Pool giveaway bertambah {koin_text(hadiah_q)}."
+                    if pool_masuk
+                    else "\n_Tanpa hadiah pool (modul ekonomi dimatikan)._"
+                )
                 await message.channel.send(
-                    f"🎉 **Quest guild selesai!** Kerja sama keren!\n"
-                    f"🎁 Pool giveaway bertambah {koin_text(selesai_info)}."
+                    f"🎉 **Quest guild selesai!** Kerja sama keren!{teks_pool}"
                 )
         except Exception:
             log.exception("Gagal update quest guild")

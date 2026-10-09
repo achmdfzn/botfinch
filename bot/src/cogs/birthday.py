@@ -96,6 +96,10 @@ class Birthday(commands.Cog):
                 continue
             koin = config.settings.ultah_koin
             try:
+                from src.cogs.dashboard_sync import modul_aktif
+
+                # Hormat toggle ekonomi: ultah tetap dirayakan, kado koin diskip.
+                koin_aktif = koin > 0 and modul_aktif(guild_id, "economy_enabled")
                 # Tandai dulu, baru kredit — crash di tengah = user kehilangan
                 # koin (aman), bukan dapat 2x
                 with get_connection() as conn:
@@ -105,7 +109,7 @@ class Birthday(commands.Cog):
                         (tahun, user_id, guild_id),
                     )
                     conn.commit()
-                if koin > 0:
+                if koin_aktif:
                     with get_connection() as conn:
                         eko.tambah_koin(conn, guild_id, user_id, koin)
             except Exception:
@@ -119,7 +123,7 @@ class Birthday(commands.Cog):
                 f"🎉 <@{user_id}> hari ini berulang tahun!\n"
                 + (
                     f"Kado: **{koin}** 🪙 koin!"
-                    if koin > 0
+                    if koin_aktif
                     else "Semoga panjang umur & sehat selalu!"
                 ),
             )

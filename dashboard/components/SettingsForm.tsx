@@ -85,7 +85,16 @@ function FieldInput({
         min={field.min}
         max={field.max}
         value={Number(value ?? 0)}
-        onChange={(e) => onChange(Number(e.target.value))}
+        onChange={(e) => {
+          // Klamp di client sesuai min/max field: server mengklamp diam-diam
+          // (cleanValue), jadi nilai di luar batas tidak boleh bisa diketik —
+          // kalau tidak, UI menampilkan angka yang tidak tersimpan.
+          const raw = Number(e.target.value);
+          const n = Number.isFinite(raw) ? Math.floor(raw) : 0;
+          const lo = field.min ?? Number.MIN_SAFE_INTEGER;
+          const hi = field.max ?? Number.MAX_SAFE_INTEGER;
+          onChange(Math.max(lo, Math.min(hi, n)));
+        }}
         className={`${inputCls} w-full sm:w-32`}
       />
     );
@@ -217,7 +226,7 @@ export default function SettingsForm({ guildId, guildName, modules, initial, cha
   const s = dict.settings;
   const [values, setValues] = useState(initial);
   const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState<"idle" | "ok" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "ok" | "error" | "invalid">("idle");
   // Dirty-tracking: hanya key yang benar-benar diubah user yang dikirim saat
   // save. Tanpa ini, default hasil mergeSettings (mis. economy_daily: 100)
   // ikut terkirim dan menimpa perilaku bot (hadiah acak 100–300 bila key
@@ -243,6 +252,18 @@ export default function SettingsForm({ guildId, guildName, modules, initial, cha
     // request berjalan, key baru tetap di `dirty` dan tidak ikut terhapus
     // saat sukses (sebelumnya hilang diam-diam tanpa terkirim).
     const sent = new Set(dirty);
+    // Validasi client: baris levelroles tanpa role pasti ditolak server
+    // (validLevelRoles membuang SELURUH JSON bila satu baris kosong) —
+    // tolak sebelum kirim agar user tidak melihat status hijau palsu.
+    for (const k of sent) {
+      if (k === "leveling_roles") {
+        const rows = parseLevelRoles(String(values[k] ?? "[]"));
+        if (rows.some((r) => !r.role_id)) {
+          setStatus("invalid");
+          return;
+        }
+      }
+    }
     setSaving(true);
     setStatus("idle");
     try {
@@ -353,6 +374,11 @@ export default function SettingsForm({ guildId, guildName, modules, initial, cha
         {status === "error" && (
           <p role="alert" className="text-sm text-red-400">
             {s.saveError}
+          </p>
+        )}
+        {status === "invalid" && (
+          <p role="alert" className="text-sm text-red-400">
+            {s.levelRolesInvalid}
           </p>
         )}
       </div>

@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { createAnnouncement, listAnnouncements } from "@/lib/db";
 import { requireManager } from "@/lib/access";
-import { discordId, intervalMinutes, isoDateTime, str } from "@/lib/validate";
+import { discordId, intervalMinutes, isoDateTime, parseJsonBody, str } from "@/lib/validate";
 
-export const instant = false;
 
 /** Daftar pengumuman terjadwal/berulang (manager). */
 export async function GET(
@@ -28,12 +27,8 @@ export async function POST(
   const { id } = await params;
   const denied = await requireManager(id);
   if (denied) return denied;
-  let body: Record<string, unknown>;
-  try {
-    body = (await req.json()) as Record<string, unknown>;
-  } catch {
-    return NextResponse.json({ error: "invalid_json" }, { status: 400 });
-  }
+  const body = await parseJsonBody(req);
+  if (!body) return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   const channelId = discordId(body.channel_id);
   const message = str(body.message, 2000, true);
   const runAt = isoDateTime(body.run_at);

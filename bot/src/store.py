@@ -47,6 +47,9 @@ def init_db():
         cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
         if "guild_id" not in cols:
             log.info("Migrasi DB: menambah guild_id ke tabel users...")
+            # Idempoten: buang sisa tabel sementara dari migrasi yang terinterupsi
+            # (pola sama seperti migrasi invites_log di bawah).
+            conn.execute("DROP TABLE IF EXISTS users_old")
             conn.execute("ALTER TABLE users RENAME TO users_old")
             conn.execute("""
                 CREATE TABLE users (
@@ -74,6 +77,7 @@ def init_db():
         # Migrasi mutes lama jika belum ada guild_id di PK
         cols_mutes = [r[1] for r in conn.execute("PRAGMA table_info(mutes)").fetchall()]
         if "guild_id" not in cols_mutes:
+            conn.execute("DROP TABLE IF EXISTS mutes_old")
             conn.execute("ALTER TABLE mutes RENAME TO mutes_old")
             conn.execute("""
                 CREATE TABLE mutes (
@@ -269,6 +273,7 @@ def init_db():
         conn.execute("CREATE TABLE IF NOT EXISTS lelang_bid (id INTEGER PRIMARY KEY AUTOINCREMENT, lelang_id INTEGER NOT NULL, user_id INTEGER NOT NULL, jumlah INTEGER NOT NULL, waktu TEXT NOT NULL)")
         conn.execute("CREATE TABLE IF NOT EXISTS achievement (user_id INTEGER NOT NULL, guild_id INTEGER NOT NULL, kode TEXT NOT NULL, tgl TEXT NOT NULL, PRIMARY KEY (user_id, guild_id, kode))")
         conn.execute("CREATE TABLE IF NOT EXISTS autoresponder (guild_id INTEGER NOT NULL, trigger TEXT NOT NULL, respons TEXT NOT NULL, PRIMARY KEY (guild_id, trigger))")
+        conn.execute("CREATE TABLE IF NOT EXISTS custom_commands (guild_id INTEGER NOT NULL, trigger TEXT NOT NULL, response TEXT NOT NULL, author_id INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (guild_id, trigger))")
         conn.execute("CREATE TABLE IF NOT EXISTS birthday (user_id INTEGER NOT NULL, guild_id INTEGER NOT NULL, tgl TEXT NOT NULL, tahun_terakhir TEXT, PRIMARY KEY (user_id, guild_id))")
         conn.execute("CREATE TABLE IF NOT EXISTS sticky (channel_id INTEGER PRIMARY KEY, guild_id INTEGER NOT NULL, teks TEXT NOT NULL, message_id INTEGER)")
         conn.execute("CREATE TABLE IF NOT EXISTS bump (guild_id INTEGER PRIMARY KEY, terakhir TEXT)")

@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { addGiveawayRequest, getGiveawayRequests, latestSnapshot } from "@/lib/db";
 import { requireManager } from "@/lib/access";
-import { discordId, str } from "@/lib/validate";
+import { discordId, parseJsonBody, str } from "@/lib/validate";
 
-export const instant = false;
 
 export async function GET(
   _req: Request,
@@ -29,12 +28,8 @@ export async function POST(
   const { id } = await params;
   const denied = await requireManager(id);
   if (denied) return denied;
-  let body: Record<string, unknown>;
-  try {
-    body = (await req.json()) as Record<string, unknown>;
-  } catch {
-    return NextResponse.json({ error: "invalid_json" }, { status: 400 });
-  }
+  const body = await parseJsonBody(req);
+  if (!body) return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   const channelId = discordId(body.channel_id);
   const prize = str(body.prize, 100, true);
   const winners = body.winners;

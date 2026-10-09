@@ -141,6 +141,7 @@ def _mock_guild(dengan_members: bool = True):
     g.name = "Server Tes"
     g.icon = None
     g.owner.mention = "<@1>"
+    g.owner.display_name = "Pemilik Tes"
     g.created_at = datetime(2024, 1, 15)
     g.member_count = 42
     g.premium_tier = 2
@@ -168,7 +169,8 @@ class TestServerinfoKaya(unittest.TestCase):
         fields = {f.name: f.value for f in embed.fields}
         self.assertIn("999001", fields["ID Server"])
         self.assertEqual(fields["Dibuat"], "15 Jan 2024")
-        self.assertIn("<@1>", fields["Owner"])
+        self.assertEqual(fields["Owner"], "Pemilik Tes")
+        self.assertNotIn("<@", fields["Owner"])  # owner tidak di-mention (anti ping-spam)
         # breakdown manusia/bot
         self.assertIn("40", fields["Member"])
         self.assertIn("manusia", fields["Member"])

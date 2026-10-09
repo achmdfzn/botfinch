@@ -45,11 +45,17 @@ class ServerStats(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
-        await self._update_guild(member.guild)
+        try:
+            await self._update_guild(member.guild)
+        except Exception:
+            log.exception("update_stats gagal (join) untuk guild %s", member.guild.id)
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
-        await self._update_guild(member.guild)
+        try:
+            await self._update_guild(member.guild)
+        except Exception:
+            log.exception("update_stats gagal (leave) untuk guild %s", member.guild.id)
 
     async def _update_guild(self, guild: discord.Guild) -> None:
         s = config.settings

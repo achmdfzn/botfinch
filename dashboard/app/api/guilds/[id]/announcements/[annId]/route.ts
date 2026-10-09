@@ -5,9 +5,8 @@ import {
   type AnnouncementPatch,
 } from "@/lib/db";
 import { requireManager } from "@/lib/access";
-import { discordId, intervalMinutes, isoDateTime, str } from "@/lib/validate";
+import { discordId, intervalMinutes, isoDateTime, parseJsonBody, str } from "@/lib/validate";
 
-export const instant = false;
 
 function invalidId(reqId: string): boolean {
   const n = Number(reqId);
@@ -26,12 +25,8 @@ export async function PUT(
   if (invalidId(annId)) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
-  let body: Record<string, unknown>;
-  try {
-    body = (await req.json()) as Record<string, unknown>;
-  } catch {
-    return NextResponse.json({ error: "invalid_json" }, { status: 400 });
-  }
+  const body = await parseJsonBody(req);
+  if (!body) return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   const patch: AnnouncementPatch = {};
   if ("enabled" in body) {
     if (typeof body.enabled !== "boolean") {

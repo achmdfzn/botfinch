@@ -106,6 +106,12 @@ class ModerasiPlus(commands.Cog):
     ):
         if before.channel == after.channel:
             return  # mute/deafen/stream saja -> abaikan
+        # Log voice ikut toggle "Message Log" (msglog_enabled): admin yang
+        # mematikan logging tidak boleh tetap dibanjiri join/leave voice.
+        from src.cogs.dashboard_sync import modul_aktif
+
+        if not modul_aktif(member.guild.id, "msglog_enabled"):
+            return
         if before.channel is None and after.channel is not None:
             judul, teks = "🔊 Masuk Voice", f"{member.mention} masuk **{after.channel.name}**."
         elif after.channel is None and before.channel is not None:
@@ -115,7 +121,10 @@ class ModerasiPlus(commands.Cog):
                 "🔀 Pindah Voice",
                 f"{member.mention} pindah **{before.channel.name}** → **{after.channel.name}**.",
             )
-        await modlog.log_event(self.bot, judul, teks, discord.Color.blurple())
+        try:
+            await modlog.log_event(self.bot, judul, teks, discord.Color.blurple())
+        except Exception:
+            log.exception("Gagal kirim log voice ke mod-log")
 
     # ---------- 3. /warn-list ----------
 
@@ -204,6 +213,9 @@ class ModerasiPlus(commands.Cog):
             await ctx.send(embed=error_embed("Hanya bisa di server."), ephemeral=True)
             return
         kunci = f"%{kata.strip()}%"
+        # Tampilan dipotong + markdown di-escape: kata user mentah bisa merusak
+        # format embed (atau melebihi batas 256 char judul embed).
+        tampil = discord.utils.escape_markdown(kata.strip()[:60])
         with get_connection() as conn:
             rows = conn.execute(
                 "SELECT trigger, respons FROM autoresponder"
@@ -213,15 +225,15 @@ class ModerasiPlus(commands.Cog):
         if not rows:
             await ctx.send(
                 embed=error_embed(
-                    f"Tidak ketemu FAQ untuk **{kata}**.\n"
+                    f"Tidak ketemu FAQ untuk **{tampil}**.\n"
                     "Buka tiket via `/panel-tiket` kalau butuh bantuan moderator."
                 ),
                 ephemeral=True,
             )
             return
-        embed = finch_embed(f"❓ FAQ: {kata}", warna="info")
+        embed = finch_embed(f"❓ FAQ: {tampil}", warna="info")
         for trigger, respons in rows:
-            embed.add_field(name=f"{trigger}", value=respons[:500], inline=False)
+            embed.add_field(name=trigger[:200], value=respons[:500], inline=False)
         await ctx.send(embed=embed, ephemeral=True)
 
     # ---------- 6. SLA tiket ----------

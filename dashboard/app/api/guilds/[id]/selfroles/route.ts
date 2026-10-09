@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { addSelfRole, deleteSelfRole, getSelfRoles } from "@/lib/db";
 import { botAuthorized, requireManager } from "@/lib/access";
-import { discordId, str } from "@/lib/validate";
+import { discordId, parseJsonBody, str } from "@/lib/validate";
 
-export const instant = false;
 
 export async function GET(
   req: Request,
@@ -25,12 +24,8 @@ export async function POST(
   const { id } = await params;
   const denied = await requireManager(id);
   if (denied) return denied;
-  let body: Record<string, unknown>;
-  try {
-    body = (await req.json()) as Record<string, unknown>;
-  } catch {
-    return NextResponse.json({ error: "invalid_json" }, { status: 400 });
-  }
+  const body = await parseJsonBody(req);
+  if (!body) return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   const messageId = discordId(body.message_id);
   const emoji = str(body.emoji, 64, true);
   const roleId = discordId(body.role_id);
@@ -48,12 +43,8 @@ export async function DELETE(
   const { id } = await params;
   const denied = await requireManager(id);
   if (denied) return denied;
-  let body: Record<string, unknown>;
-  try {
-    body = (await req.json()) as Record<string, unknown>;
-  } catch {
-    return NextResponse.json({ error: "invalid_json" }, { status: 400 });
-  }
+  const body = await parseJsonBody(req);
+  if (!body) return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   const messageId = discordId(body.message_id);
   const emoji = typeof body.emoji === "string" ? body.emoji.trim() : "";
   if (messageId === undefined || emoji.length === 0) {

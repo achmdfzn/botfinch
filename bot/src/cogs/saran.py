@@ -11,6 +11,43 @@ from src.store import get_connection
 from src.utils import modlog
 from src.utils.embeds import base_embed, error_embed, finch_embed
 
+SARAN_COOLDOWN_DETIK = 60
+
+
+def _klaim_cooldown_saran(conn, guild_id: int, user_id: int) -> float:
+    """Klaim cooldown /saran atomik. Return 0 bila boleh, sisa detik bila tidak.
+
+    Pola UPSERT yang sama seperti sosial._cooldown_klaim (duplikasi lokal yang
+    disengaja — import antar-cog dilarang ARCHITECTURE.md).
+    """
+    sekarang = discord.utils.utcnow().isoformat()
+    cur = conn.execute(
+        "INSERT INTO cooldown_aksi (user_id, guild_id, aksi, terakhir) VALUES (?, ?, 'saran', ?) "
+        "ON CONFLICT(user_id, guild_id, aksi) DO UPDATE SET terakhir = excluded.terakhir "
+        "WHERE (strftime('%s', 'now') - strftime('%s', terakhir)) >= ?",
+        (user_id, guild_id, sekarang, SARAN_COOLDOWN_DETIK),
+    )
+    conn.commit()
+    if cur.rowcount == 1:
+        return 0
+    row = conn.execute(
+        "SELECT terakhir FROM cooldown_aksi WHERE user_id = ? AND guild_id = ? AND aksi = 'saran'",
+        (user_id, guild_id),
+    ).fetchone()
+    if not row:
+        return 0
+    try:
+        import datetime as _dt
+
+        dt = _dt.datetime.fromisoformat(row[0])
+    except ValueError:
+        return 0
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=_dt.timezone.utc)
+    sisa = (dt + _dt.timedelta(seconds=SARAN_COOLDOWN_DETIK) - discord.utils.utcnow()).total_seconds()
+    return max(0, sisa)
+
+
 STATUS_WARNA = {
     "menunggu": discord.Color.gold(),
     "diterima": discord.Color.green(),
@@ -103,6 +140,17 @@ class Saran(commands.Cog):
         if channel is None or not isinstance(channel, discord.TextChannel):
             await ctx.send("❌ Channel saran tidak ditemukan.", ephemeral=True)
             return
+
+        # Cooldown anti-spam channel saran (atomik, persisten di DB).
+        if ctx.guild is not None:
+            with get_connection() as conn:
+                sisa = _klaim_cooldown_saran(conn, ctx.guild.id, ctx.author.id)
+            if sisa > 0:
+                await ctx.send(
+                    f"❌ Tunggu **{sisa:.0f}** detik sebelum mengirim saran lagi.",
+                    ephemeral=True,
+                )
+                return
 
         author = ctx.author
         embed = base_embed("💡 Saran Baru", teks)

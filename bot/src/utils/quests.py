@@ -35,11 +35,26 @@ def _baris(conn, guild_id: int, user_id: int, tanggal: str | None = None) -> dic
             "pesan": row[0], "voice_menit": row[1], "daily_ok": row[2],
             "klaim_pesan": row[3], "klaim_voice": row[4], "klaim_daily": row[5],
         }
-    conn.execute(
-        "INSERT INTO quest_progress (user_id, guild_id, tanggal) VALUES (?, ?, ?)",
+    # INSERT OR IGNORE: dua pemicu pertama yang bersamaan (mis. dua pesan
+    # dalam tick yang sama di hari baru) tidak IntegrityError — yang kalah
+    # baca ulang baris milik pemenang.
+    cur = conn.execute(
+        "INSERT OR IGNORE INTO quest_progress (user_id, guild_id, tanggal)"
+        " VALUES (?, ?, ?)",
         (user_id, guild_id, tanggal),
     )
     conn.commit()
+    if cur.rowcount == 0:
+        row = conn.execute(
+            "SELECT pesan, voice_menit, daily_ok, klaim_pesan, klaim_voice, klaim_daily"
+            " FROM quest_progress WHERE user_id = ? AND guild_id = ? AND tanggal = ?",
+            (user_id, guild_id, tanggal),
+        ).fetchone()
+        if row:
+            return {
+                "pesan": row[0], "voice_menit": row[1], "daily_ok": row[2],
+                "klaim_pesan": row[3], "klaim_voice": row[4], "klaim_daily": row[5],
+            }
     return {"pesan": 0, "voice_menit": 0, "daily_ok": 0,
             "klaim_pesan": 0, "klaim_voice": 0, "klaim_daily": 0}
 

@@ -18,6 +18,19 @@ log = logging.getLogger("finch")
 
 _vc_cooldown = {}
 
+
+def buang_cooldown_kedaluwarsa(batas_detik: int = 300) -> int:
+    """Buang entri _vc_cooldown yang lebih tua dari batas_detik. Return jumlah dibuang.
+
+    Tanpa ini, dict _vc_cooldown tumbuh selamanya (satu entri per user yang
+    pernah join lobby sejak bot start). Pure-ish — gampang dites.
+    """
+    batas = time.time() - batas_detik
+    lama = [k for k, t in _vc_cooldown.items() if t < batas]
+    for k in lama:
+        _vc_cooldown.pop(k, None)
+    return len(lama)
+
 class TempVC(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -43,6 +56,8 @@ class TempVC(commands.Cog):
         except Exception:
             log.exception("Gagal baca tabel tempvc")
             return
+        # Batasi memori: entri cooldown kedaluwarsa (>5 menit) dibuang.
+        buang_cooldown_kedaluwarsa()
         for channel_id, guild_id in rows:
             try:
                 guild = self.bot.get_guild(guild_id)
@@ -142,12 +157,22 @@ class TempVC(commands.Cog):
                     except discord.HTTPException:
                         pass
                     return
-                with get_connection() as conn:
-                    conn.execute(
-                        "INSERT INTO tempvc (channel_id, owner_id, guild_id) VALUES (?, ?, ?)",
-                        (vc.id, member.id, guild.id),
-                    )
-                    conn.commit()
+                try:
+                    with get_connection() as conn:
+                        conn.execute(
+                            "INSERT INTO tempvc (channel_id, owner_id, guild_id) VALUES (?, ?, ?)",
+                            (vc.id, member.id, guild.id),
+                        )
+                        conn.commit()
+                except Exception:
+                    # INSERT gagal (DB error) -> channel yatim tak terlacak
+                    # bersih_yatim; hapus langsung biar tidak sampah permanen.
+                    log.exception("TempVC: gagal catat room %s ke DB", vc.id)
+                    try:
+                        await vc.delete(reason="TempVC gagal catat DB")
+                    except discord.HTTPException:
+                        pass
+                    return
             except discord.Forbidden:
                 log.warning("Bot tidak punya izin kelola voice channel.")
             except discord.HTTPException:

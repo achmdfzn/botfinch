@@ -136,9 +136,17 @@ class FinchBot(commands.Bot):
         """Pesan error ramah untuk slash command, jangan traceback ke user."""
         try:
             if isinstance(error, commands.MissingPermissions) or isinstance(error, app_commands.CheckFailure):
-                await interaction.response.send_message(
-                    "❌ Kamu gak punya izin buat perintah ini.", ephemeral=True
-                )
+                # Cek is_done: interaction yang sudah di-ack lalu gagal check
+                # melempar InteractionResponded (bukan HTTPException) bila
+                # response.send_message dipaksa — pakai followup bila perlu.
+                if interaction.response.is_done():
+                    await interaction.followup.send(
+                        "❌ Kamu gak punya izin buat perintah ini.", ephemeral=True
+                    )
+                else:
+                    await interaction.response.send_message(
+                        "❌ Kamu gak punya izin buat perintah ini.", ephemeral=True
+                    )
             else:
                 log.exception("Error slash command: %s", error)
                 if interaction.response.is_done():
@@ -218,7 +226,7 @@ class FinchBot(commands.Bot):
         Termasuk auto-role: `welcome_role_ids` (dashboard, daftar ID dipisah koma)
         diberikan otomatis ke member baru. Ikut toggle `welcome_enabled`.
         """
-        from src.cogs.dashboard_sync import get_guild_setting, parse_id_list
+        from src.cogs.dashboard_sync import get_guild_setting, get_guild_setting_int, parse_id_list
         from src.utils.variabel import substitusi_variabel
 
         gid = member.guild.id
@@ -234,7 +242,7 @@ class FinchBot(commands.Bot):
             except (discord.Forbidden, discord.HTTPException):
                 log.warning("Gagal kasih auto-role %s ke %s", rid, member.id)
         channel_id = (
-            int(get_guild_setting(gid, "welcome_channel_id", "") or 0)
+            get_guild_setting_int(gid, "welcome_channel_id", 0)
             or config.settings.welcome_channel_id
         )
         channel = self.get_channel(channel_id) if channel_id else None

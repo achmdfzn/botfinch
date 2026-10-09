@@ -64,6 +64,45 @@ def _cooldown_klaim(conn, guild_id: int, user_id: int, aksi: str, cooldown_detik
 
 CONFESS_COOLDOWN_DETIK = 5 * 60
 NIKAH_CLAIM_COOLDOWN_DETIK = 20 * 3600
+NIKAH_LAMAR_COOLDOWN_DETIK = 5 * 60
+
+
+def _ekonomi_aktif(guild_id: int) -> bool:
+    """True bila modul ekonomi menyala (default ON bila dashboard belum set)."""
+    from src.cogs.dashboard_sync import modul_aktif
+
+    return modul_aktif(guild_id, "economy_enabled")
+
+
+def _migrasi_nikah_per_guild() -> None:
+    """Migrasi skema nikah: PRIMARY KEY (user_id) -> (user_id, guild_id).
+
+    Skema lama memaksa satu pernikahan global per user, padahal seluruh kode
+    (lamar/cerai/klaim/pasangan) berniat per-server: user yang menikah di
+    server A lalu dilamar di server B membuat INSERT menabrak PK dan command
+    crash IntegrityError. Migrasi idempoten — aman dijalankan tiap startup.
+    """
+    with get_connection() as conn:
+        cols = conn.execute("PRAGMA table_info(nikah)").fetchall()
+        if not cols:
+            return
+        pk = [c for c in cols if c[5] > 0]
+        if len(pk) == 1 and pk[0][1] == "user_id":
+            log.info("Migrasi DB: nikah PRIMARY KEY -> (user_id, guild_id)...")
+            conn.execute("ALTER TABLE nikah RENAME TO nikah_old")
+            conn.execute(
+                "CREATE TABLE nikah ("
+                " user_id INTEGER NOT NULL, guild_id INTEGER NOT NULL,"
+                " pasangan_id INTEGER NOT NULL, sejak TEXT NOT NULL,"
+                " PRIMARY KEY (user_id, guild_id))"
+            )
+            conn.execute(
+                "INSERT INTO nikah (user_id, guild_id, pasangan_id, sejak)"
+                " SELECT user_id, guild_id, pasangan_id, sejak FROM nikah_old"
+            )
+            conn.execute("DROP TABLE nikah_old")
+            conn.commit()
+            log.info("Migrasi DB nikah selesai.")
 
 
 class LamaranView(discord.ui.View):
@@ -91,11 +130,11 @@ class LamaranView(discord.ui.View):
                 "❌ Lamaran ini bukan untukmu.", ephemeral=True
             )
             return
-        # Cek ulang: jangan sampai salah satu sudah menikah duluan (race)
+        # Cek ulang per-server: jangan sampai salah satu sudah menikah duluan (race)
         with get_connection() as conn:
             rows = conn.execute(
-                "SELECT user_id FROM nikah WHERE user_id IN (?, ?)",
-                (self.pelamar_id, self.target_id),
+                "SELECT user_id FROM nikah WHERE guild_id = ? AND user_id IN (?, ?)",
+                (self.guild_id, self.pelamar_id, self.target_id),
             ).fetchall()
             if rows:
                 await self._tutup(interaction, "❌ Lamaran kedaluwarsa — salah satu sudah menikah.")
@@ -136,10 +175,13 @@ class LamaranView(discord.ui.View):
 class CeraiView(discord.ui.View):
     """Konfirmasi cerai (60 detik)."""
 
-    def __init__(self, user_id: int, pasangan_id: int):
+    def __init__(self, user_id: int, pasangan_id: int, guild_id: int = 0):
         super().__init__(timeout=60)
         self.user_id = user_id
         self.pasangan_id = pasangan_id
+        # Default 0 = aman: tidak ada baris nikah ber-guild_id 0, jadi DELETE
+        # tidak menyentuh apa pun bila pemanggil lupa mengisi (kompat mundur).
+        self.guild_id = guild_id
 
     @discord.ui.button(label="Ya, cerai", style=discord.ButtonStyle.danger)
     async def ya(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -149,9 +191,11 @@ class CeraiView(discord.ui.View):
             )
             return
         with get_connection() as conn:
+            # Filter guild_id: tanpa ini, cerai di satu server ikut menghapus
+            # pernikahan pasangan yang sama di server lain.
             conn.execute(
-                "DELETE FROM nikah WHERE user_id IN (?, ?)",
-                (self.user_id, self.pasangan_id),
+                "DELETE FROM nikah WHERE guild_id = ? AND user_id IN (?, ?)",
+                (self.guild_id, self.user_id, self.pasangan_id),
             )
             conn.commit()
         for item in self.children:
@@ -176,6 +220,10 @@ def _sudah_menikah(conn, guild_id: int, user_id: int) -> int | None:
 class Sosial(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        try:
+            _migrasi_nikah_per_guild()
+        except Exception:
+            log.exception("Gagal migrasi skema nikah")
         self.cek_war.start()
         self.cek_voice_roles.start()
 
@@ -269,6 +317,15 @@ class Sosial(commands.Cog):
             if _sudah_menikah(conn, ctx.guild.id, target.id):
                 await ctx.send(embed=error_embed(f"{target.display_name} sudah menikah!"), ephemeral=True)
                 return
+            # Cooldown atomik: lamaran me-mention target — tanpa ini user bisa
+            # spam /nikah lamar dan membanjiri target dengan ping.
+            if not _cooldown_klaim(conn, ctx.guild.id, ctx.author.id, "nikah_lamar", NIKAH_LAMAR_COOLDOWN_DETIK):
+                sisa = _cooldown_sisa(conn, ctx.guild.id, ctx.author.id, "nikah_lamar", NIKAH_LAMAR_COOLDOWN_DETIK)
+                await ctx.send(
+                    embed=error_embed(f"Sabar~ Tunggu **{int(sisa // 60)}m {int(sisa % 60)}d** sebelum melamar lagi."),
+                    ephemeral=True,
+                )
+                return
         embed = finch_embed(
             "💍 Lamaran!",
             f"{ctx.author.mention} melamar {target.mention}!\n\n"
@@ -296,7 +353,7 @@ class Sosial(commands.Cog):
             f"Kamu akan bercerai dengan <@{pasangan}>. Keputusan ini tidak bisa dibatalkan!",
             warna="sosial",
         )
-        await ctx.send(embed=embed, view=CeraiView(ctx.author.id, pasangan), ephemeral=True)
+        await ctx.send(embed=embed, view=CeraiView(ctx.author.id, pasangan, ctx.guild.id), ephemeral=True)
 
     @nikah_grup.command(name="pasangan", description="Lihat info pasanganmu")
     async def pasangan(self, ctx: commands.Context):
@@ -331,6 +388,9 @@ class Sosial(commands.Cog):
         """Klaim bonus nikah: /nikah klaim (cooldown 20 jam)"""
         if ctx.guild is None:
             await ctx.send(embed=error_embed("Hanya bisa di server."), ephemeral=True)
+            return
+        if not _ekonomi_aktif(ctx.guild.id):
+            await ctx.send(embed=error_embed("Modul ekonomi dimatikan oleh admin server ini."), ephemeral=True)
             return
         with get_connection() as conn:
             if not _sudah_menikah(conn, ctx.guild.id, ctx.author.id):
@@ -439,6 +499,9 @@ class Sosial(commands.Cog):
         if ctx.guild is None:
             await ctx.send(embed=error_embed("Hanya bisa di server."), ephemeral=True)
             return
+        if not _ekonomi_aktif(ctx.guild.id):
+            await ctx.send(embed=error_embed("Modul ekonomi dimatikan oleh admin server ini."), ephemeral=True)
+            return
         nama = nama.strip()
         if not (1 <= len(nama) <= 20):
             await ctx.send(embed=error_embed("Nama clan 1-20 karakter."), ephemeral=True)
@@ -472,10 +535,17 @@ class Sosial(commands.Cog):
                 "INSERT INTO clan (guild_id, nama, ketua_id, dibuat) VALUES (?, ?, ?, ?)",
                 (ctx.guild.id, nama, ctx.author.id, discord.utils.utcnow().isoformat()),
             )
-            conn.execute(
-                "INSERT INTO clan_member (clan_id, user_id, joined) VALUES (?, ?, ?)",
+            # INSERT OR IGNORE + rowcount: dua /clan buat konkuren dari user
+            # yang sama tidak IntegrityError (clan_member PK = user_id) — yang
+            # kalah race di-rollback total (koin & baris clan kembali).
+            cur_m = conn.execute(
+                "INSERT OR IGNORE INTO clan_member (clan_id, user_id, joined) VALUES (?, ?, ?)",
                 (cur.lastrowid, ctx.author.id, discord.utils.utcnow().isoformat()),
             )
+            if cur_m.rowcount == 0:
+                conn.rollback()
+                await ctx.send(embed=error_embed("Kamu sudah punya clan! Keluar dulu via `/clan keluar`."), ephemeral=True)
+                return
             conn.commit()
         await ctx.send(
             embed=sukses_embed("Clan Dibuat!", f"**{nama}** resmi berdiri!\nKamu ketuanya. Ajak temanmu via `/clan gabung {nama}`.")
@@ -758,26 +828,38 @@ class Sosial(commands.Cog):
         hadiah = config.settings.clan_war_hadiah
         per_orang = hadiah // max(1, len(anggota))
         dibayar = 0
-        with get_connection() as conn:
-            for uid in anggota:
-                try:
-                    eko.tambah_koin(conn, guild_id, uid, per_orang)
-                    dibayar += 1
-                except Exception:
-                    log.exception("Clan war: gagal bayar %s", uid)
-        log.info(
-            "Clan war guild %s dimenangkan %s (%d level), dibayar %d/%d anggota.",
-            guild_id, nama_menang, total_menang, dibayar, len(anggota),
-        )
+        # Hormat toggle ekonomi: bila dimatikan, umumkan pemenang tanpa payout.
+        if _ekonomi_aktif(guild_id):
+            with get_connection() as conn:
+                for uid in anggota:
+                    try:
+                        eko.tambah_koin(conn, guild_id, uid, per_orang)
+                        dibayar += 1
+                    except Exception:
+                        log.exception("Clan war: gagal bayar %s", uid)
+            log.info(
+                "Clan war guild %s dimenangkan %s (%d level), dibayar %d/%d anggota.",
+                guild_id, nama_menang, total_menang, dibayar, len(anggota),
+            )
+        else:
+            log.info(
+                "Clan war guild %s dimenangkan %s (%d level) — tanpa hadiah (ekonomi mati).",
+                guild_id, nama_menang, total_menang,
+            )
         guild = self.bot.get_guild(guild_id)
         ch = guild.system_channel if guild else None
         if ch is None:
             return
         baris = "\n".join(f"**{i+1}.** {nama} — {total} level" for i, (total, _c, nama, _a) in enumerate(skor))
         embed = finch_embed("⚔️ Clan War Berakhir!", baris, warna="sosial")
+        hadiah_txt = (
+            f"Tiap anggota +**{koin_text(per_orang)}**!"
+            if dibayar
+            else "_Tanpa hadiah (modul ekonomi dimatikan)._"
+        )
         embed.add_field(
             name="Pemenang",
-            value=f"**{nama_menang}**\nTiap anggota +**{koin_text(per_orang)}**!",
+            value=f"**{nama_menang}**\n{hadiah_txt}",
             inline=False,
         )
         try:
@@ -826,6 +908,9 @@ class Sosial(commands.Cog):
         if ctx.guild is None:
             await ctx.send(embed=error_embed("Hanya bisa di server."), ephemeral=True)
             return
+        if not _ekonomi_aktif(ctx.guild.id):
+            await ctx.send(embed=error_embed("Modul ekonomi dimatikan oleh admin server ini."), ephemeral=True)
+            return
         id = id.strip().lower()
         if id not in GELAR_TOKO:
             await ctx.send(embed=error_embed("ID gelar tidak dikenal. Lihat `/gelar`."), ephemeral=True)
@@ -853,10 +938,17 @@ class Sosial(commands.Cog):
                     ephemeral=True,
                 )
                 return
-            conn.execute(
-                "INSERT INTO gelar_milik (user_id, guild_id, gelar_id) VALUES (?, ?, ?)",
+            # INSERT OR IGNORE + rowcount: dua /gelar beli konkuren yang
+            # sama-sama lolos cek `punya` tidak IntegrityError — yang kalah
+            # race di-rollback (koin kembali) dan dianggap sudah punya.
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO gelar_milik (user_id, guild_id, gelar_id) VALUES (?, ?, ?)",
                 (ctx.author.id, ctx.guild.id, id),
             )
+            if cur.rowcount == 0:
+                conn.rollback()
+                await ctx.send(embed=error_embed("Kamu sudah punya gelar ini!"), ephemeral=True)
+                return
             conn.commit()
         await ctx.send(embed=sukses_embed("Gelar Dibeli!", f"Kamu dapat gelar **{info['nama']}**!\nPasang via `/gelar pasang {id}`."))
 

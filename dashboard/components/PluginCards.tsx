@@ -2,16 +2,21 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import type { PluginGroup } from "@/lib/plugins";
+import { useRouter } from "next/navigation";
+import type { PluginGroup, PluginTab } from "@/lib/plugins";
+import PluginTabs, { usePluginTabQuery } from "./PluginTabs";
 import { fmt } from "@/lib/i18n/client";
 
+export type { PluginTab };
+
 /**
- * Katalog plugin ala MEE6: tab kategori (Semua Plugin | Esensial |
- * Engagement & Fun | Moderasi | Utilitas) + grid kartu. Tiap kartu:
- * tile ikon, nama, deskripsi, badge status Aktif/Nonaktif, tombol
- * "Aktifkan"/"Nonaktifkan" yang men-toggle via PUT /api/guilds/[id]/settings
- * (optimistik + state error), dan tautan Konfigurasi bila plugin punya
- * halaman konfigurasi.
+ * Katalog plugin ala MEE6: tab kategori (Semua | Esensial | Engagement & Fun |
+ * Moderasi | Utilitas, state di query ?tab= agar bisa di-share) + grid kartu.
+ * Tiap kartu: tile ikon (maks 1 emoji), nama, deskripsi orisinal Finch, badge
+ * status, tombol "Aktifkan"/"Nonaktifkan" yang men-toggle via
+ * PUT /api/guilds/[id]/settings (optimistik + rollback, alur ModuleToggles),
+ * dan tautan Konfigurasi bila plugin punya halaman konfigurasi.
+ * Plugin tanpa toggleKey tampil "selalu aktif" tanpa tombol toggle.
  */
 export interface PluginCardData {
   id: string;
@@ -25,8 +30,6 @@ export interface PluginCardData {
   desc: string;
 }
 
-export type PluginTab = "all" | PluginGroup;
-
 interface Labels {
   tabAll: string;
   enable: string;
@@ -38,6 +41,10 @@ interface Labels {
   toggleError: string;
   toggleOn: string;
   toggleOff: string;
+  tablistLabel: string;
+  alwaysOn: string;
+  pluginCount: string;
+  tabDesc: Record<PluginTab, string>;
 }
 
 interface Props {
@@ -50,13 +57,21 @@ interface Props {
   labels: Labels;
 }
 
-const TABS: PluginTab[] = ["all", "essentials", "engagement", "moderation", "utilities"];
-
-export default function PluginCards({ guildId, plugins, initial, initialTab, groupTitles, labels }: Props) {
-  const [tab, setTab] = useState<PluginTab>(initialTab);
+export default function PluginCards({
+  guildId,
+  plugins,
+  initial,
+  initialTab,
+  groupTitles,
+  labels,
+}: Props) {
+  const [tab, setTab] = usePluginTabQuery(initialTab);
   const [values, setValues] = useState<Record<string, boolean>>(initial);
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<boolean>(false);
+  const router = useRouter();
+  // Guard klik ganda: abaikan toggle yang request-nya masih berjalan
+  // (optimistik + rollback; race dua PUT bisa membalik rollback).
   const inflight = useRef(new Set<string>());
 
   async function toggle(key: string, v: boolean) {
@@ -72,6 +87,9 @@ export default function PluginCards({ guildId, plugins, initial, initialTab, gro
         body: JSON.stringify({ [key]: v }),
       });
       if (!res.ok) throw new Error("http");
+      // Segarkan data server (mis. hitungan "N dari M plugin aktif" di header)
+      // — state kartu sudah optimistik, jadi refresh aman.
+      router.refresh();
     } catch {
       setValues((prev) => ({ ...prev, [key]: !v }));
       setError(true);
@@ -86,28 +104,16 @@ export default function PluginCards({ guildId, plugins, initial, initialTab, gro
 
   return (
     <div>
-      {/* Tab kategori: scroll horizontal aman di HP */}
-      <div className="-mx-4 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0">
-        <div className="mb-6 flex min-w-max gap-2 sm:min-w-0 sm:flex-wrap">
-          {TABS.map((t) => {
-            const active = tab === t;
-            return (
-              <button
-                key={t}
-                type="button"
-                aria-pressed={active}
-                onClick={() => setTab(t)}
-                className={`inline-flex min-h-[44px] items-center rounded-full border px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
-                  active
-                    ? "border-brand bg-brand/15 text-fg"
-                    : "border-edge bg-panel text-muted hover:border-brand/50 hover:text-fg"
-                }`}
-              >
-                {tabLabel(t)}
-              </button>
-            );
-          })}
-        </div>
+      <PluginTabs tab={tab} onChange={setTab} tabLabel={tabLabel} tablistLabel={labels.tablistLabel} />
+
+      {/* Judul kategori ala referensi: nama tab + jumlah + deskripsi singkat */}
+      <div className="mb-5 mt-6">
+        <h2 className="inline-block border-b-2 border-brand pb-1 text-lg font-bold text-fg">
+          {tabLabel(tab)}
+        </h2>
+        <p className="mt-2 text-sm text-muted">
+          {fmt(labels.pluginCount, { n: visible.length })} · {labels.tabDesc[tab]}
+        </p>
       </div>
 
       {error && (
@@ -119,10 +125,16 @@ export default function PluginCards({ guildId, plugins, initial, initialTab, gro
         </p>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div
+        role="tabpanel"
+        id="plugin-tabpanel"
+        aria-labelledby={`plugin-tab-${tab}`}
+        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+      >
         {visible.map((p) => {
-          const on = p.toggleKey ? (values[p.toggleKey] ?? false) : true;
-          const busy = p.toggleKey !== null && saving === p.toggleKey;
+          const hasToggle = p.toggleKey !== null;
+          const on = hasToggle ? (values[p.toggleKey as string] ?? false) : true;
+          const busy = hasToggle && saving === p.toggleKey;
           const configureHref =
             p.configure === null
               ? null
@@ -146,10 +158,10 @@ export default function PluginCards({ guildId, plugins, initial, initialTab, gro
                     on ? "bg-brand/15 text-brand" : "bg-edge text-muted"
                   }`}
                 >
-                  {on ? labels.statusActive : labels.statusInactive}
+                  {on ? (hasToggle ? labels.statusActive : labels.alwaysOn) : labels.statusInactive}
                 </span>
               </div>
-              <h2 className="mt-4 text-base font-semibold text-fg">{p.name}</h2>
+              <h3 className="mt-4 text-base font-semibold text-fg">{p.name}</h3>
               <p className="mt-1 flex-1 text-sm text-muted">{p.desc}</p>
               <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-edge pt-4">
                 {configureHref && (
@@ -163,7 +175,7 @@ export default function PluginCards({ guildId, plugins, initial, initialTab, gro
                     </span>
                   </Link>
                 )}
-                {p.toggleKey && (
+                {hasToggle && (
                   <>
                     {busy && <span className="text-xs text-muted">{labels.saving}</span>}
                     <button

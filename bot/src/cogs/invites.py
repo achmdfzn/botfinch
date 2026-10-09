@@ -93,9 +93,12 @@ class Invites(commands.Cog):
         if inviter_id and not rejoin:
             dibuka = []
             try:
+                from src.cogs.dashboard_sync import modul_aktif
+
                 with get_connection() as conn:
                     koin = config.settings.invite_koin
-                    if koin > 0:
+                    # Hormat toggle ekonomi: achievement tetap dicek, koin tidak dibayar.
+                    if koin > 0 and modul_aktif(guild.id, "economy_enabled"):
                         eko.tambah_koin(conn, guild.id, inviter_id, koin)
                     jumlah = conn.execute(
                         "SELECT COUNT(*) FROM invites_log WHERE inviter_id = ? AND guild_id = ?",

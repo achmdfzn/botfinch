@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { addAutoResponse, deleteAutoResponse, deleteAutoResponseByTrigger, getAutoResponses } from "@/lib/db";
 import { botAuthorized, requireManager } from "@/lib/access";
-import { str } from "@/lib/validate";
+import { parseJsonBody, str } from "@/lib/validate";
 
-export const instant = false;
 
 export async function GET(
   req: Request,
@@ -24,12 +23,8 @@ export async function POST(
   const { id } = await params;
   const denied = await requireManager(id);
   if (denied) return denied;
-  let body: Record<string, unknown>;
-  try {
-    body = (await req.json()) as Record<string, unknown>;
-  } catch {
-    return NextResponse.json({ error: "invalid_json" }, { status: 400 });
-  }
+  const body = await parseJsonBody(req);
+  if (!body) return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   const trigger = str(body.trigger, 100, true)?.toLowerCase();
   const response = str(body.response, 500, true);
   if (trigger === undefined || response === undefined) {

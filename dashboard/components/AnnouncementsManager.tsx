@@ -100,6 +100,13 @@ export default function AnnouncementsManager({
 
   async function add() {
     if (!canAdd) return;
+    // Sekali kirim: run_at harus di masa depan. Pengecekan Date.now() di sini
+    // (event handler), bukan di canAdd — react-hooks/purity melarang nilai
+    // tak murni saat render. Tanggal lampau ditolak dengan pesan error.
+    if (mode !== "berulang" && (Number.isNaN(Date.parse(runAt)) || Date.parse(runAt) <= Date.now())) {
+      setStatus("error");
+      return;
+    }
     setStatus("idle");
     setSaving(true);
     try {
@@ -170,8 +177,13 @@ export default function AnnouncementsManager({
   async function remove(a: Announcement) {
     const preview = `${a.message.slice(0, 40)}${a.message.length > 40 ? "..." : ""}`;
     if (!confirm(fmt(g.confirmDelete, { preview }))) return;
-    const res = await fetch(`/api/guilds/${guildId}/announcements/${a.id}`, { method: "DELETE" });
-    if (res.ok) reload();
+    try {
+      const res = await fetch(`/api/guilds/${guildId}/announcements/${a.id}`, { method: "DELETE" });
+      if (res.ok) reload();
+      else setStatus("error");
+    } catch {
+      setStatus("error");
+    }
   }
 
   return (

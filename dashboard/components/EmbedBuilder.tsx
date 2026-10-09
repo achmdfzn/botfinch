@@ -216,8 +216,8 @@ export default function EmbedBuilder({
         </div>
 
         <div className="mt-3">
-          <span className="text-xs font-medium text-muted">{g.colorLabel}</span>
-          <div className="mt-1 flex flex-wrap items-center gap-2">
+          <span id="eb-color-label" className="text-xs font-medium text-muted">{g.colorLabel}</span>
+          <div className="mt-1 flex flex-wrap items-center gap-2" role="group" aria-labelledby="eb-color-label">
             {PRESETS.map((p) => {
               const name = g.colorNames[p.key];
               const selected = color.toUpperCase() === p.hex.toUpperCase();

@@ -22,6 +22,7 @@ from src.bot import MENTIONS_PENGUMUMAN
 from src.store import DB_PATH, get_connection
 from src.utils.embeds import error_embed, finch_embed, get_progress_bar, sukses_embed
 from src.utils.filters import parse_durasi
+from src.utils.teks import nama_member_atau_id
 
 log = logging.getLogger("finch")
 
@@ -351,8 +352,12 @@ class Utilitas(commands.Cog):
         embed = finch_embed("🎙️ Top 10 Voice", "Menit terlama di voice channel", warna="info")
         for i, (uid, menit) in enumerate(rows):
             bar = get_progress_bar(menit, teratas)
+            # Nama sebagai teks, BUKAN <@uid>: mention di field embed ikut
+            # nge-ping (users=True) — /grafik voice tak perlu membangunkan
+            # 10 orang setiap dijalankan.
+            nama = nama_member_atau_id(ctx.guild, uid)
             embed.add_field(
-                name=f"#{i + 1} · <@{uid}>", value=f"`{bar}` {menit} mnt", inline=True
+                name=f"#{i + 1} · {nama}", value=f"`{bar}` {menit} mnt", inline=True
             )
         await ctx.send(embed=embed)
 
@@ -524,6 +529,9 @@ class Utilitas(commands.Cog):
         channel = self.bot.get_channel(cid)
         if channel is None:
             log.warning("Event rutin #%s: channel %s hilang.", rid, cid)
+            return
+        if not isinstance(channel, discord.abc.Messageable):
+            log.warning("Event rutin #%s: channel %s bukan channel teks.", rid, cid)
             return
         embed = finch_embed(f"🔁 {nama}", deskripsi or "Event rutin dimulai!", warna="event")
         try:

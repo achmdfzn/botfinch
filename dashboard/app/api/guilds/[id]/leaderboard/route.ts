@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { latestSnapshot } from "@/lib/db";
 import { requireManager } from "@/lib/access";
 
-export const instant = false;
 
 export async function GET(
   _req: Request,

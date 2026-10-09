@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { ackGiveawayRequest, dbConfigured } from "@/lib/db";
 import { botAuthorized } from "@/lib/access";
-import { optStr } from "@/lib/validate";
+import { optStr, parseJsonBody } from "@/lib/validate";
 
-export const instant = false;
 
 /** Bot menandai permintaan giveaway sudah diproses (done) atau gagal (failed). */
 export async function POST(
@@ -21,12 +20,7 @@ export async function POST(
   if (!Number.isInteger(rid) || rid <= 0) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
-  let body: Record<string, unknown> = {};
-  try {
-    body = (await req.json()) as Record<string, unknown>;
-  } catch {
-    /* biarkan default */
-  }
+  const body = (await parseJsonBody(req)) ?? {};
   // Konvensi ketat, sama seperti ack embed-requests: status harus eksplisit
   // "done"/"failed". Nilai lain/typo ditolak 400 (bukan diam-diam "done").
   const status = body.status;

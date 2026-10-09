@@ -3,7 +3,6 @@ import { latestSnapshot } from "@/lib/db";
 import { fetchUserGuilds, getSessionSafe } from "@/lib/access";
 import { canManage } from "@/lib/discord";
 
-export const instant = false;
 
 /**
  * Status ringan untuk auto-refresh daftar server di /dashboard.

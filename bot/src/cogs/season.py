@@ -31,11 +31,21 @@ def _pastikan_state(conn, guild_id: int) -> tuple[int, str]:
     berakhir = (
         discord.utils.utcnow() + datetime.timedelta(days=config.settings.season_hari)
     ).isoformat()
-    conn.execute(
-        "INSERT INTO season_state (guild_id, season, berakhir) VALUES (?, ?, ?)",
+    # INSERT OR IGNORE: dua pemanggil pertama yang bersamaan tidak
+    # IntegrityError — yang kalah baca ulang baris milik pemenang.
+    cur = conn.execute(
+        "INSERT OR IGNORE INTO season_state (guild_id, season, berakhir)"
+        " VALUES (?, ?, ?)",
         (guild_id, 1, berakhir),
     )
     conn.commit()
+    if cur.rowcount == 0:
+        row = conn.execute(
+            "SELECT season, berakhir FROM season_state WHERE guild_id = ?",
+            (guild_id,),
+        ).fetchone()
+        if row:
+            return row[0], row[1]
     return 1, berakhir
 
 

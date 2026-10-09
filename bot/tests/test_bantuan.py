@@ -128,7 +128,7 @@ def test_bagi_ke_field_hormati_batas():
 
 
 # ---------------------------------------------------------------------------
-# Builder dengan tree ASLI (semua 41 cog di-load)
+# Builder dengan tree ASLI (semua 44 cog di-load)
 # ---------------------------------------------------------------------------
 
 
@@ -174,7 +174,7 @@ def _semua_class_cog():
 
 def test_semua_41_cog_terpetakan(data_nyata):
     semua = _semua_class_cog()
-    assert len(semua) == 41, f"jumlah cog berubah: {sorted(semua)}"
+    assert len(semua) == 44, f"jumlah cog berubah: {sorted(semua)}"
     hilang = semua - set(COG_KE_KATEGORI)
     assert not hilang, f"cog belum terpetakan: {sorted(hilang)}"
 

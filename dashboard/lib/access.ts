@@ -73,12 +73,3 @@ export async function requireManager(guildId: string): Promise<NextResponse | nu
   }
   return null;
 }
-
-/** Pastikan ada sesi login (untuk halaman publik seperti leaderboard). */
-export async function requireSession(): Promise<NextResponse | null> {
-  const session = await getSessionSafe();
-  if (!session) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
-  return null;
-}

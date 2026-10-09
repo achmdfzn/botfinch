@@ -212,10 +212,13 @@ function EntryLink({
   entry,
   pathname,
   onNavigate,
+  sub = false,
 }: {
   entry: SidebarEntry;
   pathname: string;
   onNavigate?: () => void;
+  /** Item di dalam seksi: beri penanda titik kecil agar hierarki terbaca. */
+  sub?: boolean;
 }) {
   const active = isActivePath(pathname, entry.href);
   return (
@@ -223,17 +226,26 @@ function EntryLink({
       href={entry.href}
       aria-current={active ? "page" : undefined}
       onClick={onNavigate}
-      className={`relative flex min-h-[44px] items-center gap-3 rounded-lg py-2.5 pl-4 pr-3 text-sm font-medium focus-visible:outline-2 focus-visible:outline-brand ${
-        active ? "bg-edge text-fg" : "text-muted hover:bg-edge hover:text-fg"
+      className={`relative flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-brand ${
+        active ? "bg-edge text-fg" : "text-muted hover:bg-edge/70 hover:text-fg"
       }`}
     >
       <span
         aria-hidden="true"
-        className={`absolute left-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-full bg-brand ${
+        className={`absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-full bg-brand transition-opacity ${
           active ? "opacity-100" : "opacity-0"
         }`}
       />
-      <SidebarIcon id={entry.icon} />
+      {sub && (
+        <span
+          aria-hidden="true"
+          className="h-1 w-1 shrink-0 rounded-full bg-muted/70"
+        />
+      )}
+      <SidebarIcon
+        id={entry.icon}
+        className={sub ? "h-[18px] w-[18px] shrink-0" : "h-5 w-5 shrink-0"}
+      />
       <span className="truncate">{entry.label}</span>
     </Link>
   );
@@ -292,9 +304,9 @@ export default function Sidebar({
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header server ala MEE6: ikon + nama + chevron pembuka menu */}
-      <div ref={menuWrapRef} className="relative border-b border-edge px-3 py-3">
-        <div className="flex items-center gap-2">
+      {/* Header server: kartu ikon + nama + chevron pembuka menu */}
+      <div ref={menuWrapRef} className="relative px-3 pt-3">
+        <div className="flex items-center gap-2 rounded-xl border border-edge bg-ink/50 p-1.5">
           {guildIconUrl ? (
             <Image
               // unoptimized: ikon langsung dari CDN Discord, tanpa lewat
@@ -359,7 +371,7 @@ export default function Sidebar({
         )}
       </div>
 
-      <nav aria-label={sectionLabel} className="min-h-0 flex-1 overflow-y-auto p-2">
+      <nav aria-label={sectionLabel} className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-1">
         <ul className="flex flex-col gap-1">
           {topItems.map((entry) => (
             <li key={entryKey(entry)}>
@@ -372,7 +384,7 @@ export default function Sidebar({
           const isCollapsed = collapsed[section.id] === true;
           const sectionListId = `sidebar-section-${section.id}`;
           return (
-            <div key={section.id} className="mt-3">
+            <div key={section.id} className="mt-4">
               <button
                 type="button"
                 aria-expanded={!isCollapsed}
@@ -403,7 +415,7 @@ export default function Sidebar({
                 <ul id={sectionListId} className="flex flex-col gap-1">
                   {section.items.map((entry) => (
                     <li key={entryKey(entry)}>
-                      <EntryLink entry={entry} pathname={pathname} onNavigate={onNavigate} />
+                      <EntryLink entry={entry} pathname={pathname} onNavigate={onNavigate} sub />
                     </li>
                   ))}
                 </ul>
@@ -412,7 +424,7 @@ export default function Sidebar({
           );
         })}
 
-        <ul className="mt-3 flex flex-col gap-1 border-t border-edge pt-3">
+        <ul className="mt-4 flex flex-col gap-1 border-t border-edge pt-4">
           {bottomItems.map((entry) => (
             <li key={entryKey(entry)}>
               <EntryLink entry={entry} pathname={pathname} onNavigate={onNavigate} />
