@@ -39,13 +39,15 @@ interface Props {
   plugins: PluginCardData[];
   initial: Record<string, boolean>;
   groupTitles: Record<PluginGroup, string>;
+  heading: string;
   labels: Labels;
 }
 
 type TabKey = "all" | PluginGroup;
 const TABS: TabKey[] = ["all", "essentials", "engagement", "moderation", "utilities"];
+const GROUPS: PluginGroup[] = ["essentials", "engagement", "moderation", "utilities"];
 
-export default function PluginBrowser({ guildId, plugins, initial, groupTitles, labels }: Props) {
+export default function PluginBrowser({ guildId, plugins, initial, groupTitles, heading, labels }: Props) {
   const [active, setActive] = useState<TabKey>("all");
   const [values, setValues] = useState<Record<string, boolean>>(initial);
   const [saving, setSaving] = useState<string | null>(null);
@@ -83,16 +85,91 @@ export default function PluginBrowser({ guildId, plugins, initial, groupTitles, 
     }
   }
 
-  const visible = active === "all" ? plugins : plugins.filter((p) => p.group === active);
+  const visibleGroups: PluginGroup[] = active === "all" ? GROUPS : [active];
 
   function countFor(t: TabKey): number {
     return t === "all" ? plugins.length : plugins.filter((p) => p.group === t).length;
   }
 
+  function renderCard(p: PluginCardData) {
+    const on = p.toggleKey ? (values[p.toggleKey] ?? false) : true;
+    const configureHref =
+      p.configure === null ? null : `/dashboard/${guildId}${p.configure ? `/${p.configure}` : ""}`;
+    return (
+      <article
+        key={p.id}
+        className="flex flex-col justify-between gap-4 rounded-xl border border-edge bg-panel p-4 sm:p-5"
+      >
+        <div className="flex items-start gap-3">
+          <span
+            aria-hidden="true"
+            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-2xl ${
+              on ? "bg-brand/10" : "bg-edge"
+            }`}
+          >
+            {p.emoji}
+          </span>
+          <div className="min-w-0 flex-1">
+            <h3 className="font-semibold text-fg">{p.name}</h3>
+            <p className="mt-1 line-clamp-2 text-sm text-muted" title={p.desc}>
+              {p.desc}
+            </p>
+          </div>
+          {p.toggleKey && (
+            <span
+              aria-hidden="true"
+              className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                on
+                  ? "border-green-500/30 bg-green-500/10 text-green-400"
+                  : "border-edge bg-ink text-muted"
+              }`}
+            >
+              {on ? labels.statusActive : labels.statusInactive}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          {configureHref ? (
+            <Link
+              href={configureHref}
+              className="inline-flex min-h-[44px] items-center text-sm font-medium text-brand hover:underline focus-visible:outline-2 focus-visible:outline-brand"
+            >
+              {labels.configure} →
+            </Link>
+          ) : (
+            <span />
+          )}
+          {p.toggleKey && (
+            <div className="flex shrink-0 items-center gap-2">
+              {saving === p.toggleKey && (
+                <span className="text-xs text-muted">{labels.saving}</span>
+              )}
+              <button
+                type="button"
+                aria-pressed={on}
+                aria-label={fmt(labels[on ? "toggleOff" : "toggleOn"], { title: p.name })}
+                disabled={saving === p.toggleKey}
+                onClick={() => toggle(p.toggleKey as string, !on)}
+                className={
+                  on
+                    ? "inline-flex min-h-[44px] items-center justify-center rounded-lg border border-edge px-4 text-sm font-medium text-muted hover:border-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-50"
+                    : "inline-flex min-h-[44px] items-center justify-center rounded-lg bg-brand px-4 text-sm font-semibold text-ink hover:bg-brand-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-50"
+                }
+              >
+                {on ? labels.disable : `+ ${labels.enable}`}
+              </button>
+            </div>
+          )}
+        </div>
+      </article>
+    );
+  }
+
   return (
     <div>
+      <h1 className="text-xl font-bold tracking-tight text-fg sm:text-2xl">{heading}</h1>
       {error && (
-        <p role="alert" className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+        <p role="alert" className="mb-4 mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
           {labels.toggleError}
         </p>
       )}
@@ -100,7 +177,7 @@ export default function PluginBrowser({ guildId, plugins, initial, groupTitles, 
       <div
         role="tablist"
         aria-label={labels.tabAll}
-        className="flex gap-1 overflow-x-auto border-b border-edge"
+        className="mt-4 flex gap-1 overflow-x-auto border-b border-edge"
       >
         {TABS.map((t, i) => (
           <button
@@ -138,81 +215,16 @@ export default function PluginBrowser({ guildId, plugins, initial, groupTitles, 
         aria-labelledby={`plugins-tab-${active}`}
         className="pt-6"
       >
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          {visible.map((p) => {
-            const on = p.toggleKey ? (values[p.toggleKey] ?? false) : true;
-            const configureHref =
-              p.configure === null ? null : `/dashboard/${guildId}${p.configure ? `/${p.configure}` : ""}`;
-            return (
-              <article
-                key={p.id}
-                className="flex flex-col justify-between gap-4 rounded-xl border border-edge bg-panel p-4 sm:p-5"
-              >
-                <div className="flex items-start gap-3">
-                  <span
-                    aria-hidden="true"
-                    className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-2xl ${
-                      on ? "bg-brand/10" : "bg-edge"
-                    }`}
-                  >
-                    {p.emoji}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-semibold text-fg">{p.name}</h3>
-                    <p className="mt-1 line-clamp-2 text-sm text-muted" title={p.desc}>
-                      {p.desc}
-                    </p>
-                  </div>
-                  {p.toggleKey && (
-                    <span
-                      aria-hidden="true"
-                      className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${
-                        on
-                          ? "border-green-500/30 bg-green-500/10 text-green-400"
-                          : "border-edge bg-ink text-muted"
-                      }`}
-                    >
-                      {on ? labels.statusActive : labels.statusInactive}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  {configureHref ? (
-                    <Link
-                      href={configureHref}
-                      className="inline-flex min-h-[44px] items-center text-sm font-medium text-brand hover:underline focus-visible:outline-2 focus-visible:outline-brand"
-                    >
-                      {labels.configure} →
-                    </Link>
-                  ) : (
-                    <span />
-                  )}
-                  {p.toggleKey && (
-                    <div className="flex shrink-0 items-center gap-2">
-                      {saving === p.toggleKey && (
-                        <span className="text-xs text-muted">{labels.saving}</span>
-                      )}
-                      <button
-                        type="button"
-                        aria-pressed={on}
-                        aria-label={fmt(labels[on ? "toggleOff" : "toggleOn"], { title: p.name })}
-                        disabled={saving === p.toggleKey}
-                        onClick={() => toggle(p.toggleKey as string, !on)}
-                        className={
-                          on
-                            ? "inline-flex min-h-[44px] items-center justify-center rounded-lg border border-edge px-4 text-sm font-medium text-muted hover:border-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-50"
-                            : "inline-flex min-h-[44px] items-center justify-center rounded-lg bg-brand px-4 text-sm font-semibold text-ink hover:bg-brand-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-50"
-                        }
-                      >
-                        {on ? labels.disable : `+ ${labels.enable}`}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </article>
-            );
-          })}
-        </div>
+        {visibleGroups.map((g) => (
+          <section key={g} aria-label={groupTitles[g]} className="mb-8 last:mb-0">
+            <h2 className="mb-3 border-b border-edge pb-2 text-base font-semibold text-fg">
+              {groupTitles[g]}
+            </h2>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              {plugins.filter((p) => p.group === g).map(renderCard)}
+            </div>
+          </section>
+        ))}
       </div>
     </div>
   );

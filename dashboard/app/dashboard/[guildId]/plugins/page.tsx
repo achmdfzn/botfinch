@@ -4,7 +4,6 @@ import { connection } from "next/server";
 import type { Metadata } from "next";
 import SiteHeader from "@/components/SiteHeader";
 import EmptyState from "@/components/EmptyState";
-import PageHeader from "@/components/PageHeader";
 import PluginBrowser, { type PluginCardData } from "@/components/PluginBrowser";
 import { auth } from "@/auth";
 import { canManage, fetchUserGuilds } from "@/lib/discord";
@@ -39,12 +38,10 @@ export default async function GuildPlugins({ params }: { params: Promise<{ guild
     );
   }
 
-  let guildName = guildId;
   try {
     const guilds = await fetchUserGuilds(session.accessToken);
     const mine = guilds.find((g) => g.id === guildId && canManage(g));
     if (!mine) notFound();
-    guildName = mine.name;
   } catch {
     return (
       <div>
@@ -89,18 +86,12 @@ export default async function GuildPlugins({ params }: { params: Promise<{ guild
     <div>
       <SiteHeader />
       <main className="mx-auto max-w-7xl px-4 py-10">
-        <PageHeader
-          title={guildName}
-          description={pl.subtitle}
-          actions={
-            <Link
-              href="/dashboard"
-              className="inline-flex min-h-[44px] items-center text-sm text-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-brand"
-            >
-              {gc.backToGuilds}
-            </Link>
-          }
-        />
+        <Link
+          href="/dashboard"
+          className="mb-6 inline-flex min-h-[44px] items-center text-sm text-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-brand"
+        >
+          {gc.backToGuilds}
+        </Link>
         <PluginBrowser
           guildId={guildId}
           plugins={plugins}
@@ -111,6 +102,7 @@ export default async function GuildPlugins({ params }: { params: Promise<{ guild
             moderation: pl.groupModeration,
             utilities: pl.groupUtilities,
           }}
+          heading={pl.metaTitle}
           labels={{
             tabAll: pl.tabAll,
             configure: pl.configure,

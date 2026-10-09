@@ -5,14 +5,11 @@ import { connection } from "next/server";
 import type { Metadata } from "next";
 import SiteHeader from "@/components/SiteHeader";
 import EmptyState from "@/components/EmptyState";
-import SettingsForm from "@/components/SettingsForm";
-import GuildTabs from "@/components/GuildTabs";
 import PluginBrowser, { type PluginCardData } from "@/components/PluginBrowser";
-import StatCard from "@/components/StatCard";
 import { auth } from "@/auth";
 import { canManage, fetchUserGuilds, iconUrl } from "@/lib/discord";
 import { dbConfigured, getStoredSettings, latestSnapshot } from "@/lib/db";
-import { MODULES, mergeSettings } from "@/lib/settings";
+import { mergeSettings } from "@/lib/settings";
 import { PLUGINS, TOGGLEABLE_PLUGINS } from "@/lib/plugins";
 import { getDict, getLang, fmt } from "@/lib/i18n";
 
@@ -20,10 +17,10 @@ export const instant = false;
 
 export async function generateMetadata(): Promise<Metadata> {
   const dict = getDict(await getLang());
-  return { title: `${dict.guild.overview.metaTitle} | Finch Dashboard` };
+  return { title: `${dict.guild.plugins.metaTitle} | Finch Dashboard` };
 }
 
-export default async function GuildOverview({ params }: { params: Promise<{ guildId: string }> }) {
+export default async function GuildPluginsHome({ params }: { params: Promise<{ guildId: string }> }) {
   await connection(); // halaman dinamis: sesi + API Discord + DB, jangan di-prerender
   const { guildId } = await params;
   const lang = await getLang();
@@ -31,8 +28,6 @@ export default async function GuildOverview({ params }: { params: Promise<{ guil
   const gc = dict.guild.common;
   const ov = dict.guild.overview;
   const pl = dict.guild.plugins;
-  const sub = dict.guild.subnav;
-  const locale = lang === "en" ? "en-US" : "id-ID";
   const session = await auth();
   if (!session?.accessToken) {
     return (
@@ -75,8 +70,7 @@ export default async function GuildOverview({ params }: { params: Promise<{ guil
     );
   }
 
-  const snap = await latestSnapshot();
-  const snapGuild = snap?.guilds.find((g) => g.id === guildId);
+  await latestSnapshot();
   const stored = await getStoredSettings(guildId);
   const settings = mergeSettings(stored);
 
@@ -100,31 +94,11 @@ export default async function GuildOverview({ params }: { params: Promise<{ guil
     (p) => p.toggleKey && settings[p.toggleKey] === true,
   ).length;
 
-  const updatedAt = snap
-    ? new Date(snap.pushed_at).toLocaleString(locale, {
-        day: "numeric",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "";
-
-  const shortcuts = [
-    { href: `/dashboard/${guildId}/modul`, title: sub.modul, desc: dict.guild.modul.subtitle },
-    { href: `/dashboard/${guildId}/leaderboard`, title: sub.leaderboard, desc: dict.guild.leaderboard.subtitle },
-    { href: `/dashboard/${guildId}/selfroles`, title: sub.selfroles, desc: dict.guild.selfroles.subtitle },
-    { href: `/dashboard/${guildId}/responder`, title: sub.responder, desc: dict.guild.responder.subtitle },
-    { href: `/dashboard/${guildId}/giveaway`, title: sub.giveaway, desc: dict.guild.giveaway.subtitle },
-    { href: `/dashboard/${guildId}/embed`, title: sub.embed, desc: dict.guild.embed.subtitle },
-    { href: `/dashboard/${guildId}/pengumuman`, title: sub.pengumuman, desc: dict.guild.pengumuman.subtitle },
-    { href: `/dashboard/${guildId}/modlog`, title: sub.modlog, desc: dict.guild.modlog.subtitle },
-  ];
-
   return (
     <div>
       <SiteHeader />
       <main className="mx-auto max-w-7xl px-4 py-10">
-        {/* Blok sambutan ala MEE6: ikon + nama server + status plugin */}
+        {/* Blok sambutan: ikon + nama server + status plugin */}
         <section aria-label={ov.welcomeAria} className="mb-8">
           <div className="flex flex-wrap items-center gap-4 rounded-xl border border-edge bg-panel p-4 sm:p-5">
             {guildIconUrl ? (
@@ -162,96 +136,29 @@ export default async function GuildOverview({ params }: { params: Promise<{ guil
             {gc.backToGuilds}
           </Link>
         </section>
-        <GuildTabs
-          plugins={
-            <PluginBrowser
-              guildId={guildId}
-              plugins={pluginCards}
-              initial={pluginInitial}
-              groupTitles={{
-                essentials: pl.groupEssentials,
-                engagement: pl.groupEngagement,
-                moderation: pl.groupModeration,
-                utilities: pl.groupUtilities,
-              }}
-              labels={{
-                tabAll: pl.tabAll,
-                configure: pl.configure,
-                enable: pl.enable,
-                disable: pl.disable,
-                saving: dict.guild.modul.saving,
-                toggleError: dict.guild.modul.toggleError,
-                toggleOn: dict.guild.modul.toggleOn,
-                toggleOff: dict.guild.modul.toggleOff,
-                statusActive: pl.statusActive,
-                statusInactive: pl.statusInactive,
-              }}
-            />
-          }
-          overview={
-            <div className="space-y-8">
-              <section aria-label={ov.statsTitle}>
-                <h2 className="text-sm font-semibold text-fg">{ov.statsTitle}</h2>
-                {!snapGuild ? (
-                  <div className="mt-3">
-                    <EmptyState title={ov.statsWaitingTitle} body={ov.statsWaitingBody} />
-                  </div>
-                ) : (
-                  <>
-                    <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
-                      <StatCard label={ov.statMembers} value={snapGuild.member_count.toLocaleString(locale)} />
-                      <StatCard label={ov.statChannels} value={snapGuild.channels.length.toLocaleString(locale)} />
-                      <StatCard label={ov.statRoles} value={snapGuild.roles.length.toLocaleString(locale)} />
-                      <StatCard label={ov.statGiveaways} value={(snapGuild.giveaways ?? []).length.toLocaleString(locale)} />
-                    </div>
-                    <p className="mt-3 text-xs text-muted">{fmt(ov.updatedAt, { time: updatedAt })}</p>
-                  </>
-                )}
-              </section>
-
-              <section aria-label={ov.shortcutsTitle}>
-                <h2 className="text-sm font-semibold text-fg">{ov.shortcutsTitle}</h2>
-                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {shortcuts.map((s) => (
-                    <Link
-                      key={s.href}
-                      href={s.href}
-                      className="rounded-xl border border-edge bg-panel p-4 transition-colors hover:border-brand focus-visible:outline-2 focus-visible:outline-brand sm:p-5"
-                    >
-                      <p className="flex items-center justify-between gap-3 text-sm font-semibold text-fg">
-                        <span>{s.title}</span>
-                        <span aria-hidden="true" className="shrink-0 text-brand">
-                          →
-                        </span>
-                      </p>
-                      <p className="mt-1 text-sm text-muted">{s.desc}</p>
-                    </Link>
-                  ))}
-                </div>
-              </section>
-            </div>
-          }
-          settings={
-            <div>
-              <h2 className="text-sm font-semibold text-fg">{ov.settingsTitle}</h2>
-              <p className="mt-1 text-sm text-muted">{ov.settingsDesc}</p>
-              {!snapGuild && (
-                <div className="mt-4">
-                  <EmptyState title={gc.waitingTitle} body={ov.waitingBody} />
-                </div>
-              )}
-              <div className="mt-4">
-                <SettingsForm
-                  guildId={guildId}
-                  guildName={guildName}
-                  modules={MODULES}
-                  initial={settings}
-                  channels={snapGuild?.channels ?? []}
-                  roles={snapGuild?.roles ?? []}
-                />
-              </div>
-            </div>
-          }
+        <PluginBrowser
+          guildId={guildId}
+          plugins={pluginCards}
+          initial={pluginInitial}
+          groupTitles={{
+            essentials: pl.groupEssentials,
+            engagement: pl.groupEngagement,
+            moderation: pl.groupModeration,
+            utilities: pl.groupUtilities,
+          }}
+          heading={pl.metaTitle}
+          labels={{
+            tabAll: pl.tabAll,
+            configure: pl.configure,
+            enable: pl.enable,
+            disable: pl.disable,
+            saving: dict.guild.modul.saving,
+            toggleError: dict.guild.modul.toggleError,
+            toggleOn: dict.guild.modul.toggleOn,
+            toggleOff: dict.guild.modul.toggleOff,
+            statusActive: pl.statusActive,
+            statusInactive: pl.statusInactive,
+          }}
         />
       </main>
     </div>

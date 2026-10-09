@@ -121,8 +121,9 @@ export const en: Dict = {
     },
     subnav: {
       sectionLabel: "Server sections",
-      settings: "Settings",
       plugins: "Plugins",
+      overview: "Overview",
+      settings: "Settings",
       leaderboard: "Leaderboard",
       selfroles: "Self-roles",
       responder: "Auto-responder",

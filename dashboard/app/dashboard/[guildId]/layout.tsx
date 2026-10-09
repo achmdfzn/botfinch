@@ -41,8 +41,8 @@ export default async function GuildLayout({
 
   const sub = dict.guild.subnav;
   const navItems: SidebarNavItem[] = [
-    { href: `/dashboard/${guildId}`, label: sub.settings },
-    { href: `/dashboard/${guildId}/plugins`, label: sub.plugins },
+    { href: `/dashboard/${guildId}`, label: sub.plugins },
+    { href: `/dashboard/${guildId}/overview`, label: sub.overview },
     { href: `/dashboard/${guildId}/leaderboard`, label: sub.leaderboard },
     { href: `/dashboard/${guildId}/selfroles`, label: sub.selfroles },
     { href: `/dashboard/${guildId}/responder`, label: sub.responder },
@@ -52,6 +52,7 @@ export default async function GuildLayout({
     { href: `/dashboard/${guildId}/template`, label: dict.templates.navLabel },
     { href: `/dashboard/${guildId}/modlog`, label: sub.modlog },
     { href: `/dashboard/${guildId}/modul`, label: sub.modul },
+    { href: `/dashboard/${guildId}/settings`, label: sub.settings },
   ];
 
   return (

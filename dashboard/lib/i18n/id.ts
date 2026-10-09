@@ -120,8 +120,9 @@ export const id = {
     },
     subnav: {
       sectionLabel: "Bagian server",
-      settings: "Pengaturan",
       plugins: "Plugins",
+      overview: "Ringkasan",
+      settings: "Pengaturan",
       leaderboard: "Leaderboard",
       selfroles: "Self-roles",
       responder: "Auto-responder",
