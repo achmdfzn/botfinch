@@ -93,32 +93,35 @@ export default function PluginBrowser({ guildId, plugins, initial, groupTitles, 
 
   function renderCard(p: PluginCardData) {
     const on = p.toggleKey ? (values[p.toggleKey] ?? false) : true;
+    const busy = p.toggleKey !== null && saving === p.toggleKey;
     const configureHref =
       p.configure === null ? null : `/dashboard/${guildId}${p.configure ? `/${p.configure}` : ""}`;
     return (
       <article
         key={p.id}
-        className="flex flex-col justify-between gap-4 rounded-xl border border-edge bg-panel p-4 sm:p-5"
+        className="flex min-h-full flex-col rounded-2xl border border-edge bg-panel p-4 transition duration-200 hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-lg hover:shadow-brand/5 focus-within:border-brand/40 sm:p-5"
       >
-        <div className="flex items-start gap-3">
+        <div className="flex items-start gap-3.5">
           <span
             aria-hidden="true"
-            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-2xl ${
-              on ? "bg-brand/10" : "bg-edge"
+            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-2xl ring-1 ring-inset transition-colors duration-200 ${
+              on ? "bg-brand/10 ring-brand/25" : "bg-edge ring-edge"
             }`}
           >
             {p.emoji}
           </span>
-          <div className="min-w-0 flex-1">
-            <h3 className="font-semibold text-fg">{p.name}</h3>
-            <p className="mt-1 line-clamp-2 text-sm text-muted" title={p.desc}>
+          <div className="min-w-0 flex-1 pt-0.5">
+            <h3 className="truncate text-[15px] font-semibold text-fg" title={p.name}>
+              {p.name}
+            </h3>
+            <p className="mt-1 line-clamp-2 min-h-[2.5rem] text-sm text-muted" title={p.desc}>
               {p.desc}
             </p>
           </div>
           {p.toggleKey && (
             <span
               aria-hidden="true"
-              className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${
+              className={`mt-0.5 shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${
                 on
                   ? "border-green-500/30 bg-green-500/10 text-green-400"
                   : "border-edge bg-ink text-muted"
@@ -128,38 +131,40 @@ export default function PluginBrowser({ guildId, plugins, initial, groupTitles, 
             </span>
           )}
         </div>
-        <div className="flex items-center justify-between gap-3">
-          {configureHref ? (
-            <Link
-              href={configureHref}
-              className="inline-flex min-h-[44px] items-center text-sm font-medium text-brand hover:underline focus-visible:outline-2 focus-visible:outline-brand"
-            >
-              {labels.configure} →
-            </Link>
-          ) : (
-            <span />
-          )}
-          {p.toggleKey && (
-            <div className="flex shrink-0 items-center gap-2">
-              {saving === p.toggleKey && (
-                <span className="text-xs text-muted">{labels.saving}</span>
-              )}
-              <button
-                type="button"
-                aria-pressed={on}
-                aria-label={fmt(labels[on ? "toggleOff" : "toggleOn"], { title: p.name })}
-                disabled={saving === p.toggleKey}
-                onClick={() => toggle(p.toggleKey as string, !on)}
-                className={
-                  on
-                    ? "inline-flex min-h-[44px] items-center justify-center rounded-lg border border-edge px-4 text-sm font-medium text-muted hover:border-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-50"
-                    : "inline-flex min-h-[44px] items-center justify-center rounded-lg bg-brand px-4 text-sm font-semibold text-ink hover:bg-brand-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-50"
-                }
+        {/* Aksi bawah: mt-auto menjaga sejajar antar kartu dalam satu baris grid */}
+        <div className="mt-auto pt-4">
+          <div className="flex items-center justify-between gap-3 border-t border-edge pt-3.5">
+            {configureHref ? (
+              <Link
+                href={configureHref}
+                className="inline-flex min-h-[44px] items-center gap-1 text-sm font-medium text-brand hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
               >
-                {on ? labels.disable : `+ ${labels.enable}`}
-              </button>
-            </div>
-          )}
+                {labels.configure}
+                <span aria-hidden="true">→</span>
+              </Link>
+            ) : (
+              <span />
+            )}
+            {p.toggleKey && (
+              <div className="flex shrink-0 items-center gap-2">
+                {busy && <span className="text-xs text-muted">{labels.saving}</span>}
+                <button
+                  type="button"
+                  aria-pressed={on}
+                  aria-label={fmt(labels[on ? "toggleOff" : "toggleOn"], { title: p.name })}
+                  disabled={busy}
+                  onClick={() => toggle(p.toggleKey as string, !on)}
+                  className={
+                    on
+                      ? "inline-flex min-h-[44px] items-center justify-center rounded-lg border border-edge px-4 text-sm font-medium text-muted transition-colors hover:border-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-50"
+                      : "inline-flex min-h-[44px] items-center justify-center rounded-lg bg-brand px-4 text-sm font-semibold text-ink transition-colors hover:bg-brand-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-50"
+                  }
+                >
+                  {on ? labels.disable : `+ ${labels.enable}`}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </article>
     );
@@ -177,7 +182,7 @@ export default function PluginBrowser({ guildId, plugins, initial, groupTitles, 
       <div
         role="tablist"
         aria-label={labels.tabAll}
-        className="mt-4 flex gap-1 overflow-x-auto border-b border-edge"
+        className="mt-5 flex gap-1 overflow-x-auto border-b border-edge"
       >
         {TABS.map((t, i) => (
           <button
@@ -192,8 +197,10 @@ export default function PluginBrowser({ guildId, plugins, initial, groupTitles, 
             tabIndex={active === t ? 0 : -1}
             onClick={() => setActive(t)}
             onKeyDown={(e) => onKeyDown(e, i)}
-            className={`flex min-h-[44px] flex-none items-center rounded-t-lg px-4 py-2.5 text-sm font-medium focus-visible:outline-2 focus-visible:outline-brand ${
-              active === t ? "border-b-2 border-brand bg-panel text-fg" : "text-muted hover:text-fg"
+            className={`flex min-h-[44px] flex-none items-center rounded-t-lg border-b-2 px-4 py-2.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-brand ${
+              active === t
+                ? "border-brand bg-panel text-fg"
+                : "border-transparent text-muted hover:text-fg"
             }`}
           >
             {tabLabel(t)}
@@ -216,11 +223,12 @@ export default function PluginBrowser({ guildId, plugins, initial, groupTitles, 
         className="pt-6"
       >
         {visibleGroups.map((g) => (
-          <section key={g} aria-label={groupTitles[g]} className="mb-8 last:mb-0">
-            <h2 className="mb-3 border-b border-edge pb-2 text-base font-semibold text-fg">
+          <section key={g} aria-label={groupTitles[g]} className="mb-10 last:mb-0">
+            <h2 className="mb-4 flex items-center gap-3 text-base font-semibold tracking-tight text-fg">
               {groupTitles[g]}
+              <span aria-hidden="true" className="h-px flex-1 bg-edge" />
             </h2>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 xl:grid-cols-3 2xl:grid-cols-4">
               {plugins.filter((p) => p.group === g).map(renderCard)}
             </div>
           </section>

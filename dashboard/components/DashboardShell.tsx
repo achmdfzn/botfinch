@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import Sidebar, { type SidebarNavItem } from "@/components/Sidebar";
+import Sidebar, { type SidebarNavItem, type SidebarEntry, type SidebarSection } from "@/components/Sidebar";
 import { useI18n } from "@/components/I18nProvider";
 
 interface Props {
@@ -15,6 +15,9 @@ interface Props {
  * Kerangka halaman per-server: topbar mobile (hamburger 44px + nama server),
  * sidebar sticky di desktop, drawer geser di mobile. Bersifat aditif: halaman
  * di dalamnya tetap me-render kontennya sendiri.
+ *
+ * Sidebar ala MEE6 dibangun di sini dari navItems (untuk href) + dict
+ * (untuk label): item utama, seksi grup collapsible, lalu item bawah.
  */
 export default function DashboardShell({ guildName, guildIconUrl, navItems, children }: Props) {
   const { dict } = useI18n();
@@ -36,13 +39,80 @@ export default function DashboardShell({ guildName, guildIconUrl, navItems, chil
     };
   }, [open ]);
 
+  const sub = dict.guild.subnav;
+  const cards = dict.guild.plugins.cards;
+
+  // navItems[0] adalah home per-server ("/dashboard/<guildId>") dari layout;
+  // semua route lain = home + rel. Fallback merakit href dari rel bila
+  // layout berubah, agar tidak ada route yang mati.
+  const homeHref = navItems[0]?.href ?? "/dashboard";
+  const hrefFor = (rel: string): string => {
+    const found = navItems.find((i) => i.href === `${homeHref}${rel}`);
+    return found ? found.href : `${homeHref}${rel}`;
+  };
+
+  const topItems: SidebarEntry[] = [
+    { href: hrefFor(""), label: sub.plugins, icon: "plugins" },
+    { href: hrefFor("/overview"), label: sub.overview, icon: "overview" },
+    { href: hrefFor("/leaderboard"), label: sub.leaderboard, icon: "leaderboard" },
+  ];
+
+  const sections: SidebarSection[] = [
+    {
+      id: "essentials",
+      title: dict.guild.plugins.groupEssentials,
+      items: [
+        { href: hrefFor("/settings"), label: cards.welcome.name, icon: "welcome" },
+        { href: hrefFor("/settings"), label: cards.leveling.name, icon: "leveling" },
+        { href: hrefFor("/selfroles"), label: cards.selfroles.name, icon: "reactionRoles" },
+        { href: hrefFor("/responder"), label: cards.responder.name, icon: "customCommands" },
+      ],
+    },
+    {
+      id: "engagement",
+      title: dict.guild.plugins.groupEngagement,
+      items: [
+        { href: hrefFor("/settings"), label: cards.economy.name, icon: "economy" },
+        { href: hrefFor("/settings"), label: cards.starboard.name, icon: "starboard" },
+        { href: hrefFor("/giveaway"), label: cards.giveaway.name, icon: "giveaway" },
+        { href: hrefFor("/pengumuman"), label: cards.announcements.name, icon: "announcements" },
+      ],
+    },
+    {
+      id: "moderation",
+      title: dict.guild.plugins.groupModeration,
+      items: [
+        { href: hrefFor("/settings"), label: cards.automod.name, icon: "automod" },
+      ],
+    },
+    {
+      id: "utilities",
+      title: dict.guild.plugins.groupUtilities,
+      items: [
+        { href: hrefFor("/embed"), label: cards.embed.name, icon: "embedBuilder" },
+        { href: hrefFor("/template"), label: cards.templates.name, icon: "templates" },
+      ],
+    },
+  ];
+
+  const bottomItems: SidebarEntry[] = [
+    { href: hrefFor("/modlog"), label: sub.modlog, icon: "modlog" },
+    { href: hrefFor("/modul"), label: sub.modul, icon: "modules" },
+    { href: hrefFor("/settings"), label: sub.settings, icon: "settings" },
+  ];
+
   const sidebarProps = {
     guildName,
     guildIconUrl,
-    items: navItems,
+    topItems,
+    sections,
+    bottomItems,
     backHref: "/dashboard",
     backLabel: dict.nav.back,
-    sectionLabel: dict.guild.subnav.sectionLabel,
+    sectionLabel: sub.sectionLabel,
+    serverMenuLabel: sub.serverMenuLabel,
+    expandSectionLabel: sub.expandSection,
+    collapseSectionLabel: sub.collapseSection,
   };
 
   return (

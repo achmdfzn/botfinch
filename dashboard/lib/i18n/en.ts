@@ -121,6 +121,9 @@ export const en: Dict = {
     },
     subnav: {
       sectionLabel: "Server sections",
+      expandSection: "Expand {name} section",
+      collapseSection: "Collapse {name} section",
+      serverMenuLabel: "Server menu",
       plugins: "Plugins",
       overview: "Overview",
       settings: "Settings",

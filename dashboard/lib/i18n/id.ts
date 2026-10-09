@@ -120,6 +120,9 @@ export const id = {
     },
     subnav: {
       sectionLabel: "Bagian server",
+      expandSection: "Bentangkan seksi {name}",
+      collapseSection: "Ciutkan seksi {name}",
+      serverMenuLabel: "Menu server",
       plugins: "Plugins",
       overview: "Ringkasan",
       settings: "Pengaturan",
