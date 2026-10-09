@@ -8,10 +8,13 @@
 - Tiap 5 menit: pull dari /api/guilds/{id}/sync -> pengaturan, self-roles,
   auto-responder, pengumuman terjadwal, permintaan giveaway pending, dan
   permintaan embed pending ke tabel lokal.
-- Permintaan giveaway pending langsung dieksekusi via cog Giveaway lalu di-ack.
-- Permintaan embed pending langsung dikirim ke channel lalu di-ack.
+- Permintaan giveaway pending langsung dieksekusi via cog Giveaway lalu di-ack
+  (dihormati toggle `giveaway_enabled`).
+- Permintaan embed pending langsung dikirim ke channel lalu di-ack
+  (dihormati toggle `embed_enabled`).
 - Pengumuman: loop tiap 60 detik mengirim yang sekali (run_at lewat) maupun
-  berulang (interval_minutes), lalu menandai last_sent_at.
+  berulang (interval_minutes), lalu menandai last_sent_at
+  (dihormati toggle `announcements_enabled`).
 - Helper `get_guild_setting(guild_id, key, default)` dipakai fitur lain
   agar pengaturan dasbor benar-benar berlaku.
 
@@ -64,16 +67,22 @@ CREATE TABLE IF NOT EXISTS dashboard_announcements (
 """
 
 
-def substitusi_pengumuman(pesan: str, nama_server: str, now=None) -> str:
+def substitusi_pengumuman(
+    pesan: str, nama_server: str, now=None, member_count: int | None = None
+) -> str:
     """Substitusi placeholder di pesan pengumuman terjadwal.
 
-    Didukung: {server} (nama server), {date} (tanggal hari ini, format DD Mon YYYY).
+    Didukung: {server} (nama server), {date} (tanggal hari ini, format DD Mon YYYY),
+    {member_count} (jumlah member server).
     """
     if now is None:
         now = discord.utils.utcnow()
-    return pesan.replace("{server}", nama_server).replace(
+    hasil = pesan.replace("{server}", nama_server).replace(
         "{date}", now.strftime("%d %b %Y")
     )
+    if member_count is not None:
+        hasil = hasil.replace("{member_count}", str(member_count))
+    return hasil
 
 
 def _int_aman(nilai, default: int = 0) -> int:
@@ -100,6 +109,25 @@ def get_guild_setting_int(guild_id: int, key: str, default: int) -> int:
         return int(get_guild_setting(guild_id, key, str(default)))
     except (ValueError, TypeError):
         return default
+
+
+def modul_aktif(guild_id: int, key: str) -> bool:
+    """True bila toggle modul TIDAK dimatikan via dashboard.
+
+    Konvensi: key "*_enabled" bernilai "1"/"0", default "1" (perilaku lama
+    tetap jalan bila dashboard belum pernah mengirim key tersebut).
+    """
+    return get_guild_setting(guild_id, key, "1") == "1"
+
+
+def parse_id_list(teks: str | None) -> list[int]:
+    """'123, 456' -> [123, 456]. Entri bukan angka dilewati diam-diam."""
+    hasil: list[int] = []
+    for bagian in (teks or "").split(","):
+        bagian = bagian.strip()
+        if bagian.isdigit():
+            hasil.append(int(bagian))
+    return hasil
 
 
 def _nama_member(guild: discord.Guild, user_id: int) -> str:
@@ -396,6 +424,14 @@ class DashboardSync(commands.Cog):
     async def _proses_giveaway(self, guild: discord.Guild, requests: list) -> None:
         if not requests:
             return
+        if not modul_aktif(guild.id, "giveaway_enabled"):
+            # Modul dimatikan via dashboard: tolak semua permintaan agar antrean
+            # tidak menumpuk, dengan catatan yang jelas.
+            for r in requests:
+                await self._ack_giveaway(
+                    guild.id, r.get("id"), "failed", "modul giveaway dimatikan di server ini"
+                )
+            return
         cog = self.bot.get_cog("Giveaway")
         if cog is None:
             log.warning("dashboard: cog Giveaway tidak ada, %d permintaan dilewati", len(requests))
@@ -433,8 +469,18 @@ class DashboardSync(commands.Cog):
             log.warning("dashboard: gagal ack giveaway req %s", req_id, exc_info=True)
 
     async def _proses_embed(self, guild: discord.Guild, requests: list) -> None:
-        """Kirim permintaan embed pending dari dashboard, lalu ack done/failed."""
-        for r in (requests or [])[:10]:
+        """Kirim permintaan embed pending dari dashboard, lalu ack done/failed.
+
+        Dihormati toggle `embed_enabled` ("1"/"0", default "1").
+        """
+        daftar = list((requests or [])[:10])
+        if daftar and not modul_aktif(guild.id, "embed_enabled"):
+            for r in daftar:
+                await self._ack_embed(
+                    guild.id, r.get("id"), "failed", "modul embed dimatikan di server ini"
+                )
+            return
+        for r in daftar:
             req_id = r.get("id")
             ch_id = _int_aman(r.get("channel_id"))
             if not ch_id:
@@ -496,6 +542,8 @@ class DashboardSync(commands.Cog):
         Berulang: enabled, interval_minutes > 0, belum pernah atau interval
         sudah lewat -> kirim, update last_sent_at. Gagal kirim dilewati
         diam-diam (dicoba lagi loop berikut); loop tidak boleh crash.
+        Toggle `announcements_enabled` ("1"/"0", default "1") mematikan
+        pengumuman per-server.
         """
         try:
             with get_connection() as conn:
@@ -522,6 +570,8 @@ class DashboardSync(commands.Cog):
             guild = self.bot.get_guild(_int_aman(gid_s))
             if guild is None:
                 continue
+            if not modul_aktif(guild.id, "announcements_enabled"):
+                continue  # modul pengumuman dimatikan via dashboard
             channel = guild.get_channel(_int_aman(ch_s))
             if channel is None:
                 try:
@@ -529,8 +579,10 @@ class DashboardSync(commands.Cog):
                 except Exception:
                     continue
             try:
-                # Substitusi placeholder {server} / {date} sebelum dikirim
-                teks = substitusi_pengumuman(pesan, guild.name, now)
+                # Substitusi placeholder {server} / {date} / {member_count}
+                teks = substitusi_pengumuman(
+                    pesan, guild.name, now, guild.member_count or 0
+                )
                 await channel.send(teks)
             except Exception:
                 continue  # gagal -> lewati diam-diam

@@ -52,13 +52,18 @@ class VoiceXP(commands.Cog):
             menit = hitung_menit(durasi)
             if menit <= 0:
                 return
-            xp = menit * config.settings.voice_xp_per_min
-            try:
-                with get_connection() as conn:
-                    lvl, naik = tambah_xp(conn, gid, uid, xp)
-            except Exception:
-                log.exception("Gagal tambah voice XP")
-                return
+            from src.cogs.dashboard_sync import modul_aktif
+
+            leveling_on = modul_aktif(gid, "leveling_enabled")
+            ekonomi_on = modul_aktif(gid, "economy_enabled")
+            lvl, naik = 0, False
+            if leveling_on:
+                xp = menit * config.settings.voice_xp_per_min
+                try:
+                    with get_connection() as conn:
+                        lvl, naik = tambah_xp(conn, gid, uid, xp)
+                except Exception:
+                    log.exception("Gagal tambah voice XP")
             # Quest harian: hitung menit voice
             try:
                 from src.utils import quests as quest_utils
@@ -81,7 +86,7 @@ class VoiceXP(commands.Cog):
                     )
                     conn.commit()
                     koin_voice = menit * config.settings.voice_koin_per_min
-                    if koin_voice > 0:
+                    if ekonomi_on and koin_voice > 0:
                         eko.tambah_koin(conn, gid, uid, koin_voice)
             except Exception:
                 log.exception("Gagal catat voice_total/koin voice")
@@ -93,11 +98,12 @@ class VoiceXP(commands.Cog):
                     except discord.Forbidden:
                         pass
             # role reward coba kasih (reuse logic dari leveling)
-            try:
-                from src.utils.xp import beri_role_reward
-                await beri_role_reward(member, lvl)
-            except Exception:
-                pass
+            if leveling_on:
+                try:
+                    from src.utils.xp import beri_role_reward
+                    await beri_role_reward(member, lvl)
+                except Exception:
+                    pass
 
         # move antar channel voice -> jangan reset, tetap hitung durasi
         # tidak perlu handle

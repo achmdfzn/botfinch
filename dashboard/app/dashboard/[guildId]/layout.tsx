@@ -42,6 +42,7 @@ export default async function GuildLayout({
   const sub = dict.guild.subnav;
   const navItems: SidebarNavItem[] = [
     { href: `/dashboard/${guildId}`, label: sub.settings },
+    { href: `/dashboard/${guildId}/plugins`, label: sub.plugins },
     { href: `/dashboard/${guildId}/leaderboard`, label: sub.leaderboard },
     { href: `/dashboard/${guildId}/selfroles`, label: sub.selfroles },
     { href: `/dashboard/${guildId}/responder`, label: sub.responder },

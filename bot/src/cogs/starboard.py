@@ -4,6 +4,8 @@
   pesan dipajang di channel starboard.
 - Jumlah ⭐ di-update otomatis; kalau turun di bawah ambang, postingan dihapus.
 - Config: STARBOARD_CHANNEL_ID, STARBOARD_MIN.
+- Bisa dimatikan per-server via dashboard: toggle `starboard_enabled` ("1"/"0",
+  default "1" = perilaku lama tetap jalan).
 """
 import logging
 
@@ -59,8 +61,13 @@ class Starboard(commands.Cog):
         await self._sync(payload)
 
     async def _sync(self, payload: discord.RawReactionActionEvent) -> None:
+        from src.cogs.dashboard_sync import modul_aktif
+
         sb_id = config.settings.starboard_channel_id
         if not sb_id or payload.guild_id is None:
+            return
+        # Modul starboard bisa dimatikan per-server via dashboard web
+        if not modul_aktif(payload.guild_id, "starboard_enabled"):
             return
         guild = self.bot.get_guild(payload.guild_id)
         if guild is None:

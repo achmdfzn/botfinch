@@ -7,6 +7,9 @@ Klik opsi untuk pasang role, klik lagi untuk lepas.
 Tambahan: reaction self-roles dari dashboard web (tabel `dashboard_selfroles`
 yang disinkronkan tiap 5 menit) — member tekan reaksi emoji di pesan
 tertentu untuk dapat role. Lihat `dashboard_sync.emoji_cocok`.
+
+Bisa dimatikan per-server via dashboard: toggle `selfroles_enabled` ("1"/"0",
+default "1" = perilaku lama tetap jalan).
 """
 import discord
 from discord.ext import commands
@@ -34,6 +37,13 @@ class SelfRoleSelect(discord.ui.Select):
         if guild is None or not isinstance(member, discord.Member):
             await interaction.response.send_message(
                 "❌ Hanya bisa dipakai di server.", ephemeral=True
+            )
+            return
+        from src.cogs.dashboard_sync import modul_aktif
+
+        if not modul_aktif(guild.id, "selfroles_enabled"):
+            await interaction.response.send_message(
+                "Modul self-role dimatikan oleh admin server ini.", ephemeral=True
             )
             return
         ditambah: list[str] = []
@@ -81,6 +91,22 @@ class SelfRoles(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
+    async def cog_check(self, ctx: commands.Context) -> bool:
+        """Blokir command self-role kalau modul dimatikan per-server via dashboard."""
+        if ctx.guild is None:
+            return True
+        from src.cogs.dashboard_sync import modul_aktif
+
+        if modul_aktif(ctx.guild.id, "selfroles_enabled"):
+            return True
+        try:
+            await ctx.send(
+                "Modul self-role dimatikan oleh admin server ini.", ephemeral=True
+            )
+        except discord.HTTPException:
+            pass
+        return False
+
     def _cari_selfrole(self, guild_id: int, message_id: int, emoji: discord.PartialEmoji):
         """Cari baris dashboard_selfroles yang cocok dengan reaksi."""
         from src.cogs.dashboard_sync import emoji_cocok
@@ -114,6 +140,10 @@ class SelfRoles(commands.Cog):
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
         if payload.guild_id is None:
             return
+        from src.cogs.dashboard_sync import modul_aktif
+
+        if not modul_aktif(payload.guild_id, "selfroles_enabled"):
+            return
         if self.bot.user is not None and payload.user_id == self.bot.user.id:
             return
         role_id = self._cari_selfrole(payload.guild_id, payload.message_id, payload.emoji)
@@ -126,6 +156,10 @@ class SelfRoles(commands.Cog):
     @commands.Cog.listener()
     async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent):
         if payload.guild_id is None:
+            return
+        from src.cogs.dashboard_sync import modul_aktif
+
+        if not modul_aktif(payload.guild_id, "selfroles_enabled"):
             return
         role_id = self._cari_selfrole(payload.guild_id, payload.message_id, payload.emoji)
         if not role_id:

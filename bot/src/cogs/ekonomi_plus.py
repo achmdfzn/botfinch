@@ -224,6 +224,26 @@ class EkonomiPlus(commands.Cog):
         self._loop_harian.cancel()
         self._loop_saham.cancel()
 
+    async def cog_check(self, ctx: commands.Context) -> bool:
+        """Ekonomi+ adalah bagian modul Ekonomi — ikut toggle `economy_enabled`."""
+        if ctx.guild is None:
+            return True
+        from src.cogs.dashboard_sync import modul_aktif
+
+        if modul_aktif(ctx.guild.id, "economy_enabled"):
+            return True
+        pesan = "Modul ekonomi dimatikan oleh admin server ini."
+        try:
+            if ctx.interaction is None:
+                await ctx.send(pesan)
+            elif ctx.interaction.response.is_done():
+                await ctx.interaction.followup.send(pesan, ephemeral=True)
+            else:
+                await ctx.interaction.response.send_message(pesan, ephemeral=True)
+        except discord.HTTPException:
+            pass
+        return False
+
     # ----- saham: seed & helper -----
     def _pastikan_saham_seed(self):
         """Seed harga awal bila tabel kosong. Aman dipanggil berulang."""
@@ -817,6 +837,8 @@ class EkonomiPlus(commands.Cog):
     # ----- loop harian: pinjaman + deposito -----
     @tasks.loop(hours=24)
     async def _loop_harian(self):
+        from src.cogs.dashboard_sync import modul_aktif
+
         now = discord.utils.utcnow()
         # Pinjaman: bunga harian + auto-debit saat jatuh tempo
         try:
@@ -829,6 +851,8 @@ class EkonomiPlus(commands.Cog):
             log.exception("Gagal baca pinjaman")
             rows = []
         for pid, uid, gid, sisa, pct, jt_iso in rows:
+            if not modul_aktif(gid, "economy_enabled"):
+                continue  # modul ekonomi dimatikan di server ini — bekukan
             try:
                 sisa_baru = sisa + hitung_bunga(sisa, pct)
                 jt = parse_iso(jt_iso)
@@ -861,6 +885,8 @@ class EkonomiPlus(commands.Cog):
             log.exception("Gagal baca deposito")
             deps = []
         for did, uid, gid, jumlah, mulai_iso, durasi, pct in deps:
+            if not modul_aktif(gid, "economy_enabled"):
+                continue  # modul ekonomi dimatikan di server ini — bekukan
             try:
                 mulai = parse_iso(mulai_iso)
                 if mulai is None:

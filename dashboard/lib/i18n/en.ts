@@ -122,6 +122,7 @@ export const en: Dict = {
     subnav: {
       sectionLabel: "Server sections",
       settings: "Settings",
+      plugins: "Plugins",
       leaderboard: "Leaderboard",
       selfroles: "Self-roles",
       responder: "Auto-responder",
@@ -149,6 +150,9 @@ export const en: Dict = {
       statsWaitingBody:
         "Statistics appear after the bot sends its first snapshot for this server.",
       shortcutsTitle: "Shortcuts",
+      welcomeAria: "Server welcome",
+      pluginActiveCount: "{on} of {total} plugins active",
+      managePlugins: "Manage plugins",
       settingsTitle: "Module settings",
       settingsDesc: "Toggle modules on or off, pick channels. The bot picks up changes within minutes.",
       waitingBody:
@@ -164,6 +168,63 @@ export const en: Dict = {
       toggleError: "Failed to save the change. Try again.",
       toggleOn: "{title} on",
       toggleOff: "{title} off",
+    },
+    plugins: {
+      metaTitle: "Plugins",
+      signinBody: "Sign in with Discord to manage this server's plugins.",
+      dbBody: "This feature needs Vercel Postgres to store settings. See the Deploy section of the README.",
+      subtitle: "Turn plugins on or off, MEE6-style. The bot picks up changes within minutes.",
+      configure: "Configure",
+      groupEssentials: "Essentials",
+      groupEngagement: "Engagement & Fun",
+      groupModeration: "Moderation",
+      groupUtilities: "Utilities",
+      cards: {
+        welcome: {
+          name: "Welcome & Goodbye",
+          desc: "Greet new members and say goodbye to those who leave.",
+        },
+        leveling: {
+          name: "Leveling & XP",
+          desc: "Automatic XP for chat and voice, with rank cards.",
+        },
+        selfroles: {
+          name: "Reaction Roles",
+          desc: "Members get roles by reacting with an emoji on a message.",
+        },
+        responder: {
+          name: "Custom Commands",
+          desc: "The bot replies automatically to matching message triggers.",
+        },
+        economy: {
+          name: "Economy & Games",
+          desc: "Coins, daily rewards, work, bank, shop, and minigames.",
+        },
+        starboard: {
+          name: "Starboard",
+          desc: "Starred messages are forwarded to a special channel.",
+        },
+        giveaway: {
+          name: "Giveaways",
+          desc: "Create and manage giveaways right from the dashboard.",
+        },
+        announcements: {
+          name: "Announcements",
+          desc: "Scheduled announcements: one-time or automatically recurring.",
+        },
+        automod: {
+          name: "AutoMod",
+          desc: "Automatic moderation: anti-spam, anti-invite, bad-word filter.",
+        },
+        embed: {
+          name: "Embed Builder",
+          desc: "Build announcement embeds from the web with live preview.",
+        },
+        templates: {
+          name: "Message Templates",
+          desc: "Gallery of welcome, goodbye, and announcement message templates.",
+        },
+      },
     },
     leaderboard: {
       metaTitle: "Leaderboard",
@@ -359,6 +420,11 @@ export const en: Dict = {
             label: "Custom message",
             placeholder: "Welcome {user} to {server}!",
             hint: "You can use {user} and {server}. Leave empty for the default card.",
+          },
+          welcome_role_ids: {
+            label: "Auto-roles (IDs, comma-separated)",
+            placeholder: "123456789, 987654321",
+            hint: "Roles are assigned automatically when a member joins. Leave empty if not needed.",
           },
         },
       },

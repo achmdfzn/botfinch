@@ -27,6 +27,13 @@ class KlaimView(TimeoutSafeView):
             )
             return
         gid = interaction.guild.id if interaction.guild else 0
+        from src.cogs.dashboard_sync import modul_aktif
+
+        if interaction.guild and not modul_aktif(gid, "economy_enabled"):
+            await interaction.response.send_message(
+                "Modul ekonomi dimatikan oleh admin server ini.", ephemeral=True
+            )
+            return
         with get_connection() as conn:
             total, nama_quest = q.klaim_quest(conn, gid, self.author_id)
             if total > 0:
@@ -46,6 +53,26 @@ class KlaimView(TimeoutSafeView):
 class Quests(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+
+    async def cog_check(self, ctx: commands.Context) -> bool:
+        """Quest berhadiah koin — bagian modul Ekonomi, ikut `economy_enabled`."""
+        if ctx.guild is None:
+            return True
+        from src.cogs.dashboard_sync import modul_aktif
+
+        if modul_aktif(ctx.guild.id, "economy_enabled"):
+            return True
+        pesan = "Modul ekonomi dimatikan oleh admin server ini."
+        try:
+            if ctx.interaction is None:
+                await ctx.send(pesan)
+            elif ctx.interaction.response.is_done():
+                await ctx.interaction.followup.send(pesan, ephemeral=True)
+            else:
+                await ctx.interaction.response.send_message(pesan, ephemeral=True)
+        except discord.HTTPException:
+            pass
+        return False
 
     @commands.hybrid_command(name="quest", description="Lihat quest harianmu")
     async def quest(self, ctx: commands.Context):

@@ -38,6 +38,7 @@ export const SETTING_DEFAULTS: Record<string, boolean | string | number> = {
   // welcome detail
   welcome_message: "",
   welcome_theme: "default",
+  welcome_role_ids: "",
   // goodbye detail
   goodbye_enabled: true,
   goodbye_channel_id: "",
@@ -58,6 +59,12 @@ export const SETTING_DEFAULTS: Record<string, boolean | string | number> = {
   economy_daily: 100,
   economy_work_min: 50,
   economy_work_max: 150,
+  // toggle plugin baru (bot menentukan default sendiri; dasbor memakai true)
+  selfroles_enabled: true,
+  giveaway_enabled: true,
+  responder_enabled: true,
+  announcements_enabled: true,
+  embed_enabled: true,
 };
 
 export const SETTING_RULES: Record<string, Rule> = {
@@ -71,6 +78,7 @@ export const SETTING_RULES: Record<string, Rule> = {
   starboard_threshold: { kind: "num", min: 1, max: 25 },
   welcome_message: { kind: "str", max: 500 },
   welcome_theme: { kind: "enum", values: ["default", "midnight", "sunset", "ocean"] },
+  welcome_role_ids: { kind: "str", max: 500 },
   goodbye_enabled: { kind: "bool" },
   goodbye_channel_id: { kind: "str", max: 32 },
   goodbye_message: { kind: "str", max: 500 },
@@ -87,6 +95,11 @@ export const SETTING_RULES: Record<string, Rule> = {
   economy_daily: { kind: "num", min: 0, max: 100000 },
   economy_work_min: { kind: "num", min: 0, max: 100000 },
   economy_work_max: { kind: "num", min: 0, max: 100000 },
+  selfroles_enabled: { kind: "bool" },
+  giveaway_enabled: { kind: "bool" },
+  responder_enabled: { kind: "bool" },
+  announcements_enabled: { kind: "bool" },
+  embed_enabled: { kind: "bool" },
 };
 
 export const MODULES: ModuleDef[] = [
@@ -108,6 +121,13 @@ export const MODULES: ModuleDef[] = [
         kind: "textarea",
         placeholder: "Selamat datang {user} di {server}!",
         hint: "Bisa pakai {user} dan {server}. Kosongkan untuk kartu default.",
+      },
+      {
+        key: "welcome_role_ids",
+        label: "Role otomatis (ID, pisah koma)",
+        kind: "text",
+        placeholder: "123456789, 987654321",
+        hint: "Role diberikan otomatis saat member join. Kosongkan bila tidak perlu.",
       },
     ],
   },

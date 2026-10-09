@@ -4,6 +4,8 @@
 - Background task tiap 30 detik: undi pemenang otomatis saat waktu habis.
 - Tombol "Reroll" setelah selesai untuk undi ulang.
 - Data tersimpan di SQLite sehingga survive restart.
+- Bisa dimatikan per-server via dashboard: toggle `giveaway_enabled` ("1"/"0",
+  default "1" = perilaku lama tetap jalan).
 """
 import datetime
 import logging
@@ -252,6 +254,30 @@ class Giveaway(commands.Cog):
     def cog_unload(self):
         self.cek_giveaway.cancel()
         self.cek_rutin.cancel()
+
+    async def cog_check(self, ctx: commands.Context) -> bool:
+        """Blokir semua command giveaway kalau modul dimatikan per-server via dashboard.
+
+        Giveaway yang sudah berjalan tetap diselesaikan loop (cek_giveaway/
+        cek_rutin) agar tidak menggantung — toggle hanya menghentikan yang baru.
+        """
+        if ctx.guild is None:
+            return True
+        from src.cogs.dashboard_sync import modul_aktif
+
+        if modul_aktif(ctx.guild.id, "giveaway_enabled"):
+            return True
+        pesan = "Modul giveaway dimatikan oleh admin server ini."
+        try:
+            if ctx.interaction is None:
+                await ctx.send(pesan)
+            elif ctx.interaction.response.is_done():
+                await ctx.interaction.followup.send(pesan, ephemeral=True)
+            else:
+                await ctx.interaction.response.send_message(pesan, ephemeral=True)
+        except discord.HTTPException:
+            pass
+        return False
 
     @tasks.loop(seconds=30)
     async def cek_giveaway(self):

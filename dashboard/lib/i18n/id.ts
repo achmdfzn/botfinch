@@ -121,6 +121,7 @@ export const id = {
     subnav: {
       sectionLabel: "Bagian server",
       settings: "Pengaturan",
+      plugins: "Plugins",
       leaderboard: "Leaderboard",
       selfroles: "Self-roles",
       responder: "Auto-responder",
@@ -148,6 +149,9 @@ export const id = {
       statsWaitingBody:
         "Angka statistik muncul setelah bot mengirim snapshot pertamanya untuk server ini.",
       shortcutsTitle: "Jalan pintas",
+      welcomeAria: "Sambutan server",
+      pluginActiveCount: "{on} dari {total} plugin aktif",
+      managePlugins: "Kelola plugin",
       settingsTitle: "Pengaturan modul",
       settingsDesc: "Nyalakan atau matikan modul, pilih channel. Bot membaca perubahan dalam beberapa menit.",
       waitingBody:
@@ -163,6 +167,63 @@ export const id = {
       toggleError: "Gagal menyimpan perubahan. Coba lagi.",
       toggleOn: "{title} aktif",
       toggleOff: "{title} mati",
+    },
+    plugins: {
+      metaTitle: "Plugins",
+      signinBody: "Login dengan Discord untuk mengatur plugin server.",
+      dbBody: "Fitur ini butuh Vercel Postgres untuk menyimpan pengaturan. Lihat README bagian Deploy.",
+      subtitle: "Nyalakan atau matikan plugin ala MEE6. Bot membaca perubahan dalam beberapa menit.",
+      configure: "Konfigurasi",
+      groupEssentials: "Esensial",
+      groupEngagement: "Engagement & Fun",
+      groupModeration: "Moderasi",
+      groupUtilities: "Utilitas",
+      cards: {
+        welcome: {
+          name: "Welcome & Goodbye",
+          desc: "Sambut member baru dan ucapkan selamat tinggal pada yang keluar.",
+        },
+        leveling: {
+          name: "Leveling & XP",
+          desc: "XP otomatis tiap chat dan voice, lengkap dengan rank card.",
+        },
+        selfroles: {
+          name: "Reaction Roles",
+          desc: "Member dapat role dengan menekan reaksi emoji pada pesan.",
+        },
+        responder: {
+          name: "Custom Commands",
+          desc: "Bot membalas otomatis tiap ada pesan yang cocok dengan trigger.",
+        },
+        economy: {
+          name: "Economy & Games",
+          desc: "Koin, daily, kerja, bank, toko, dan minigames.",
+        },
+        starboard: {
+          name: "Starboard",
+          desc: "Pesan berbintang diteruskan ke channel khusus.",
+        },
+        giveaway: {
+          name: "Giveaways",
+          desc: "Buat dan kelola giveaway langsung dari dashboard.",
+        },
+        announcements: {
+          name: "Announcements",
+          desc: "Pengumuman terjadwal: sekali kirim atau berulang otomatis.",
+        },
+        automod: {
+          name: "AutoMod",
+          desc: "Moderasi otomatis: anti-spam, anti-invite, filter kata kasar.",
+        },
+        embed: {
+          name: "Embed Builder",
+          desc: "Buat pengumuman embed dari web dengan preview live.",
+        },
+        templates: {
+          name: "Message Templates",
+          desc: "Galeri template pesan welcome, goodbye, dan pengumuman.",
+        },
+      },
     },
     leaderboard: {
       metaTitle: "Leaderboard",
@@ -358,6 +419,11 @@ export const id = {
             label: "Pesan custom",
             placeholder: "Selamat datang {user} di {server}!",
             hint: "Bisa pakai {user} dan {server}. Kosongkan untuk kartu default.",
+          },
+          welcome_role_ids: {
+            label: "Role otomatis (ID, pisah koma)",
+            placeholder: "123456789, 987654321",
+            hint: "Role diberikan otomatis saat member join. Kosongkan bila tidak perlu.",
           },
         },
       },

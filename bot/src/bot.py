@@ -149,7 +149,7 @@ class FinchBot(commands.Bot):
         Pesan perpisahan bisa dikonfigurasi per-server via dashboard:
         `goodbye_enabled` ("1"/"0", default "1" = perilaku lama tetap jalan),
         `goodbye_channel_id` (fallback: system channel), `goodbye_message`
-        (template {user}/{server}).
+        (variabel: {user} {server} {member_count} {channel}).
         """
         from src.cogs.dashboard_sync import get_guild_setting, get_guild_setting_int
 
@@ -168,10 +168,16 @@ class FinchBot(commands.Bot):
             channel = member.guild.system_channel
         if channel is None:
             return
+        from src.utils.variabel import substitusi_variabel
+
         template = get_guild_setting(member.guild.id, "goodbye_message", "")
         if template.strip():
-            teks = template.replace("{user}", member.mention).replace(
-                "{server}", member.guild.name
+            teks = substitusi_variabel(
+                template,
+                user=member.mention,
+                server=member.guild.name,
+                member_count=member.guild.member_count or 0,
+                channel=channel.mention,
             )
         else:
             teks = (
@@ -189,12 +195,26 @@ class FinchBot(commands.Bot):
             pass
 
     async def on_member_join(self, member: discord.Member) -> None:
-        """Kirim kartu selamat datang bergambar (bisa dimatikan per-server via dashboard)."""
-        from src.cogs.dashboard_sync import get_guild_setting
+        """Kirim kartu selamat datang bergambar (bisa dimatikan per-server via dashboard).
+
+        Termasuk auto-role: `welcome_role_ids` (dashboard, daftar ID dipisah koma)
+        diberikan otomatis ke member baru. Ikut toggle `welcome_enabled`.
+        """
+        from src.cogs.dashboard_sync import get_guild_setting, parse_id_list
+        from src.utils.variabel import substitusi_variabel
 
         gid = member.guild.id
         if get_guild_setting(gid, "welcome_enabled", "1") != "1":
             return
+        # Auto-role: role otomatis untuk member baru (ala MEE6)
+        for rid in parse_id_list(get_guild_setting(gid, "welcome_role_ids", "")):
+            role = member.guild.get_role(rid)
+            if role is None:
+                continue
+            try:
+                await member.add_roles(role, reason="Welcome auto-role")
+            except (discord.Forbidden, discord.HTTPException):
+                log.warning("Gagal kasih auto-role %s ke %s", rid, member.id)
         channel_id = (
             int(get_guild_setting(gid, "welcome_channel_id", "") or 0)
             or config.settings.welcome_channel_id
@@ -226,11 +246,15 @@ class FinchBot(commands.Bot):
             log.exception("Gagal bikin welcome card")
             file = None
         try:
-            # Pesan custom via dashboard (mendukung {user} dan {server))
+            # Pesan custom via dashboard (variabel: {user} {server} {member_count} {channel})
             template = get_guild_setting(gid, "welcome_message", "")
             if template.strip():
-                teks = template.replace("{user}", member.mention).replace(
-                    "{server}", member.guild.name
+                teks = substitusi_variabel(
+                    template,
+                    user=member.mention,
+                    server=member.guild.name,
+                    member_count=member.guild.member_count or 0,
+                    channel=channel.mention,
                 )
             else:
                 teks = (

@@ -382,17 +382,36 @@ class Economy(commands.Cog):
 
     @tasks.loop(hours=24)
     async def bunga_harian(self):
-        """Bunga bank harian untuk semua row yang bank > 0."""
+        """Bunga bank harian untuk semua row yang bank > 0.
+
+        Server yang mematikan modul ekonomi via dashboard (`economy_enabled=0`)
+        dilewati — tidak ada bunga yang dibayar di sana.
+        """
         bunga = config.settings.bank_bunga_harian
         if bunga <= 0:
             return
         try:
             with get_connection() as conn:
-                conn.execute(
-                    "UPDATE economy SET bank = bank + CAST(bank * ? / 100 AS INTEGER) WHERE bank > 0",
-                    (bunga,),
-                )
-                n = conn.total_changes
+                mati = {
+                    r[0]
+                    for r in conn.execute(
+                        "SELECT guild_id FROM dashboard_settings"
+                        " WHERE key = 'economy_enabled' AND value = '0'"
+                    ).fetchall()
+                }
+                if mati:
+                    ph = ",".join("?" for _ in mati)
+                    cur = conn.execute(
+                        "UPDATE economy SET bank = bank + CAST(bank * ? / 100 AS INTEGER)"
+                        f" WHERE bank > 0 AND guild_id NOT IN ({ph})",
+                        (bunga, *mati),
+                    )
+                else:
+                    cur = conn.execute(
+                        "UPDATE economy SET bank = bank + CAST(bank * ? / 100 AS INTEGER) WHERE bank > 0",
+                        (bunga,),
+                    )
+                n = cur.rowcount
                 conn.commit()
             log.info("Bunga bank harian %d%% diterapkan ke %d akun.", bunga, n)
         except Exception:
@@ -477,7 +496,11 @@ class Economy(commands.Cog):
         except Exception:
             log.exception("Gagal baca tiket lotre")
             return
+        from src.cogs.dashboard_sync import modul_aktif
+
         for gid, mg in rows:
+            if not modul_aktif(gid, "economy_enabled"):
+                continue  # modul ekonomi dimatikan di server ini
             try:
                 await self._undi_minggu(gid, mg, harga)
             except Exception:
@@ -534,8 +557,12 @@ class Economy(commands.Cog):
         daftar = config.settings.gaji_roles_list()
         if not daftar:
             return
+        from src.cogs.dashboard_sync import modul_aktif
+
         now = discord.utils.utcnow()
         for guild in self.bot.guilds:
+            if not modul_aktif(guild.id, "economy_enabled"):
+                continue  # modul ekonomi dimatikan di server ini
             try:
                 with get_connection() as conn:
                     row = conn.execute(

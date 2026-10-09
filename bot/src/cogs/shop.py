@@ -30,6 +30,29 @@ class Shop(commands.Cog):
     def cog_unload(self):
         self.cek_lelang.cancel()
 
+    async def cog_check(self, ctx: commands.Context) -> bool:
+        """Shop adalah bagian modul Ekonomi — ikut toggle `economy_enabled`.
+
+        Lelang yang sudah berjalan tetap diselesaikan loop agar tidak menggantung.
+        """
+        if ctx.guild is None:
+            return True
+        from src.cogs.dashboard_sync import modul_aktif
+
+        if modul_aktif(ctx.guild.id, "economy_enabled"):
+            return True
+        pesan = "Modul ekonomi dimatikan oleh admin server ini."
+        try:
+            if ctx.interaction is None:
+                await ctx.send(pesan)
+            elif ctx.interaction.response.is_done():
+                await ctx.interaction.followup.send(pesan, ephemeral=True)
+            else:
+                await ctx.interaction.response.send_message(pesan, ephemeral=True)
+        except discord.HTTPException:
+            pass
+        return False
+
     @commands.hybrid_command(name="shop", description="Lihat barang yang bisa dibeli pakai koin")
     async def shop(self, ctx: commands.Context):
         """Lihat shop: /shop"""

@@ -46,10 +46,34 @@ class Season(commands.Cog):
     def cog_unload(self):
         self.cek_season.cancel()
 
+    async def cog_check(self, ctx: commands.Context) -> bool:
+        """Season mereset XP + bagi hadiah koin — ikut toggle `economy_enabled`."""
+        if ctx.guild is None:
+            return True
+        from src.cogs.dashboard_sync import modul_aktif
+
+        if modul_aktif(ctx.guild.id, "economy_enabled"):
+            return True
+        pesan = "Modul ekonomi dimatikan oleh admin server ini."
+        try:
+            if ctx.interaction is None:
+                await ctx.send(pesan)
+            elif ctx.interaction.response.is_done():
+                await ctx.interaction.followup.send(pesan, ephemeral=True)
+            else:
+                await ctx.interaction.response.send_message(pesan, ephemeral=True)
+        except discord.HTTPException:
+            pass
+        return False
+
     @tasks.loop(hours=1)
     async def cek_season(self):
+        from src.cogs.dashboard_sync import modul_aktif
+
         now = discord.utils.utcnow()
         for guild in self.bot.guilds:
+            if not modul_aktif(guild.id, "economy_enabled"):
+                continue  # modul ekonomi dimatikan di server ini
             try:
                 with get_connection() as conn:
                     season, berakhir_iso = _pastikan_state(conn, guild.id)

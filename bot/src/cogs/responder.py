@@ -4,6 +4,9 @@
 - `/respon-del <trigger>` (mod): hapus
 - `/respon-list`: lihat semua
 Trigger dicocokkan case-insensitive sebagai substring pesan.
+Respons mendukung variabel: {user} (mention pengirim), {server} (nama server),
+{member_count} (jumlah member), {channel} (mention channel asal).
+Bisa dimatikan per-server via dashboard: toggle `responder_enabled` ("1"/"0").
 """
 import logging
 
@@ -66,7 +69,7 @@ class Responder(commands.Cog):
     @commands.has_permissions(manage_messages=True)
     @discord.app_commands.describe(
         trigger="Kata pemicu (case-insensitive)",
-        respons="Balasan otomatis bot",
+        respons="Balasan otomatis bot (bisa pakai {user} {server} {member_count} {channel})",
     )
     async def respon_add(self, ctx: commands.Context, trigger: str, *, respons: str):
         """Tambah responder: /respon-add "ip mabar" "IP: 123.45..." """
@@ -146,6 +149,12 @@ class Responder(commands.Cog):
     async def on_message(self, message: discord.Message):
         if message.author.bot or not message.guild:
             return
+        from src.cogs.dashboard_sync import modul_aktif
+        from src.utils.variabel import substitusi_variabel
+
+        # Modul auto-responder bisa dimatikan per-server via dashboard web
+        if not modul_aktif(message.guild.id, "responder_enabled"):
+            return
         # jangan ganggu command bot
         if message.content.startswith(config.settings.prefix):
             return
@@ -156,6 +165,14 @@ class Responder(commands.Cog):
             ).fetchall()
         respons = cari_respons(rows, message.content)
         if respons:
+            # Variabel template: {user}, {server}, {member_count}, {channel}
+            respons = substitusi_variabel(
+                respons,
+                user=message.author.mention,
+                server=message.guild.name,
+                member_count=message.guild.member_count or 0,
+                channel=message.channel.mention,
+            )
             try:
                 await message.channel.send(respons)
             except discord.HTTPException:
