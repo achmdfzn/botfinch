@@ -7,12 +7,13 @@ import SiteHeader from "@/components/SiteHeader";
 import EmptyState from "@/components/EmptyState";
 import SettingsForm from "@/components/SettingsForm";
 import GuildTabs from "@/components/GuildTabs";
+import PluginBrowser, { type PluginCardData } from "@/components/PluginBrowser";
 import StatCard from "@/components/StatCard";
 import { auth } from "@/auth";
 import { canManage, fetchUserGuilds, iconUrl } from "@/lib/discord";
 import { dbConfigured, getStoredSettings, latestSnapshot } from "@/lib/db";
 import { MODULES, mergeSettings } from "@/lib/settings";
-import { TOGGLEABLE_PLUGINS } from "@/lib/plugins";
+import { PLUGINS, TOGGLEABLE_PLUGINS } from "@/lib/plugins";
 import { getDict, getLang, fmt } from "@/lib/i18n";
 
 export const instant = false;
@@ -29,6 +30,7 @@ export default async function GuildOverview({ params }: { params: Promise<{ guil
   const dict = getDict(lang);
   const gc = dict.guild.common;
   const ov = dict.guild.overview;
+  const pl = dict.guild.plugins;
   const sub = dict.guild.subnav;
   const locale = lang === "en" ? "en-US" : "id-ID";
   const session = await auth();
@@ -77,6 +79,22 @@ export default async function GuildOverview({ params }: { params: Promise<{ guil
   const snapGuild = snap?.guilds.find((g) => g.id === guildId);
   const stored = await getStoredSettings(guildId);
   const settings = mergeSettings(stored);
+
+  // Data untuk PluginBrowser: pemetaan sama persis dengan /dashboard/[guildId]/plugins
+  const pluginInitial: Record<string, boolean> = {};
+  for (const p of TOGGLEABLE_PLUGINS) {
+    if (p.toggleKey) pluginInitial[p.toggleKey] = settings[p.toggleKey] === true;
+  }
+  const cards = dict.guild.plugins.cards as Record<string, { name: string; desc: string }>;
+  const pluginCards: PluginCardData[] = PLUGINS.map((p) => ({
+    id: p.id,
+    emoji: p.emoji,
+    group: p.group,
+    toggleKey: p.toggleKey,
+    configure: p.configure,
+    name: cards[p.id]?.name ?? p.id,
+    desc: cards[p.id]?.desc ?? "",
+  }));
 
   const activePlugins = TOGGLEABLE_PLUGINS.filter(
     (p) => p.toggleKey && settings[p.toggleKey] === true,
@@ -136,14 +154,6 @@ export default async function GuildOverview({ params }: { params: Promise<{ guil
                 {fmt(ov.pluginActiveCount, { on: activePlugins, total: TOGGLEABLE_PLUGINS.length })}
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <Link
-                href={`/dashboard/${guildId}/plugins`}
-                className="inline-flex min-h-[44px] items-center rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-ink hover:bg-brand-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
-              >
-                {ov.managePlugins}
-              </Link>
-            </div>
           </div>
           <Link
             href="/dashboard"
@@ -153,6 +163,29 @@ export default async function GuildOverview({ params }: { params: Promise<{ guil
           </Link>
         </section>
         <GuildTabs
+          plugins={
+            <PluginBrowser
+              guildId={guildId}
+              plugins={pluginCards}
+              initial={pluginInitial}
+              groupTitles={{
+                essentials: pl.groupEssentials,
+                engagement: pl.groupEngagement,
+                moderation: pl.groupModeration,
+                utilities: pl.groupUtilities,
+              }}
+              labels={{
+                tabAll: pl.tabAll,
+                configure: pl.configure,
+                enable: pl.enable,
+                disable: pl.disable,
+                saving: dict.guild.modul.saving,
+                toggleError: dict.guild.modul.toggleError,
+                toggleOn: dict.guild.modul.toggleOn,
+                toggleOff: dict.guild.modul.toggleOff,
+              }}
+            />
+          }
           overview={
             <div className="space-y-8">
               <section aria-label={ov.statsTitle}>

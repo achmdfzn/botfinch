@@ -5,7 +5,7 @@ import type { Metadata } from "next";
 import SiteHeader from "@/components/SiteHeader";
 import EmptyState from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
-import PluginsManager, { type PluginCardData } from "@/components/PluginsManager";
+import PluginBrowser, { type PluginCardData } from "@/components/PluginBrowser";
 import { auth } from "@/auth";
 import { canManage, fetchUserGuilds } from "@/lib/discord";
 import { dbConfigured, getStoredSettings } from "@/lib/db";
@@ -101,7 +101,7 @@ export default async function GuildPlugins({ params }: { params: Promise<{ guild
             </Link>
           }
         />
-        <PluginsManager
+        <PluginBrowser
           guildId={guildId}
           plugins={plugins}
           initial={initial}
@@ -112,7 +112,10 @@ export default async function GuildPlugins({ params }: { params: Promise<{ guild
             utilities: pl.groupUtilities,
           }}
           labels={{
+            tabAll: pl.tabAll,
             configure: pl.configure,
+            enable: pl.enable,
+            disable: pl.disable,
             saving: dict.guild.modul.saving,
             toggleError: dict.guild.modul.toggleError,
             toggleOn: dict.guild.modul.toggleOn,
