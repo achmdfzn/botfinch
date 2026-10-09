@@ -1,4 +1,4 @@
-export type FieldKind = "toggle" | "number" | "text" | "textarea" | "channel" | "levelroles";
+export type FieldKind = "toggle" | "number" | "text" | "textarea" | "channel" | "levelroles" | "select";
 
 export interface FieldDef {
   key: string;
@@ -8,6 +8,8 @@ export interface FieldDef {
   max?: number;
   placeholder?: string;
   hint?: string;
+  /** Nilai yang diizinkan untuk kind "select". Label tiap nilai diambil dari kamus. */
+  options?: string[];
 }
 
 export interface ModuleDef {
@@ -20,7 +22,8 @@ export interface ModuleDef {
 type Rule =
   | { kind: "bool" }
   | { kind: "str"; max: number }
-  | { kind: "num"; min: number; max: number };
+  | { kind: "num"; min: number; max: number }
+  | { kind: "enum"; values: string[] };
 
 export const SETTING_DEFAULTS: Record<string, boolean | string | number> = {
   // modul utama
@@ -34,6 +37,7 @@ export const SETTING_DEFAULTS: Record<string, boolean | string | number> = {
   starboard_threshold: 3,
   // welcome detail
   welcome_message: "",
+  welcome_theme: "default",
   // goodbye detail
   goodbye_enabled: true,
   goodbye_channel_id: "",
@@ -42,6 +46,7 @@ export const SETTING_DEFAULTS: Record<string, boolean | string | number> = {
   leveling_xp_rate: 100,
   leveling_announce_channel_id: "",
   leveling_roles: "[]",
+  levelup_style: "classic",
   // automod detail
   automod_spam: true,
   automod_invites: true,
@@ -65,12 +70,14 @@ export const SETTING_RULES: Record<string, Rule> = {
   starboard_channel_id: { kind: "str", max: 32 },
   starboard_threshold: { kind: "num", min: 1, max: 25 },
   welcome_message: { kind: "str", max: 500 },
+  welcome_theme: { kind: "enum", values: ["default", "midnight", "sunset", "ocean"] },
   goodbye_enabled: { kind: "bool" },
   goodbye_channel_id: { kind: "str", max: 32 },
   goodbye_message: { kind: "str", max: 500 },
   leveling_xp_rate: { kind: "num", min: 25, max: 400 },
   leveling_announce_channel_id: { kind: "str", max: 32 },
   leveling_roles: { kind: "str", max: 4000 },
+  levelup_style: { kind: "enum", values: ["classic", "minimal", "party", "mention"] },
   automod_spam: { kind: "bool" },
   automod_invites: { kind: "bool" },
   automod_caps: { kind: "bool" },
@@ -89,6 +96,12 @@ export const MODULES: ModuleDef[] = [
     description: "Kirim kartu selamat datang bergambar tiap ada member baru.",
     fields: [
       { key: "welcome_channel_id", label: "Channel welcome", kind: "channel" },
+      {
+        key: "welcome_theme",
+        label: "Tema kartu welcome",
+        kind: "select",
+        options: ["default", "midnight", "sunset", "ocean"],
+      },
       {
         key: "welcome_message",
         label: "Pesan custom",
@@ -133,6 +146,12 @@ export const MODULES: ModuleDef[] = [
         kind: "levelroles",
         hint: "Member otomatis dapat role saat mencapai level.",
       },
+      {
+        key: "levelup_style",
+        label: "Gaya pesan level-up",
+        kind: "select",
+        options: ["classic", "minimal", "party", "mention"],
+      },
     ],
   },
   {
@@ -174,6 +193,7 @@ export function cleanValue(key: string, v: unknown): boolean | string | number |
   const rule = SETTING_RULES[key];
   if (!rule) return undefined;
   if (rule.kind === "bool") return typeof v === "boolean" ? v : undefined;
+  if (rule.kind === "enum") return typeof v === "string" && rule.values.includes(v) ? v : undefined;
   if (rule.kind === "str") {
     if (typeof v !== "string") return undefined;
     if (key === "leveling_roles" && !validLevelRoles(v)) return undefined;

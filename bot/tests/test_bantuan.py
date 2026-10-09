@@ -358,3 +358,26 @@ def test_timeout_menonaktifkan_select():
 
     assert all(item.disabled for item in view.children)
     pesan.edit.assert_called_once_with(view=view)
+
+
+def test_bantuan_terdaftar_sebagai_method_cog():
+    """Regresi: /bantuan harus jadi method class General (bukan kode mati di
+    module level) agar terdaftar di command tree. Pernah terdampar setelah
+    `return` di build_serverinfo_embed sehingga hilang dari tree."""
+    import inspect
+    from discord.ext import commands as ext_commands
+
+    assert "bantuan" in general.General.__dict__, "bantuan bukan method General"
+    attr = general.General.__dict__["bantuan"]
+    # hybrid_command menghasilkan Command object / method terdekorasi
+    assert isinstance(
+        attr, ext_commands.HybridCommand
+    ) or callable(attr), "bantuan tidak terdekorasi hybrid_command"
+    # build_serverinfo_embed tetap fungsi module-level (bukan method)
+    assert "build_serverinfo_embed" not in general.General.__dict__
+    assert callable(general.build_serverinfo_embed)
+    # bantuan tidak boleh jadi fungsi module-level yang terdampar
+    assert not (
+        "bantuan" in vars(general)
+        and inspect.isfunction(vars(general)["bantuan"])
+    ), "bantuan terdampar di module level"

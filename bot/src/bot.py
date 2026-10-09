@@ -211,6 +211,7 @@ class FinchBot(commands.Bot):
             avatar_bytes = None
         loop = asyncio.get_running_loop()
         try:
+            theme = get_guild_setting(gid, "welcome_theme", "default")
             buf = await loop.run_in_executor(
                 None,
                 make_welcome_card,
@@ -218,6 +219,7 @@ class FinchBot(commands.Bot):
                 member.display_name,
                 member.guild.name,
                 member.guild.member_count or 0,
+                theme,
             )
             file = discord.File(buf, filename="welcome.png")
         except Exception:

@@ -64,6 +64,18 @@ CREATE TABLE IF NOT EXISTS dashboard_announcements (
 """
 
 
+def substitusi_pengumuman(pesan: str, nama_server: str, now=None) -> str:
+    """Substitusi placeholder di pesan pengumuman terjadwal.
+
+    Didukung: {server} (nama server), {date} (tanggal hari ini, format DD Mon YYYY).
+    """
+    if now is None:
+        now = discord.utils.utcnow()
+    return pesan.replace("{server}", nama_server).replace(
+        "{date}", now.strftime("%d %b %Y")
+    )
+
+
 def _int_aman(nilai, default: int = 0) -> int:
     """int() yang tidak pernah raise — untuk id dari payload dashboard."""
     try:
@@ -517,7 +529,9 @@ class DashboardSync(commands.Cog):
                 except Exception:
                     continue
             try:
-                await channel.send(pesan)
+                # Substitusi placeholder {server} / {date} sebelum dikirim
+                teks = substitusi_pengumuman(pesan, guild.name, now)
+                await channel.send(teks)
             except Exception:
                 continue  # gagal -> lewati diam-diam
             try:

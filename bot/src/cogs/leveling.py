@@ -13,7 +13,7 @@ from discord.ext import commands, tasks
 
 from src import config
 from src.store import get_connection
-from src.utils.embeds import base_embed, level_embed
+from src.utils.embeds import base_embed, finch_embed, level_embed
 from src.utils.rankcard import make_rank_card
 from src.utils.xp import tambah_xp, beri_role_reward
 
@@ -22,6 +22,48 @@ from src.utils.xp import tambah_xp, beri_role_reward
 _xp_cooldown = defaultdict(float)
 # (guild_id, user_id) -> timestamp reaksi terakhir untuk cooldown reaction XP
 _reaction_cooldown = defaultdict(float)
+
+
+GAYA_LEVELUP = ("classic", "minimal", "party", "mention")
+
+
+def build_levelup(
+    gaya: str, mention: str, level: int, bonus: int
+) -> tuple[str, "str | discord.Embed"]:
+    """Rakit pengumuman level-up sesuai gaya per-server.
+
+    `gaya`: "classic" | "minimal" | "party" | "mention".
+    Nilai invalid → fallback "classic".
+    Return ("text", str) atau ("embed", discord.Embed).
+    """
+    if gaya not in GAYA_LEVELUP:
+        gaya = "classic"
+    bonus_txt = f" (+**{bonus}** 🪙 koin)" if bonus else ""
+    if gaya == "minimal":
+        teks = f"{mention} naik ke Level {level}"
+        if bonus:
+            teks += f" (+{bonus} 🪙)"
+        return "text", teks
+    if gaya == "party":
+        embed = finch_embed(f"🎉 Naik Level — {level}")
+        embed.add_field(name="Level", value=f"**{level}**", inline=True)
+        embed.add_field(
+            name="Bonus koin",
+            value=f"**{bonus}** 🪙" if bonus else "-",
+            inline=True,
+        )
+        embed.add_field(
+            name="Member", value=mention, inline=False
+        )
+        return "embed", embed
+    if gaya == "mention":
+        teks = f"🎉🎊 {mention} NAIK KE LEVEL {level}! Selamat! 🚀"
+        if bonus:
+            teks += f" +{bonus} 🪙"
+        return "text", teks
+    # classic: teks asli (tidak berubah)
+    teks = f"🎉 Selamat {mention}, kamu naik ke **Level {level}**! 🚀" + bonus_txt
+    return "text", teks
 
 
 def hitung_rank(conn, guild_id: int, level: int, xp: int) -> int:
@@ -122,18 +164,24 @@ class Leveling(commands.Cog):
                 with get_connection() as conn:
                     eko.tambah_koin(conn, gid, message.author.id, bonus)
             try:
-                teks = (
-                    f"🎉 Selamat {message.author.mention}, kamu naik ke **Level {current_level}**! 🚀"
+                # Gaya pesan level-up per-server via dashboard (classic/minimal/party/mention)
+                gaya = get_guild_setting(gid, "levelup_style", "classic")
+                jenis, pesan_levelup = build_levelup(
+                    gaya, message.author.mention, current_level, bonus
                 )
-                if bonus:
-                    teks += f" (+**{bonus}** 🪙 koin)"
                 # Channel pengumuman khusus via dashboard; fallback ke channel asal
                 announce_id = int(get_guild_setting(gid, "leveling_announce_channel_id", "") or 0)
                 target = message.guild.get_channel(announce_id) if announce_id else None
-                if target is None:
-                    await message.channel.send(teks, delete_after=10)
+                if jenis == "embed":
+                    if target is None:
+                        await message.channel.send(embed=pesan_levelup, delete_after=10)
+                    else:
+                        await target.send(embed=pesan_levelup)
                 else:
-                    await target.send(teks)
+                    if target is None:
+                        await message.channel.send(pesan_levelup, delete_after=10)
+                    else:
+                        await target.send(pesan_levelup)
             except discord.Forbidden:
                 pass
             # Achievement level (best effort)

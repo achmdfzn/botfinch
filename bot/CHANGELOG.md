@@ -5,6 +5,27 @@ bertanggal saat rilis ke server.
 
 ## Unreleased
 
+### Baru — tema kartu welcome, gaya level-up, serverinfo kaya, substitusi pengumuman (2026-10-09)
+- Tema kartu welcome (`src/utils/rankcard.py`, key dashboard `welcome_theme`):
+  `make_welcome_card(..., theme="default")` dengan 4 varian palet —
+  `default` (teal Finch), `midnight` (navy gelap), `sunset` (oranye hangat),
+  `ocean` (biru). `on_member_join` baca setting per-server; nilai invalid →
+  fallback `default`.
+- Gaya pesan level-up (`src/cogs/leveling.py`, key dashboard `levelup_style`,
+  default `classic`) via builder `build_levelup()`: `classic` (teks seperti
+  semula), `minimal` (satu baris polos), `party` (embed teal: level + bonus
+  koin), `mention` (teks meriah + emoji diet). Bonus koin tetap dihitung
+  seperti semula di semua gaya.
+- `/serverinfo` diperkaya (`src/cogs/general.py`, helper
+  `build_serverinfo_embed()`): ID server, tanggal dibuat, owner, boost level
+  (+ jumlah boost), channel teks/suara, jumlah role, jumlah emoji, breakdown
+  member manusia/bot (bila cache member tersedia), limit file. Nama command
+  tidak berubah.
+- Pengumuman terjadwal (`src/cogs/dashboard_sync.py`): sebelum dikirim,
+  pesan kini disubstitusi via `substitusi_pengumuman()` — `{server}` (nama
+  server) dan `{date}` (tanggal hari ini).
+- 19 test baru (`tests/test_update_workera.py`) → 339 tests lolos.
+
 ### Baru — dashboard web penuh: leaderboard, self-roles, responder, giveaway (2026-10-08)
 - `dashboard_sync`: snapshot kini kirim daftar role, top 10 level/koin, dan
   giveaway aktif. Pull pindah ke `GET /api/guilds/{id}/sync` (pengaturan mentah +

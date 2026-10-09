@@ -48,6 +48,7 @@ export default async function GuildLayout({
     { href: `/dashboard/${guildId}/giveaway`, label: sub.giveaway },
     { href: `/dashboard/${guildId}/embed`, label: sub.embed },
     { href: `/dashboard/${guildId}/pengumuman`, label: sub.pengumuman },
+    { href: `/dashboard/${guildId}/template`, label: dict.templates.navLabel },
     { href: `/dashboard/${guildId}/modlog`, label: sub.modlog },
     { href: `/dashboard/${guildId}/modul`, label: sub.modul },
   ];

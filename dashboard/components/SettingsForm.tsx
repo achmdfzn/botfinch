@@ -26,6 +26,7 @@ interface FieldTexts {
   label?: string;
   hint?: string;
   placeholder?: string;
+  options?: Record<string, string>;
 }
 
 type ModuleDict = Dict["settings"]["modules"][keyof Dict["settings"]["modules"]];
@@ -171,6 +172,24 @@ function FieldInput({
           {s.addLevelRole}
         </button>
       </div>
+    );
+  }
+
+  if (field.kind === "select") {
+    const opts = field.options ?? [];
+    return (
+      <select
+        id={`f-${field.key}`}
+        value={String(value ?? "")}
+        onChange={(e) => onChange(e.target.value)}
+        className={inputCls}
+      >
+        {opts.map((v) => (
+          <option key={v} value={v}>
+            {texts?.options?.[v] ?? v}
+          </option>
+        ))}
+      </select>
     );
   }
 

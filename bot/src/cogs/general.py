@@ -347,6 +347,14 @@ class General(commands.Cog):
         embed.add_field(name="Server", value=str(len(self.bot.guilds)), inline=True)
         await ctx.send(embed=embed)
 
+    @commands.hybrid_command(name="serverinfo", description="Info server ini")
+    async def serverinfo(self, ctx: commands.Context):
+        """Info server: !serverinfo / /serverinfo"""
+        if ctx.guild is None:
+            await ctx.send("❌ Hanya bisa di server.", ephemeral=True)
+            return
+        await ctx.send(embed=build_serverinfo_embed(ctx.guild))
+
     @commands.hybrid_command(name="userinfo", description="Lihat info seorang member")
     @app_commands.describe(user="Member yang mau dilihat (default: kamu sendiri)")
     async def userinfo(self, ctx: commands.Context, user: discord.Member | None = None):
@@ -369,27 +377,6 @@ class General(commands.Cog):
             )
         await ctx.send(embed=embed)
 
-    @commands.hybrid_command(name="serverinfo", description="Info server ini")
-    async def serverinfo(self, ctx: commands.Context):
-        """Info server: !serverinfo / /serverinfo"""
-        if ctx.guild is None:
-            await ctx.send("❌ Hanya bisa di server.", ephemeral=True)
-            return
-        guild = ctx.guild
-        embed = base_embed(f"🏠 {guild.name}")
-        if guild.icon:
-            embed.set_thumbnail(url=guild.icon.url)
-        embed.add_field(name="Owner", value=guild.owner.mention if guild.owner else "-", inline=True)
-        embed.add_field(name="Member", value=str(guild.member_count), inline=True)
-        embed.add_field(
-            name="Channel",
-            value=f"{len(guild.text_channels)} teks / {len(guild.voice_channels)} suara",
-            inline=True,
-        )
-        embed.add_field(name="Dibuat", value=guild.created_at.strftime("%d %b %Y"), inline=True)
-        embed.add_field(name="Boost", value=f"Level {guild.premium_tier}", inline=True)
-        await ctx.send(embed=embed)
-
     @commands.hybrid_command(name="bantuan", description="Daftar perintah Finch")
     async def bantuan(self, ctx: commands.Context):
         """Daftar perintah: !bantuan / /bantuan"""
@@ -405,6 +392,49 @@ class General(commands.Cog):
             log.warning("bantuan: gagal kirim respon awal (interaction mati).")
             return
         await bind_view_message(ctx, view, sent)
+
+
+def build_serverinfo_embed(guild: discord.Guild) -> discord.Embed:
+    """Embed info server yang kaya: ID, owner, tanggal, boost, channel, role,
+    emoji, dan breakdown member manusia/bot (kalau cache member tersedia)."""
+    embed = base_embed(f"🏠 {guild.name}")
+    if guild.icon:
+        embed.set_thumbnail(url=guild.icon.url)
+    # ID & tanggal dibuat (monospace = data tabular)
+    embed.add_field(name="ID Server", value=f"`{guild.id}`", inline=True)
+    embed.add_field(
+        name="Dibuat", value=guild.created_at.strftime("%d %b %Y"), inline=True
+    )
+    embed.add_field(
+        name="Owner", value=guild.owner.mention if guild.owner else "-", inline=True
+    )
+    # Member: total + breakdown manusia/bot bila cache tersedia
+    total = guild.member_count if guild.member_count else len(guild.members or [])
+    if guild.members:
+        bot_n = sum(1 for m in guild.members if getattr(m, "bot", False))
+        manusia_n = len(guild.members) - bot_n
+        member_v = f"`{total}` (`{manusia_n}` manusia / `{bot_n}` bot)"
+    else:
+        member_v = f"`{total}`"
+    embed.add_field(name="Member", value=member_v, inline=True)
+    embed.add_field(name="Role", value=f"`{len(guild.roles)}`", inline=True)
+    embed.add_field(name="Emoji", value=f"`{len(guild.emojis)}`", inline=True)
+    # Channel: teks / suara
+    embed.add_field(
+        name="Channel",
+        value=(
+            f"`{len(guild.text_channels)}` teks / "
+            f"`{len(guild.voice_channels)}` suara"
+        ),
+        inline=True,
+    )
+    embed.add_field(
+        name="Boost",
+        value=f"Level `{guild.premium_tier}` (`{guild.premium_subscription_count or 0}` boost)",
+        inline=True,
+    )
+    embed.add_field(name="File", value=f"Limit `{guild.filesize_limit // 1048576} MB`", inline=True)
+    return embed
 
 
 async def setup(bot: commands.Bot):

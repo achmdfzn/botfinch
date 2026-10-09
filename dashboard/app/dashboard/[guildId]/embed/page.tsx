@@ -70,12 +70,18 @@ export default async function GuildEmbed({ params }: { params: Promise<{ guildId
     <div>
       <SiteHeader />
       <main className="mx-auto max-w-3xl px-4 py-10">
-        <Link href="/dashboard" className="text-sm text-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-brand">
-          {dict.nav.back}
-        </Link>
-        <div className="mt-3">
-          <PageHeader title={guildName} description={g.subtitle} />
-        </div>
+        <PageHeader
+          title={guildName}
+          description={g.subtitle}
+          actions={
+            <Link
+              href="/dashboard"
+              className="inline-flex min-h-[44px] items-center text-sm text-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-brand"
+            >
+              {dict.guild.common.backToGuilds}
+            </Link>
+          }
+        />
         <EmbedBuilder guildId={guildId} channels={snapGuild?.channels ?? []} />
       </main>
     </div>

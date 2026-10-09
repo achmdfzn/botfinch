@@ -119,36 +119,76 @@ def make_rank_card(
     return buf
 
 
+# Palet tema kartu welcome: (background, aksen, background bar, teks, subteks).
+# "default" = teal Finch (0x2EC4B6); nilai invalid → fallback ke default.
+TEMA_WELCOME = {
+    "default": {
+        "bg": (43, 45, 49),
+        "accent": (46, 196, 182),
+        "bar_bg": (64, 68, 75),
+        "text": (255, 255, 255),
+        "subtext": (185, 187, 190),
+    },
+    "midnight": {
+        "bg": (18, 22, 38),
+        "accent": (120, 140, 250),
+        "bar_bg": (36, 42, 66),
+        "text": (235, 240, 255),
+        "subtext": (150, 162, 195),
+    },
+    "sunset": {
+        "bg": (46, 30, 26),
+        "accent": (255, 122, 26),
+        "bar_bg": (70, 52, 44),
+        "text": (255, 245, 235),
+        "subtext": (205, 185, 170),
+    },
+    "ocean": {
+        "bg": (18, 34, 52),
+        "accent": (56, 150, 230),
+        "bar_bg": (38, 58, 80),
+        "text": (235, 246, 255),
+        "subtext": (160, 190, 215),
+    },
+}
+
+
 def make_welcome_card(
     avatar_bytes: bytes | None,
     display_name: str,
     guild_name: str,
     member_count: int,
+    theme: str = "default",
 ) -> io.BytesIO:
-    """Kartu selamat datang 800x320 PNG. Return BytesIO siap dikirim."""
+    """Kartu selamat datang 800x320 PNG. Return BytesIO siap dikirim.
+
+    `theme`: salah satu dari "default", "midnight", "sunset", "ocean".
+    Nilai di luar itu fallback ke "default".
+    """
+    palet = TEMA_WELCOME.get(theme) or TEMA_WELCOME["default"]
     W2, H2 = 800, 320
     img = Image.new("RGBA", (W2, H2), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
-    draw.rounded_rectangle([0, 0, W2 - 1, H2 - 1], radius=28, fill=BG)
+    draw.rounded_rectangle([0, 0, W2 - 1, H2 - 1], radius=28, fill=palet["bg"])
     # strip aksen atas
-    draw.rounded_rectangle([0, 0, W2 - 1, 16], radius=8, fill=ACCENT)
+    draw.rounded_rectangle([0, 0, W2 - 1, 16], radius=8, fill=palet["accent"])
 
     # avatar tengah
     av = _avatar_bulat(avatar_bytes).resize((150, 150))
     img.paste(av, ((W2 - 150) // 2, 36), av)
 
-    def tengah(teks: str, y: int, font, fill=TEXT):
+    def tengah(teks: str, y: int, font, fill=palet["text"]):
         draw.text(((W2 - draw.textlength(teks, font=font)) / 2, y), teks, font=font, fill=fill)
 
-    tengah("SELAMAT DATANG", 200, _font(28), fill=ACCENT)
+    tengah("SELAMAT DATANG", 200, _font(28), fill=palet["accent"])
     nama = _potong_nama(draw, display_name, _font(52), max_w=700)
     tengah(nama, 228, _font(52))
     tengah(
         f"Member ke-{member_count} di {guild_name}",
         288,
         _font(24),
-        fill=SUBTEXT,
+        fill=palet["subtext"],
     )
 
     buf = io.BytesIO()
