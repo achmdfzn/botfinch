@@ -10,6 +10,7 @@ import logging
 import discord
 from discord.ext import commands
 
+from src.bot import MENTIONS_PENGUMUMAN
 from src.store import get_connection
 
 log = logging.getLogger("finch")
@@ -43,6 +44,9 @@ class Sticky(commands.Cog):
         if not teks:
             await ctx.send("❌ Teks tidak boleh kosong.", ephemeral=True)
             return
+        if len(teks) > 2000:
+            await ctx.send("❌ Teks kepanjangan (maks 2000 karakter).", ephemeral=True)
+            return
         with get_connection() as conn:
             row = conn.execute(
                 "SELECT message_id FROM sticky WHERE channel_id = ?",
@@ -55,7 +59,8 @@ class Sticky(commands.Cog):
                 except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                     pass
         try:
-            msg = await ctx.channel.send(teks)
+            # Sticky ditulis mod -> boleh @everyone.
+            msg = await ctx.channel.send(teks, allowed_mentions=MENTIONS_PENGUMUMAN)
         except discord.HTTPException:
             await ctx.send("❌ Gagal kirim sticky (cek permission).", ephemeral=True)
             return
@@ -127,7 +132,8 @@ class Sticky(commands.Cog):
                 except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                     pass
             try:
-                baru = await message.channel.send(teks)
+                # Sticky ditulis mod -> boleh @everyone.
+                baru = await message.channel.send(teks, allowed_mentions=MENTIONS_PENGUMUMAN)
             except discord.HTTPException:
                 log.warning("Gagal kirim ulang sticky di %s", message.channel.id)
                 return

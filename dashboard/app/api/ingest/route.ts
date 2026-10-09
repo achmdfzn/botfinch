@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { dbConfigured, saveSnapshot, type SnapshotGuild, type SnapshotPayload } from "@/lib/db";
 import { botAuthorized } from "@/lib/access";
+import { DISCORD_ID_RE } from "@/lib/validate";
 
 function sanitizeLeaderboards(v: unknown): SnapshotGuild["leaderboards"] {
   const empty = { levels: [], coins: [] };
@@ -85,7 +86,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid_payload" }, { status: 400 });
   }
   const guilds = body.guilds
-    .filter((g) => g && typeof g.id === "string")
+    // guild.id harus snowflake Discord yang valid: tanpa ini pemegang
+    // DASHBOARD_SECRET bisa menyuntik ID arbitrer ke snapshot.
+    .filter((g) => g && typeof g.id === "string" && DISCORD_ID_RE.test(g.id))
     .slice(0, 500)
     .map((g) => {
       const raw = g as unknown as Record<string, unknown>;

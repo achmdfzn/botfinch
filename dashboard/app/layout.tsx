@@ -6,8 +6,9 @@ import { getDict, getLang } from "@/lib/i18n";
 
 const inter = Inter({ variable: "--font-sans", subsets: ["latin"] });
 
-// Layout membaca cookie bahasa (getLang) -> render dinamis per request,
-// sama seperti semua page yang sudah memakai `instant = false`.
+// Layout membaca cookie bahasa (getLang) -> render dinamis per request.
+// `instant = false`: opt-out dari validasi instant navigation (bukan pengatur
+// prerender — sifat dinamis dijamin oleh `await connection()` di tiap page).
 export const instant = false;
 
 // Anti-FOUC: pasang class 'light' SEBELUM paint pertama bila tersimpan di

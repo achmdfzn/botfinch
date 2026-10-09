@@ -1,14 +1,15 @@
-import Link from "next/link";
-import Image from "next/image";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import type { Metadata } from "next";
 import SiteHeader from "@/components/SiteHeader";
 import EmptyState from "@/components/EmptyState";
-import PluginBrowser, { type PluginCardData } from "@/components/PluginBrowser";
-import { auth } from "@/auth";
-import { canManage, fetchUserGuilds, iconUrl } from "@/lib/discord";
-import { dbConfigured, getStoredSettings, latestSnapshot } from "@/lib/db";
+import ReloadButton from "@/components/ReloadButton";
+import PageHeader from "@/components/PageHeader";
+import PluginCards, { type PluginCardData, type PluginTab } from "@/components/PluginCards";
+import { getSessionSafe } from "@/lib/access";
+import { canManage } from "@/lib/discord";
+import { fetchUserGuilds } from "@/lib/access";
+import { dbConfigured, getStoredSettings } from "@/lib/db";
 import { mergeSettings } from "@/lib/settings";
 import { PLUGINS, TOGGLEABLE_PLUGINS } from "@/lib/plugins";
 import { getDict, getLang, fmt } from "@/lib/i18n";
@@ -20,15 +21,31 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: `${dict.guild.plugins.metaTitle} | Finch Dashboard` };
 }
 
-export default async function GuildPluginsHome({ params }: { params: Promise<{ guildId: string }> }) {
+const TABS: PluginTab[] = ["all", "essentials", "engagement", "moderation", "utilities"];
+
+/**
+ * Halaman Plugins utama per-server (dulu duplikat dengan /plugins).
+ * /dashboard/[guildId]/plugins kini redirect ke sini.
+ * Link sidebar plugin tanpa halaman konfigurasi memakai query ?tab=<grup>
+ * untuk membuka tab kategori yang relevan.
+ */
+export default async function GuildPluginsHome({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ guildId: string }>;
+  searchParams: Promise<{ tab?: string }>;
+}) {
   await connection(); // halaman dinamis: sesi + API Discord + DB, jangan di-prerender
   const { guildId } = await params;
+  const { tab } = await searchParams;
+  const initialTab: PluginTab = TABS.includes(tab as PluginTab) ? (tab as PluginTab) : "all";
   const lang = await getLang();
   const dict = getDict(lang);
   const gc = dict.guild.common;
   const ov = dict.guild.overview;
   const pl = dict.guild.plugins;
-  const session = await auth();
+  const session = await getSessionSafe();
   if (!session?.accessToken) {
     return (
       <div>
@@ -40,24 +57,24 @@ export default async function GuildPluginsHome({ params }: { params: Promise<{ g
     );
   }
 
-  let guildName = guildId;
-  let guildIconUrl: string | null = null;
+  // notFound() dipanggil di luar try/catch: ia melempar error kontrol
+  // Next yang tidak boleh tertelan catch — guild tak ditemukan harus 404.
+  let guilds: Awaited<ReturnType<typeof fetchUserGuilds>>;
   try {
-    const guilds = await fetchUserGuilds(session.accessToken);
-    const mine = guilds.find((g) => g.id === guildId && canManage(g));
-    if (!mine) notFound();
-    guildName = mine.name;
-    guildIconUrl = iconUrl(guildId, mine.icon, 128);
+    guilds = await fetchUserGuilds(session.accessToken);
   } catch {
     return (
       <div>
         <SiteHeader />
         <main className="mx-auto max-w-3xl px-4 py-16">
-          <EmptyState title={gc.loadTitle} body={gc.loadBody} />
+          <EmptyState title={gc.loadTitle} body={gc.loadBody} action={<ReloadButton />} />
         </main>
       </div>
     );
   }
+
+  const mine = guilds.find((g) => g.id === guildId && canManage(g));
+  if (!mine) notFound();
 
   if (!dbConfigured()) {
     return (
@@ -70,11 +87,10 @@ export default async function GuildPluginsHome({ params }: { params: Promise<{ g
     );
   }
 
-  await latestSnapshot();
   const stored = await getStoredSettings(guildId);
   const settings = mergeSettings(stored);
 
-  // Data untuk PluginBrowser: pemetaan sama persis dengan /dashboard/[guildId]/plugins
+  // State awal toggle tiap plugin.
   const pluginInitial: Record<string, boolean> = {};
   for (const p of TOGGLEABLE_PLUGINS) {
     if (p.toggleKey) pluginInitial[p.toggleKey] = settings[p.toggleKey] === true;
@@ -95,72 +111,36 @@ export default async function GuildPluginsHome({ params }: { params: Promise<{ g
   ).length;
 
   return (
-    <div>
-      <SiteHeader />
-      <main className="mx-auto max-w-7xl px-4 py-10">
-        {/* Blok sambutan: ikon + nama server + status plugin */}
-        <section aria-label={ov.welcomeAria} className="mb-8">
-          <div className="flex flex-wrap items-center gap-4 rounded-xl border border-edge bg-panel p-4 sm:p-5">
-            {guildIconUrl ? (
-              <Image
-                // unoptimized: ikon langsung dari CDN Discord, tanpa lewat
-                // Image Optimization (lihat alasan di GuildCard)
-                src={guildIconUrl}
-                alt=""
-                width={64}
-                height={64}
-                className="h-16 w-16 shrink-0 rounded-2xl"
-                unoptimized
-              />
-            ) : (
-              <div
-                aria-hidden="true"
-                className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-edge text-2xl font-bold text-fg"
-              >
-                {guildName.slice(0, 1).toUpperCase()}
-              </div>
-            )}
-            <div className="min-w-0 flex-1 basis-48">
-              <h1 className="truncate text-xl font-bold tracking-tight text-fg sm:text-2xl">
-                {guildName}
-              </h1>
-              <p className="mt-1 text-sm text-muted">
-                {fmt(ov.pluginActiveCount, { on: activePlugins, total: TOGGLEABLE_PLUGINS.length })}
-              </p>
-            </div>
-          </div>
-          <Link
-            href="/dashboard"
-            className="mt-3 inline-flex min-h-[44px] items-center text-sm text-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-brand"
-          >
-            {gc.backToGuilds}
-          </Link>
-        </section>
-        <PluginBrowser
-          guildId={guildId}
-          plugins={pluginCards}
-          initial={pluginInitial}
-          groupTitles={{
-            essentials: pl.groupEssentials,
-            engagement: pl.groupEngagement,
-            moderation: pl.groupModeration,
-            utilities: pl.groupUtilities,
-          }}
-          heading={pl.metaTitle}
-          labels={{
-            tabAll: pl.tabAll,
-            configure: pl.configure,
-            enable: pl.enable,
-            disable: pl.disable,
-            saving: dict.guild.modul.saving,
-            toggleError: dict.guild.modul.toggleError,
-            toggleOn: dict.guild.modul.toggleOn,
-            toggleOff: dict.guild.modul.toggleOff,
-            statusActive: pl.statusActive,
-            statusInactive: pl.statusInactive,
-          }}
-        />
-      </main>
-    </div>
+    <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+      {/* Header kompak: identitas server sudah ada di sidebar */}
+      <PageHeader
+        title={pl.metaTitle}
+        description={fmt(ov.pluginActiveCount, { on: activePlugins, total: TOGGLEABLE_PLUGINS.length })}
+      />
+      <PluginCards
+        guildId={guildId}
+        plugins={pluginCards}
+        initial={pluginInitial}
+        initialTab={initialTab}
+        groupTitles={{
+          essentials: pl.groupEssentials,
+          engagement: pl.groupEngagement,
+          moderation: pl.groupModeration,
+          utilities: pl.groupUtilities,
+        }}
+        labels={{
+          tabAll: pl.tabAll,
+          enable: pl.enable,
+          disable: pl.disable,
+          configure: pl.configure,
+          statusActive: pl.statusActive,
+          statusInactive: pl.statusInactive,
+          saving: dict.guild.modul.saving,
+          toggleError: dict.guild.modul.toggleError,
+          toggleOn: dict.guild.modul.toggleOn,
+          toggleOff: dict.guild.modul.toggleOff,
+        }}
+      />
+    </main>
   );
 }

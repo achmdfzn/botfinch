@@ -10,6 +10,7 @@ from discord.ext import commands
 from src.store import get_connection
 from src.utils import economy as eko
 from src.utils import quests as q
+from src.utils.toggle import cek_toggle
 from src.utils.embeds import base_embed, get_progress_bar
 from src.utils.views import TimeoutSafeView, bind_view_message
 
@@ -18,6 +19,7 @@ class KlaimView(TimeoutSafeView):
     def __init__(self, author_id: int):
         super().__init__(timeout=60)
         self.author_id = author_id
+        self.selesai = False
 
     @discord.ui.button(label="Klaim Hadiah", style=discord.ButtonStyle.success)
     async def klaim(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -26,6 +28,9 @@ class KlaimView(TimeoutSafeView):
                 "❌ Ini quest orang lain.", ephemeral=True
             )
             return
+        if self.selesai:
+            return
+        self.selesai = True  # kunci dulu (anti double-click)
         gid = interaction.guild.id if interaction.guild else 0
         from src.cogs.dashboard_sync import modul_aktif
 
@@ -56,23 +61,9 @@ class Quests(commands.Cog):
 
     async def cog_check(self, ctx: commands.Context) -> bool:
         """Quest berhadiah koin — bagian modul Ekonomi, ikut `economy_enabled`."""
-        if ctx.guild is None:
-            return True
-        from src.cogs.dashboard_sync import modul_aktif
-
-        if modul_aktif(ctx.guild.id, "economy_enabled"):
-            return True
-        pesan = "Modul ekonomi dimatikan oleh admin server ini."
-        try:
-            if ctx.interaction is None:
-                await ctx.send(pesan)
-            elif ctx.interaction.response.is_done():
-                await ctx.interaction.followup.send(pesan, ephemeral=True)
-            else:
-                await ctx.interaction.response.send_message(pesan, ephemeral=True)
-        except discord.HTTPException:
-            pass
-        return False
+        return await cek_toggle(
+            ctx, "economy_enabled", "Modul ekonomi dimatikan oleh admin server ini."
+        )
 
     @commands.hybrid_command(name="quest", description="Lihat quest harianmu")
     async def quest(self, ctx: commands.Context):

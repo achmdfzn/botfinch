@@ -33,6 +33,9 @@ export default function AnnouncementsManager({
   const [rows, setRows] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(false);
+  // Error khusus refresh pasca-mutasi: list lama tetap tampil + peringatan,
+  // tidak diganti pesan error penuh (data basi lebih baik dari list hilang).
+  const [refreshError, setRefreshError] = useState(false);
   const [channelId, setChannelId] = useState("");
   const [message, setMessage] = useState("");
   const [mode, setMode] = useState<"sekali" | "berulang">("sekali");
@@ -40,19 +43,21 @@ export default function AnnouncementsManager({
   const [intervalMin, setIntervalMin] = useState("60");
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<"idle" | "ok" | "error">("idle");
+  // Guard klik ganda per baris saat toggle enabled.
+  const [busyRows, setBusyRows] = useState<ReadonlySet<number>>(new Set());
 
+  // Refresh list TANPA mengganti dengan teks "loading": list lama tetap
+  // tampil (tidak berkedip); bila refresh gagal setelah mutasi sukses,
+  // list lama dipertahankan dan pesan error ditampilkan.
   async function reload() {
-    setLoading(true);
-    setFetchError(false);
+    setRefreshError(false);
     try {
       const res = await fetch(`/api/guilds/${guildId}/announcements`);
       if (!res.ok) throw new Error("http");
       const data = await res.json();
       setRows(data.announcements ?? []);
     } catch {
-      setFetchError(true);
-    } finally {
-      setLoading(false);
+      setRefreshError(true);
     }
   }
 
@@ -80,6 +85,8 @@ export default function AnnouncementsManager({
     };
   }, [guildId]);
 
+  // Hanya channel teks yang bisa menerima kiriman (voice/stage tidak).
+  const textChannels = channels.filter((c) => c.type === 0 || c.type === 5);
   const channelName = (id: string) => channels.find((c) => c.id === id)?.name ?? id;
 
   const intervalNum = Number(intervalMin);
@@ -136,12 +143,28 @@ export default function AnnouncementsManager({
   }
 
   async function toggleRow(a: Announcement) {
-    const res = await fetch(`/api/guilds/${guildId}/announcements/${a.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ enabled: !a.enabled }),
-    });
-    if (res.ok) reload();
+    if (busyRows.has(a.id)) return;
+    setBusyRows((prev) => new Set(prev).add(a.id));
+    try {
+      const res = await fetch(`/api/guilds/${guildId}/announcements/${a.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: !a.enabled }),
+      });
+      // Selalu sinkron ulang ke kebenaran server — juga saat gagal,
+      // agar toggle tak macet di posisi yang salah.
+      reload();
+      if (!res.ok) setStatus("error");
+    } catch {
+      setStatus("error");
+      reload();
+    } finally {
+      setBusyRows((prev) => {
+        const next = new Set(prev);
+        next.delete(a.id);
+        return next;
+      });
+    }
   }
 
   async function remove(a: Announcement) {
@@ -165,13 +188,13 @@ export default function AnnouncementsManager({
             className={`${inputCls} mt-1 w-full`}
           >
             <option value="">{g.selectChannel}</option>
-            {channels.map((c) => (
+            {textChannels.map((c) => (
               <option key={c.id} value={c.id}>
                 #{c.name}
               </option>
             ))}
           </select>
-          {channels.length === 0 && (
+          {textChannels.length === 0 && (
             <p className="mt-1 text-xs text-muted">{g.noChannelsHint}</p>
           )}
         </div>
@@ -262,13 +285,19 @@ export default function AnnouncementsManager({
         <h2 className="text-sm font-semibold text-fg">{fmt(g.listTitle, { n: rows.length })}</h2>
         {loading ? (
           <p className="mt-3 text-sm text-muted">{dict.common.loading}</p>
-        ) : fetchError ? (
-          <p className="mt-3 text-sm text-muted">{g.listError}</p>
         ) : rows.length === 0 ? (
-          <p className="mt-3 text-sm text-muted">{g.listEmpty}</p>
+          fetchError ? (
+            <p className="mt-3 text-sm text-muted">{g.listError}</p>
+          ) : (
+            <p className="mt-3 text-sm text-muted">{g.listEmpty}</p>
+          )
         ) : (
-          <ul className="mt-3 divide-y divide-edge overflow-hidden rounded-xl border border-edge bg-panel">
-            {rows.map((a) => (
+          <>
+            {refreshError && (
+              <p role="alert" className="mt-3 text-sm text-red-400">{dict.common.refreshError}</p>
+            )}
+            <ul className="mt-3 divide-y divide-edge overflow-hidden rounded-xl border border-edge bg-panel">
+              {rows.map((a) => (
               <li key={a.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center">
                 <div className="min-w-0 flex-1">
                   <p className="break-words text-sm font-medium text-fg">{a.message}</p>
@@ -281,7 +310,12 @@ export default function AnnouncementsManager({
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
-                  <Toggle checked={a.enabled} onChange={() => toggleRow(a)} label={fmt(g.toggleAria, { id: a.id })} />
+                  <Toggle
+                    checked={a.enabled}
+                    onChange={() => toggleRow(a)}
+                    label={fmt(g.toggleAria, { id: a.id })}
+                    disabled={busyRows.has(a.id)}
+                  />
                   <button
                     onClick={() => remove(a)}
                     className="rounded-lg border border-edge px-3 py-2 text-sm text-red-400 hover:bg-edge focus-visible:outline-2 focus-visible:outline-brand min-h-[44px]"
@@ -292,6 +326,7 @@ export default function AnnouncementsManager({
               </li>
             ))}
           </ul>
+          </>
         )}
       </div>
     </div>

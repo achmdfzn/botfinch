@@ -50,42 +50,61 @@ export default function GiveawayManager({
 
   const [active, setActive] = useState<Active[]>(initialActive);
   const [requests, setRequests] = useState<ReqRow[]>(initialRequests);
-  const [loading, setLoading] = useState(false);
+  // Error khusus refresh pasca-mutasi: list lama tetap tampil + peringatan.
+  const [refreshError, setRefreshError] = useState(false);
   const [channelId, setChannelId] = useState("");
   const [prize, setPrize] = useState("");
   const [winners, setWinners] = useState(1);
   const [duration, setDuration] = useState(60);
   const [status, setStatus] = useState<"idle" | "ok" | "error">("idle");
+  // Guard klik ganda: satu request buat-giveaway dalam satu waktu.
+  const [saving, setSaving] = useState(false);
 
   const textChannels = channels.filter((c) => c.type === 0 || c.type === 5);
 
+  // Refresh TANPA mengganti list dengan teks "loading": data lama tetap
+  // tampil (tidak berkedip); bila gagal, tampil peringatan di atas list.
   async function reload() {
-    setLoading(true);
+    setRefreshError(false);
     try {
       const res = await fetch(`/api/guilds/${guildId}/giveaways`);
+      if (!res.ok) throw new Error("http");
       const data = await res.json();
       setActive(data.active ?? []);
       setRequests(data.requests ?? []);
     } catch {
-      /* biarkan kosong */
-    } finally {
-      setLoading(false);
+      setRefreshError(true);
     }
   }
 
   async function create() {
+    if (saving) return;
+    setSaving(true);
     setStatus("idle");
-    const res = await fetch(`/api/guilds/${guildId}/giveaways`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ channel_id: channelId, prize: prize.trim(), winners, duration_minutes: duration }),
-    });
-    if (res.ok) {
-      setPrize("");
-      setStatus("ok");
-      reload();
-    } else {
+    try {
+      // Clamp: input angka yang dikosongkan user jadi 0/NaN (Number("")) —
+      // tanpa ini payload winners:0/duration:0 bisa terkirim.
+      const res = await fetch(`/api/guilds/${guildId}/giveaways`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          channel_id: channelId,
+          prize: prize.trim(),
+          winners: Math.max(1, Math.floor(winners) || 1),
+          duration_minutes: Math.max(1, Math.floor(duration) || 1),
+        }),
+      });
+      if (res.ok) {
+        setPrize("");
+        setStatus("ok");
+        reload();
+      } else {
+        setStatus("error");
+      }
+    } catch {
       setStatus("error");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -143,10 +162,10 @@ export default function GiveawayManager({
         </div>
         <button
           onClick={create}
-          disabled={!channelId || !prize.trim()}
+          disabled={!channelId || !prize.trim() || saving}
           className="mt-4 rounded-lg bg-brand px-6 py-2.5 text-sm font-semibold text-ink hover:bg-brand-deep disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand min-h-[44px]"
         >
-          {g.create}
+          {saving ? dict.settings.saving : g.create}
         </button>
         {status === "ok" && <p role="status" className="mt-2 text-sm text-brand">{g.createOk}</p>}
         {status === "error" && <p role="alert" className="mt-2 text-sm text-red-400">{g.createError}</p>}
@@ -154,9 +173,10 @@ export default function GiveawayManager({
 
       <div className="mt-6">
         <h2 className="text-sm font-semibold text-fg">{g.activeTitle}</h2>
-        {loading ? (
-          <p className="mt-3 text-sm text-muted">{dict.common.loading}</p>
-        ) : active.length === 0 ? (
+        {refreshError && (
+          <p role="alert" className="mt-3 text-sm text-red-400">{dict.common.refreshError}</p>
+        )}
+        {active.length === 0 ? (
           <p className="mt-3 text-sm text-muted">{g.emptyActive}</p>
         ) : (
           <ul className="mt-3 divide-y divide-edge overflow-hidden rounded-xl border border-edge bg-panel">

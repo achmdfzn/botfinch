@@ -24,7 +24,8 @@ class Invites(commands.Cog):
             try:
                 invs = await g.invites()
                 _cache[g.id] = {inv.code: inv.uses for inv in invs}
-            except discord.Forbidden:
+            except Exception:
+                # Tanpa izin / API error: cache kosong, tracking best-effort.
                 _cache[g.id] = {}
 
     @commands.Cog.listener()

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState, type KeyboardEvent } from "react";
 import { useI18n } from "./I18nProvider";
 import { fmt } from "@/lib/i18n/client";
 
@@ -34,22 +34,45 @@ export default function LeaderboardTabs({
   const t = dict.guild.leaderboard;
   const [tab, setTab] = useState<"levels" | "coins">("levels");
   const locale = lang === "en" ? "en-US" : "id-ID";
-  const updated = new Date(updatedAt).toLocaleString(locale, {
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  // pushed_at korup -> tampil "-" daripada "Invalid Date".
+  const parsed = new Date(updatedAt);
+  const updated = Number.isNaN(parsed.getTime())
+    ? "-"
+    : parsed.toLocaleString(locale, {
+        day: "numeric",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+  const tabs = ["levels", "coins"] as const;
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  // Navigasi keyboard ala WAI-ARIA tabs: panah kiri/kanan pindah tab.
+  function onTabKeyDown(e: KeyboardEvent, current: (typeof tabs)[number]) {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    e.preventDefault();
+    const i = tabs.indexOf(current);
+    const next = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
+    setTab(next);
+    tabRefs.current[next]?.focus();
+  }
 
   return (
     <div>
       <div className="flex gap-1 border-b border-edge" role="tablist" aria-label={t.tablistLabel}>
-        {(["levels", "coins"] as const).map((tt) => (
+        {tabs.map((tt) => (
           <button
             key={tt}
+            ref={(el) => {
+              tabRefs.current[tt] = el;
+            }}
             role="tab"
+            id={`lb-tab-${tt}`}
             aria-selected={tab === tt}
+            aria-controls={`lb-panel-${tt}`}
+            tabIndex={tab === tt ? 0 : -1}
             onClick={() => setTab(tt)}
+            onKeyDown={(e) => onTabKeyDown(e, tt)}
             className={`rounded-t-lg px-4 py-2.5 text-sm font-medium focus-visible:outline-2 focus-visible:outline-brand min-h-[44px] ${
               tab === tt ? "bg-panel text-fg border-b-2 border-brand" : "text-muted hover:text-fg"
             }`}
@@ -59,7 +82,12 @@ export default function LeaderboardTabs({
         ))}
       </div>
 
-      <div className="mt-4 overflow-hidden rounded-xl border border-edge bg-panel">
+      <div
+        className="mt-4 overflow-hidden rounded-xl border border-edge bg-panel"
+        role="tabpanel"
+        id={`lb-panel-${tab}`}
+        aria-labelledby={`lb-tab-${tab}`}
+      >
         {tab === "levels" ? (
           levels.length === 0 ? (
             <p className="p-6 text-sm text-muted">{t.emptyLevels}</p>

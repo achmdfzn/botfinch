@@ -100,10 +100,15 @@ class Twitch(commands.Cog):
             log.warning("Twitch API error: %s", e)
             return
         streams = data.get("data") or []
-        with get_connection() as conn:
-            row = conn.execute(
-                "SELECT stream_id FROM twitch_live WHERE login = ?", (login,)
-            ).fetchone()
+        try:
+            with get_connection() as conn:
+                row = conn.execute(
+                    "SELECT stream_id FROM twitch_live WHERE login = ?", (login,)
+                ).fetchone()
+        except Exception:
+            # Satu DB error tidak boleh membunuh loop selamanya
+            log.exception("Twitch: gagal baca twitch_live")
+            return
         old_id = row[0] if row else None
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
@@ -130,24 +135,30 @@ class Twitch(commands.Cog):
                         )
                     except discord.Forbidden:
                         log.warning("Tidak bisa kirim notif Twitch (cek permission).")
-                with get_connection() as conn:
-                    conn.execute(
-                        "INSERT INTO twitch_live (login, stream_id, notified_at) VALUES (?, ?, ?) "
-                        "ON CONFLICT(login) DO UPDATE SET stream_id = excluded.stream_id, "
-                        "notified_at = excluded.notified_at",
-                        (login, sid, now_iso),
-                    )
-                    conn.commit()
+                try:
+                    with get_connection() as conn:
+                        conn.execute(
+                            "INSERT INTO twitch_live (login, stream_id, notified_at) VALUES (?, ?, ?) "
+                            "ON CONFLICT(login) DO UPDATE SET stream_id = excluded.stream_id, "
+                            "notified_at = excluded.notified_at",
+                            (login, sid, now_iso),
+                        )
+                        conn.commit()
+                except Exception:
+                    log.exception("Twitch: gagal simpan status live %s", login)
                 log.info("Twitch: %s live (stream %s).", login, sid)
         else:
             # offline → clear stream_id biar live berikutnya ketahuan
             if old_id is not None:
-                with get_connection() as conn:
-                    conn.execute(
-                        "UPDATE twitch_live SET stream_id = NULL WHERE login = ?",
-                        (login,),
-                    )
-                    conn.commit()
+                try:
+                    with get_connection() as conn:
+                        conn.execute(
+                            "UPDATE twitch_live SET stream_id = NULL WHERE login = ?",
+                            (login,),
+                        )
+                        conn.commit()
+                except Exception:
+                    log.exception("Twitch: gagal clear status live %s", login)
 
     @cek_twitch.before_loop
     async def _before(self):

@@ -45,13 +45,22 @@ def _cooldown_sisa(conn, guild_id: int, user_id: int, aksi: str, cooldown_detik:
     return max(0, sisa)
 
 
-def _cooldown_catat(conn, guild_id: int, user_id: int, aksi: str) -> None:
-    conn.execute(
+def _cooldown_klaim(conn, guild_id: int, user_id: int, aksi: str, cooldown_detik: int) -> bool:
+    """Klaim cooldown secara atomik. Return True bila klaim berhasil (cooldown tidak aktif).
+
+    Pola check-then-act biasa (cek sisa -> kirim -> catat) bisa lolos ganda bila
+    dua command dieksekusi nyaris bersamaan. Klaim ini menggabungkan cek+catat
+    dalam satu statement UPSERT sehingga hanya satu pemanggil yang menang.
+    """
+    sekarang = discord.utils.utcnow().isoformat()
+    cur = conn.execute(
         "INSERT INTO cooldown_aksi (user_id, guild_id, aksi, terakhir) VALUES (?, ?, ?, ?) "
-        "ON CONFLICT(user_id, guild_id, aksi) DO UPDATE SET terakhir = excluded.terakhir",
-        (user_id, guild_id, aksi, discord.utils.utcnow().isoformat()),
+        "ON CONFLICT(user_id, guild_id, aksi) DO UPDATE SET terakhir = excluded.terakhir "
+        "WHERE (strftime('%s', 'now') - strftime('%s', terakhir)) >= ?",
+        (user_id, guild_id, aksi, sekarang, cooldown_detik),
     )
     conn.commit()
+    return cur.rowcount == 1
 
 CONFESS_COOLDOWN_DETIK = 5 * 60
 NIKAH_CLAIM_COOLDOWN_DETIK = 20 * 3600
@@ -327,8 +336,10 @@ class Sosial(commands.Cog):
             if not _sudah_menikah(conn, ctx.guild.id, ctx.author.id):
                 await ctx.send(embed=error_embed("Kamu belum menikah. `/nikah lamar @user` dulu!"), ephemeral=True)
                 return
-            sisa = _cooldown_sisa(conn, ctx.guild.id, ctx.author.id, "nikah_klaim", NIKAH_CLAIM_COOLDOWN_DETIK)
-            if sisa > 0:
+            # Klaim cooldown atomik SEBELUM bagi koin: dua /nikah klaim yang
+            # dieksekusi nyaris bersamaan tidak bisa dapat bonus ganda.
+            if not _cooldown_klaim(conn, ctx.guild.id, ctx.author.id, "nikah_klaim", NIKAH_CLAIM_COOLDOWN_DETIK):
+                sisa = _cooldown_sisa(conn, ctx.guild.id, ctx.author.id, "nikah_klaim", NIKAH_CLAIM_COOLDOWN_DETIK)
                 jam = int(sisa // 3600)
                 menit = int((sisa % 3600) // 60)
                 await ctx.send(
@@ -338,7 +349,6 @@ class Sosial(commands.Cog):
                 return
             bonus = config.settings.nikah_bonus_harian
             eko.tambah_koin(conn, ctx.guild.id, ctx.author.id, bonus)
-            _cooldown_catat(conn, ctx.guild.id, ctx.author.id, "nikah_klaim")
         await ctx.send(embed=sukses_embed("Bonus Nikah!", f"Kamu dapat **{koin_text(bonus)}**!"))
 
     # ---------- CONFESS ----------
@@ -366,14 +376,6 @@ class Sosial(commands.Cog):
         if filters.contains_bad_word(teks, config.settings.bad_words_list()):
             await ctx.send(embed=error_embed("Pesan mengandung kata kasar. Ditolak!"), ephemeral=True)
             return
-        with get_connection() as conn:
-            sisa = _cooldown_sisa(conn, ctx.guild.id, ctx.author.id, "confess", CONFESS_COOLDOWN_DETIK)
-        if sisa > 0:
-            await ctx.send(
-                embed=error_embed(f"Tunggu **{int(sisa // 60)}m {int(sisa % 60)}d** sebelum confess lagi."),
-                ephemeral=True,
-            )
-            return
         channel = self.bot.get_channel(channel_id)
         if channel is None:
             try:
@@ -385,13 +387,28 @@ class Sosial(commands.Cog):
             return
         embed = finch_embed("💌 Confess", teks, warna="sosial")
         embed.set_footer(text="💌 pesan anonim")
+        # Klaim cooldown atomik tepat sebelum kirim (cek+catat satu statement):
+        # double-click yang sama-sama lolos validasi di atas tidak bisa posting ganda.
+        # Trade-off: kalau pengiriman gagal setelah klaim, cooldown tetap terpakai.
+        with get_connection() as conn:
+            diklaim = _cooldown_klaim(conn, ctx.guild.id, ctx.author.id, "confess", CONFESS_COOLDOWN_DETIK)
+            sisa = 0.0 if diklaim else _cooldown_sisa(conn, ctx.guild.id, ctx.author.id, "confess", CONFESS_COOLDOWN_DETIK)
+        if not diklaim:
+            await ctx.send(
+                embed=error_embed(f"Tunggu **{int(sisa // 60)}m {int(sisa % 60)}d** sebelum confess lagi."),
+                ephemeral=True,
+            )
+            return
         try:
-            await channel.send(embed=embed)
+            # Confess itu anonim: matikan SEMUA mention agar teks user tidak
+            # bisa dipakai untuk nge-ping orang lain secara anonim.
+            await channel.send(
+                embed=embed,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
         except discord.HTTPException:
             await ctx.send(embed=error_embed("Gagal kirim confess (cek permission bot)."), ephemeral=True)
             return
-        with get_connection() as conn:
-            _cooldown_catat(conn, ctx.guild.id, ctx.author.id, "confess")
         log.info("Confess dari %s di guild %s", ctx.author.id, ctx.guild.id)
         await ctx.send(embed=sukses_embed("Terkirim!", "Pesan anonimmu sudah diposting."), ephemeral=True)
 
@@ -482,11 +499,17 @@ class Sosial(commands.Cog):
             if not row:
                 await ctx.send(embed=error_embed(f"Clan **{nama}** tidak ditemukan."), ephemeral=True)
                 return
-            conn.execute(
-                "INSERT INTO clan_member (clan_id, user_id, joined) VALUES (?, ?, ?)",
+            # INSERT OR IGNORE + rowcount: dua /clan gabung bersamaan tidak
+            # IntegrityError; yang kalah race dianggap sudah punya clan.
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO clan_member (clan_id, user_id, joined) VALUES (?, ?, ?)",
                 (row[0], ctx.author.id, discord.utils.utcnow().isoformat()),
             )
             conn.commit()
+            if cur.rowcount == 0:
+                # Kalah race: baris sudah ada (cek di atas lolos bersamaan)
+                await ctx.send(embed=error_embed("Kamu sudah punya clan!"), ephemeral=True)
+                return
         await ctx.send(embed=sukses_embed("Gabung Clan!", f"Selamat datang di **{row[1]}**!"))
 
     @clan.command(name="keluar", description="Keluar dari clan")
@@ -589,11 +612,16 @@ class Sosial(commands.Cog):
             if sudah:
                 await ctx.send(embed=error_embed(f"**{nama}** sudah terdaftar war minggu ini."), ephemeral=True)
                 return
-            conn.execute(
-                "INSERT INTO clan_war_peserta (guild_id, clan_id, minggu) VALUES (?, ?, ?)",
+            # INSERT OR IGNORE + rowcount: dua /clan war bersamaan tidak
+            # IntegrityError; yang kalah race dianggap sudah terdaftar.
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO clan_war_peserta (guild_id, clan_id, minggu) VALUES (?, ?, ?)",
                 (ctx.guild.id, clan_id, minggu_txt),
             )
             conn.commit()
+            if cur.rowcount == 0:
+                await ctx.send(embed=error_embed(f"**{nama}** sudah terdaftar war minggu ini."), ephemeral=True)
+                return
         await ctx.send(
             embed=sukses_embed(
                 "Clan War!",
@@ -726,7 +754,7 @@ class Sosial(commands.Cog):
         if not skor:
             return
         skor.sort(reverse=True)
-        total_menang, cid_menang, nama_menang, anggota = skor[0]
+        total_menang, _cid_menang, nama_menang, anggota = skor[0]
         hadiah = config.settings.clan_war_hadiah
         per_orang = hadiah // max(1, len(anggota))
         dibayar = 0

@@ -14,8 +14,10 @@ import random
 import discord
 from discord.ext import commands, tasks
 
+from src.bot import MENTIONS_PENGUMUMAN
 from src.store import get_connection
 from src.utils import economy as eko
+from src.utils.toggle import cek_toggle
 from src.utils.embeds import base_embed
 from src.utils.filters import parse_durasi  # re-export: dipakai polls/reminders & test
 
@@ -261,23 +263,9 @@ class Giveaway(commands.Cog):
         Giveaway yang sudah berjalan tetap diselesaikan loop (cek_giveaway/
         cek_rutin) agar tidak menggantung — toggle hanya menghentikan yang baru.
         """
-        if ctx.guild is None:
-            return True
-        from src.cogs.dashboard_sync import modul_aktif
-
-        if modul_aktif(ctx.guild.id, "giveaway_enabled"):
-            return True
-        pesan = "Modul giveaway dimatikan oleh admin server ini."
-        try:
-            if ctx.interaction is None:
-                await ctx.send(pesan)
-            elif ctx.interaction.response.is_done():
-                await ctx.interaction.followup.send(pesan, ephemeral=True)
-            else:
-                await ctx.interaction.response.send_message(pesan, ephemeral=True)
-        except discord.HTTPException:
-            pass
-        return False
+        return await cek_toggle(
+            ctx, "giveaway_enabled", "Modul giveaway dimatikan oleh admin server ini."
+        )
 
     @tasks.loop(seconds=30)
     async def cek_giveaway(self):
@@ -352,11 +340,13 @@ class Giveaway(commands.Cog):
         ends_ts = int(ends.timestamp())
         syarat_teks = self._teks_syarat(guild_id, min_level, min_koin, role_syarat)
         try:
+            # Hadiah ditulis mod -> boleh @everyone.
             msg = await channel.send(
                 embed=_embed_jalan(
                     hadiah_teks, f"<@{host_id}>", ends_ts, pemenang_count, syarat_teks
                 ),
                 view=GiveawayView(),
+                allowed_mentions=MENTIONS_PENGUMUMAN,
             )
         except discord.HTTPException:
             return None
@@ -383,6 +373,38 @@ class Giveaway(commands.Cog):
             )
             conn.commit()
         return msg.id
+
+    async def posting_giveaway(
+        self,
+        channel,
+        guild_id: int,
+        host_id: int,
+        detik: int,
+        pemenang_count: int,
+        hadiah_teks: str,
+        prize_coins: int = 0,
+        min_level: int = 0,
+        min_koin: int = 0,
+        role_syarat: int = 0,
+        hadiah_role: int = 0,
+    ) -> int | None:
+        """Wrapper PUBLIK untuk pemanggil antar-cog (dashboard_sync).
+
+        Jangan panggil ``_posting_giveaway`` langsung dari luar cog ini.
+        """
+        return await self._posting_giveaway(
+            channel,
+            guild_id,
+            host_id,
+            detik,
+            pemenang_count,
+            hadiah_teks,
+            prize_coins=prize_coins,
+            min_level=min_level,
+            min_koin=min_koin,
+            role_syarat=role_syarat,
+            hadiah_role=hadiah_role,
+        )
 
     async def _kasih_role_hadiah(
         self, guild_id: int, hadiah_role: int, pemenang: list[int], message_id: int
@@ -556,6 +578,9 @@ class Giveaway(commands.Cog):
         pemenang = max(1, min(pemenang, 20))
         min_level = max(0, min_level)
         min_koin = max(0, min_koin)
+        if len(hadiah.strip()) > 500:
+            await ctx.send("❌ Teks hadiah kepanjangan (maks 500 karakter).", ephemeral=True)
+            return
 
         # Ack interaksi slash biar tidak "not respond" (posting via channel biasa)
         await ctx.defer()
@@ -888,66 +913,66 @@ class Giveaway(commands.Cog):
         channel = self.bot.get_channel(ch_id)
         if channel is None:
             return  # channel hilang — skip, coba lagi interval berikut
-            # Hadiah koin diambil dari pool server — cek dulu, potong SETELAH posting sukses
-            # (bug lama: dipotong sebelum posting → pool terkuras tanpa giveaway)
-            koin_pakai = koin or 0
-            perlu = koin_pakai * pemenang
-            if koin_pakai > 0:
-                with get_connection() as conn:
-                    pool = conn.execute(
-                        "SELECT koin FROM server_pool WHERE guild_id = ?", (gid,)
-                    ).fetchone()
-                    if not pool or (pool[0] or 0) < perlu:
-                        log.warning(
-                            "Giveaway rutin #%s: pool tidak cukup (%s), hadiah koin dinonaktifkan.",
-                            rid,
-                            pool[0] if pool else 0,
-                        )
-                        koin_pakai = 0
-                        perlu = 0
-            hadiah_teks = hadiah + (f" + {koin_pakai} 🪙" if koin_pakai else "")
-            message_id = await self._posting_giveaway(
-                channel, gid, host_id, interval, pemenang, hadiah_teks,
-                prize_coins=koin_pakai,
-            )
-            if message_id:
-                with get_connection() as conn:
-                    batal = False
-                    if perlu > 0:
-                        # Guarded deduct: hanya potong bila pool masih cukup
-                        cur = conn.execute(
-                            "UPDATE server_pool SET koin = koin - ?"
-                            " WHERE guild_id = ? AND koin >= ?",
-                            (perlu, gid, perlu),
-                        )
-                        if cur.rowcount == 0:
-                            # Pool kalah race: BATALKAN giveaway yang baru diposting
-                            # (jangan biarkan prize_coins>0 — nanti _akhiri mencetak koin dari udara).
-                            batal = True
-                            conn.execute(
-                                "UPDATE giveaways SET ended = 1, prize_coins = 0 WHERE message_id = ?",
-                                (message_id,),
-                            )
-                            log.error(
-                                "Giveaway rutin #%s: pool habis saat settlement — giveaway dibatalkan.",
-                                rid,
-                            )
-                    conn.execute(
-                        "UPDATE giveaway_rutin SET terakhir = ? WHERE id = ?",
-                        (now.isoformat(), rid),
+        # Hadiah koin diambil dari pool server — cek dulu, potong SETELAH posting sukses
+        # (bug lama: dipotong sebelum posting → pool terkuras tanpa giveaway)
+        koin_pakai = koin or 0
+        perlu = koin_pakai * pemenang
+        if koin_pakai > 0:
+            with get_connection() as conn:
+                pool = conn.execute(
+                    "SELECT koin FROM server_pool WHERE guild_id = ?", (gid,)
+                ).fetchone()
+                if not pool or (pool[0] or 0) < perlu:
+                    log.warning(
+                        "Giveaway rutin #%s: pool tidak cukup (%s), hadiah koin dinonaktifkan.",
+                        rid,
+                        pool[0] if pool else 0,
                     )
-                    conn.commit()
-                if batal:
-                    try:
-                        msg_batal = await channel.fetch_message(message_id)
-                        await msg_batal.edit(
-                            embed=_embed_selesai(hadiah_teks + " (DIBATALKAN — pool koin tidak cukup)", []),
-                            view=None,
+                    koin_pakai = 0
+                    perlu = 0
+        hadiah_teks = hadiah + (f" + {koin_pakai} 🪙" if koin_pakai else "")
+        message_id = await self._posting_giveaway(
+            channel, gid, host_id, interval, pemenang, hadiah_teks,
+            prize_coins=koin_pakai,
+        )
+        if message_id:
+            with get_connection() as conn:
+                batal = False
+                if perlu > 0:
+                    # Guarded deduct: hanya potong bila pool masih cukup
+                    cur = conn.execute(
+                        "UPDATE server_pool SET koin = koin - ?"
+                        " WHERE guild_id = ? AND koin >= ?",
+                        (perlu, gid, perlu),
+                    )
+                    if cur.rowcount == 0:
+                        # Pool kalah race: BATALKAN giveaway yang baru diposting
+                        # (jangan biarkan prize_coins>0 — nanti _akhiri mencetak koin dari udara).
+                        batal = True
+                        conn.execute(
+                            "UPDATE giveaways SET ended = 1, prize_coins = 0 WHERE message_id = ?",
+                            (message_id,),
                         )
-                    except discord.HTTPException:
-                        pass
-                    return
-                log.info("Giveaway rutin #%s diposting (msg %s).", rid, message_id)
+                        log.error(
+                            "Giveaway rutin #%s: pool habis saat settlement — giveaway dibatalkan.",
+                            rid,
+                        )
+                conn.execute(
+                    "UPDATE giveaway_rutin SET terakhir = ? WHERE id = ?",
+                    (now.isoformat(), rid),
+                )
+                conn.commit()
+            if batal:
+                try:
+                    msg_batal = await channel.fetch_message(message_id)
+                    await msg_batal.edit(
+                        embed=_embed_selesai(hadiah_teks + " (DIBATALKAN — pool koin tidak cukup)", []),
+                        view=None,
+                    )
+                except discord.HTTPException:
+                    pass
+                return
+            log.info("Giveaway rutin #%s diposting (msg %s).", rid, message_id)
 
     @cek_rutin.before_loop
     async def _before_rutin(self):

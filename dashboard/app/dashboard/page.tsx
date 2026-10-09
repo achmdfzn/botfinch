@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { connection } from "next/server";
 import SiteHeader from "@/components/SiteHeader";
 import PageHeader from "@/components/PageHeader";
 import GuildListSync, { type GuildLite } from "@/components/GuildListSync";
 import EmptyState from "@/components/EmptyState";
 import { SignInButton } from "@/components/AuthButtons";
-import { auth } from "@/auth";
-import { canManage, fetchUserGuilds } from "@/lib/discord";
+import { getSessionSafe } from "@/lib/access";
+import { canManage } from "@/lib/discord";
+import { fetchUserGuilds } from "@/lib/access";
 import { latestSnapshot } from "@/lib/db";
 import { getDict, getLang } from "@/lib/i18n";
 
@@ -19,9 +21,10 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function Dashboard() {
   await connection(); // halaman dinamis: sesi + API Discord, jangan di-prerender
-  const dict = getDict(await getLang());
+  const lang = await getLang();
+  const dict = getDict(lang);
   const d = dict.dashboard;
-  const session = await auth();
+  const session = await getSessionSafe();
   if (!session?.accessToken) {
     return (
       <div>
@@ -42,7 +45,18 @@ export default async function Dashboard() {
       <div>
         <SiteHeader />
         <main className="mx-auto max-w-3xl px-4 py-16">
-          <EmptyState title={d.loadTitle} body={d.loadBody} />
+          <EmptyState
+            title={d.loadTitle}
+            body={d.loadBody}
+            action={
+              <Link
+                href="/dashboard"
+                className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-brand px-5 text-sm font-semibold text-ink hover:bg-brand-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+              >
+                {d.retry}
+              </Link>
+            }
+          />
         </main>
       </div>
     );
@@ -64,7 +78,7 @@ export default async function Dashboard() {
   return (
     <div>
       <SiteHeader />
-      <main className="mx-auto max-w-5xl px-4 py-10">
+      <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
         <PageHeader title={d.title} description={d.subtitle} />
 
         {manageable.length === 0 ? (

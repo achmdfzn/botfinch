@@ -10,6 +10,7 @@
 import datetime
 import logging
 import random
+import sqlite3
 
 import discord
 from discord.ext import commands, tasks
@@ -175,14 +176,25 @@ class Engagement(commands.Cog):
                     ephemeral=True,
                 )
                 return
-            conn.execute(
-                "INSERT INTO pet (user_id, guild_id, nama, jenis, xp, dibuat)"
+            # INSERT OR IGNORE + rowcount: klaim atomik. Double-click yang
+            # lolos cek `ada` di atas tidak bisa bikin 2 pet — dan koin
+            # dikembalikan kalau ternyata sudah punya (dulu: IntegrityError
+            # → koin hangus).
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO pet (user_id, guild_id, nama, jenis, xp, dibuat)"
                 " VALUES (?, ?, ?, ?, 0, ?)",
                 (
                     ctx.author.id, ctx.guild.id, nama, jenis,
                     discord.utils.utcnow().isoformat(),
                 ),
             )
+            if cur.rowcount == 0:
+                eko.tambah_koin(conn, ctx.guild.id, ctx.author.id, harga)
+                await ctx.send(
+                    embed=error_embed("Kamu sudah punya pet! Lihat dengan `/pet info`."),
+                    ephemeral=True,
+                )
+                return
             conn.commit()
         await ctx.send(
             embed=sukses_embed(
@@ -387,34 +399,49 @@ class Engagement(commands.Cog):
             return
         tanggal = discord.utils.utcnow().strftime("%Y-%m-%d")
         with get_connection() as conn:
-            row = conn.execute(
-                "SELECT pertanyaan FROM dailyq WHERE guild_id = ? AND tanggal = ?",
-                (gid, tanggal),
-            ).fetchone()
-            if not row:
+            # BEGIN IMMEDIATE: serialkan cek-cap + INSERT. Tanpa ini dua penjawab
+            # bersamaan bisa sama-sama lolos cek `jumlah < maks` lalu keduanya
+            # dapat reward (melebihi kuota).
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                row = conn.execute(
+                    "SELECT pertanyaan FROM dailyq WHERE guild_id = ? AND tanggal = ?",
+                    (gid, tanggal),
+                ).fetchone()
+                if not row:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO dailyq (guild_id, tanggal, pertanyaan)"
+                        " VALUES (?, ?, ?)",
+                        (gid, tanggal, pertanyaan_tanggal(tanggal, gid)),
+                    )
+                sudah = conn.execute(
+                    "SELECT 1 FROM dailyq_jawab WHERE guild_id = ? AND tanggal = ? AND user_id = ?",
+                    (gid, tanggal, uid),
+                ).fetchone()
+                if sudah:
+                    conn.rollback()
+                    return
+                jumlah = conn.execute(
+                    "SELECT COUNT(*) FROM dailyq_jawab WHERE guild_id = ? AND tanggal = ?",
+                    (gid, tanggal),
+                ).fetchone()[0]
+                if jumlah >= config.settings.dailyq_maks:
+                    conn.rollback()
+                    return
                 conn.execute(
-                    "INSERT OR IGNORE INTO dailyq (guild_id, tanggal, pertanyaan)"
-                    " VALUES (?, ?, ?)",
-                    (gid, tanggal, pertanyaan_tanggal(tanggal, gid)),
+                    "INSERT INTO dailyq_jawab (guild_id, tanggal, user_id) VALUES (?, ?, ?)",
+                    (gid, tanggal, uid),
                 )
                 conn.commit()
-            sudah = conn.execute(
-                "SELECT 1 FROM dailyq_jawab WHERE guild_id = ? AND tanggal = ? AND user_id = ?",
-                (gid, tanggal, uid),
-            ).fetchone()
-            if sudah:
-                return
-            jumlah = conn.execute(
-                "SELECT COUNT(*) FROM dailyq_jawab WHERE guild_id = ? AND tanggal = ?",
-                (gid, tanggal),
-            ).fetchone()[0]
-            if jumlah >= config.settings.dailyq_maks:
-                return
-            conn.execute(
-                "INSERT INTO dailyq_jawab (guild_id, tanggal, user_id) VALUES (?, ?, ?)",
-                (gid, tanggal, uid),
-            )
-            conn.commit()
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                raise
             reward = config.settings.dailyq_reward
             if reward > 0:
                 eko.tambah_koin(conn, gid, uid, reward)
@@ -501,13 +528,14 @@ class Engagement(commands.Cog):
                     nama_pet, jenis, xp = row
                     emoji_pet = JENIS_PET.get(jenis, "🐾")
                     lvl_lama = pet_level(xp)
-                    xp_baru = xp + 1
-                    lvl_baru = pet_level(xp_baru)
+                    # Increment atomik: dua pesan bersamaan tidak saling menimpa
+                    # (dulu: baca xp lalu SET xp+1 — satu XP hilang).
                     conn.execute(
-                        "UPDATE pet SET xp = ? WHERE user_id = ? AND guild_id = ?",
-                        (xp_baru, uid, gid),
+                        "UPDATE pet SET xp = xp + 1 WHERE user_id = ? AND guild_id = ?",
+                        (uid, gid),
                     )
                     conn.commit()
+                    lvl_baru = pet_level(xp + 1)
                     naik = lvl_baru > lvl_lama
             if naik:
                 await message.channel.send(
@@ -528,27 +556,35 @@ class Engagement(commands.Cog):
                     (gid, now_iso),
                 ).fetchone()
                 if row:
-                    qid, target, progres, hadiah = row
-                    baru = progres + 1
-                    if baru >= target:
-                        cur = conn.execute(
-                            "UPDATE quest_guild SET progres = ?, selesai = 1"
-                            " WHERE id = ? AND selesai = 0",
-                            (baru, qid),
-                        )
-                        if cur.rowcount:
-                            conn.execute(
-                                "INSERT INTO server_pool (guild_id, koin) VALUES (?, ?)"
-                                " ON CONFLICT(guild_id) DO UPDATE SET koin = koin + ?",
-                                (gid, hadiah, hadiah),
-                            )
-                            selesai_info = hadiah
+                    qid = row[0]
+                    # Increment atomik: dua pesan bersamaan tidak saling menimpa
+                    # progres (dulu: baca progres lalu SET progres+1 — satu hitungan hilang).
+                    cur = conn.execute(
+                        "UPDATE quest_guild SET progres = progres + 1"
+                        " WHERE id = ? AND selesai = 0",
+                        (qid,),
+                    )
+                    if not cur.rowcount:
+                        conn.rollback()
                     else:
-                        conn.execute(
-                            "UPDATE quest_guild SET progres = ? WHERE id = ?",
-                            (baru, qid),
-                        )
-                    conn.commit()
+                        baru, target, hadiah = conn.execute(
+                            "SELECT progres, target, hadiah FROM quest_guild WHERE id = ?",
+                            (qid,),
+                        ).fetchone()
+                        if baru >= target:
+                            cur2 = conn.execute(
+                                "UPDATE quest_guild SET selesai = 1"
+                                " WHERE id = ? AND selesai = 0",
+                                (qid,),
+                            )
+                            if cur2.rowcount:
+                                conn.execute(
+                                    "INSERT INTO server_pool (guild_id, koin) VALUES (?, ?)"
+                                    " ON CONFLICT(guild_id) DO UPDATE SET koin = koin + ?",
+                                    (gid, hadiah, hadiah),
+                                )
+                                selesai_info = hadiah
+                        conn.commit()
             if selesai_info:
                 await message.channel.send(
                     f"🎉 **Quest guild selesai!** Kerja sama keren!\n"

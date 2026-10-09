@@ -57,12 +57,19 @@ class Counting(commands.Cog):
             angka, user_terakhir = _state(conn, gid, channel_id)
             valid, err = cek_hitungan(message.content, angka, user_terakhir, message.author.id)
             if valid:
-                conn.execute(
+                # Klaim atomik: hanya satu yang menang bila dua pesan benar
+                # masuk bersamaan (dulu: baca lalu UPDATE — angka bisa
+                # diklaim ganda & state macet).
+                cur = conn.execute(
                     "UPDATE counting_state SET angka = ?, user_terakhir = ?"
-                    " WHERE guild_id = ? AND channel_id = ?",
-                    (angka + 1, message.author.id, gid, channel_id),
+                    " WHERE guild_id = ? AND channel_id = ? AND angka = ?",
+                    (angka + 1, message.author.id, gid, channel_id, angka),
                 )
                 conn.commit()
+                if cur.rowcount == 0:
+                    # Kalah race: orang lain sudah mengklaim angka ini duluan.
+                    # Jangan hapus pesan (sudah benar saat dikirim), cukup lewati.
+                    return
             berikutnya = angka + 1
         if not valid:
             try:

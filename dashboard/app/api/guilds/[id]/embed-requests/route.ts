@@ -54,6 +54,11 @@ export async function POST(
   ) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
+  // Embed tanpa konten apa pun (title+description+fields kosong) pasti
+  // ditolak Discord di sisi bot — tolak di sini dengan pesan yang jelas.
+  if (!title && !description && fields.length === 0) {
+    return NextResponse.json({ error: "empty_embed" }, { status: 400 });
+  }
   const reqId = await createEmbedRequest({
     guildId: id,
     channelId,

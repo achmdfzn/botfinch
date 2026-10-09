@@ -7,7 +7,9 @@ declare module "next-auth" {
   }
 }
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+// signIn/signOut tidak dipakai di mana pun (AuthButtons memakai
+// next-auth/react) — hanya handlers + auth yang diekspor.
+export const { handlers, auth } = NextAuth({
   trustHost: true,
   providers: [
     Discord({

@@ -13,6 +13,7 @@ from discord.ext import commands, tasks
 from src import config
 from src.store import get_connection
 from src.utils.embeds import base_embed
+from src.utils.toggle import cek_toggle
 
 log = logging.getLogger("finch")
 
@@ -48,23 +49,9 @@ class Season(commands.Cog):
 
     async def cog_check(self, ctx: commands.Context) -> bool:
         """Season mereset XP + bagi hadiah koin — ikut toggle `economy_enabled`."""
-        if ctx.guild is None:
-            return True
-        from src.cogs.dashboard_sync import modul_aktif
-
-        if modul_aktif(ctx.guild.id, "economy_enabled"):
-            return True
-        pesan = "Modul ekonomi dimatikan oleh admin server ini."
-        try:
-            if ctx.interaction is None:
-                await ctx.send(pesan)
-            elif ctx.interaction.response.is_done():
-                await ctx.interaction.followup.send(pesan, ephemeral=True)
-            else:
-                await ctx.interaction.response.send_message(pesan, ephemeral=True)
-        except discord.HTTPException:
-            pass
-        return False
+        return await cek_toggle(
+            ctx, "economy_enabled", "Modul ekonomi dimatikan oleh admin server ini."
+        )
 
     @tasks.loop(hours=1)
     async def cek_season(self):
@@ -140,7 +127,7 @@ class Season(commands.Cog):
             except (discord.Forbidden, discord.HTTPException):
                 pass
             except Exception:
-                pass
+                log.exception("Gagal kirim pengumuman season %s guild %s", season, guild.id)
         log.info("Season %s guild %s ditutup.", season, guild.id)
 
     @commands.hybrid_command(name="season", description="Info season berjalan + top 3")

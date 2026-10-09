@@ -5,6 +5,12 @@ Contoh: kirim 25 pesan -> +150 koin.
 """
 
 import datetime
+import re
+
+# Nama kolom tidak bisa di-parameterize di SQLite -> validasi ketat.
+# QUESTS adalah konstanta internal; ini pencegah bila suatu saat ada
+# entri dari input luar yang lolos ke sini.
+_KOLOM_AMAN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 QUESTS: list[tuple[str, str, str, str, int, int, str]] = [
     ("pesan", "💬 Aktif Chat", "pesan", "klaim_pesan", 25, 150, "pesan"),
@@ -103,13 +109,19 @@ def klaim_quest(conn, guild_id: int, user_id: int) -> tuple[int, list[str]]:
     total = 0
     diklaim_nama = []
     for qid, nama, kolom, kolom_klaim, target, hadiah, _satuan in QUESTS:
+        if not _KOLOM_AMAN.match(kolom_klaim):
+            raise ValueError(f"Nama kolom quest tidak valid: {kolom_klaim!r}")
         if baris[kolom] >= target and not baris[kolom_klaim]:
-            total += hadiah
-            diklaim_nama.append(nama)
-            conn.execute(
+            # Klaim atomik: dua /quest klaim bersamaan tidak bisa dibayar 2x
+            # (dulu: cek flag dulu lalu UPDATE — keduanya lolos).
+            cur = conn.execute(
                 f"UPDATE quest_progress SET {kolom_klaim} = 1"
-                " WHERE user_id = ? AND guild_id = ? AND tanggal = ?",
+                " WHERE user_id = ? AND guild_id = ? AND tanggal = ?"
+                f" AND {kolom_klaim} = 0",
                 (user_id, guild_id, tanggal),
             )
+            if cur.rowcount:
+                total += hadiah
+                diklaim_nama.append(nama)
     conn.commit()
     return total, diklaim_nama

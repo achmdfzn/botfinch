@@ -159,14 +159,13 @@ export async function addGiveawayRequest(
     VALUES (${guildId}, ${channelId}, ${prize}, ${winners}, ${durationMinutes})`;
 }
 
-export async function getPendingGiveawayRequests(): Promise<GiveawayRequest[]> {
-  if (!dbConfigured()) return [];
-  const { rows } = await sql`SELECT * FROM giveaway_requests WHERE status = 'pending' ORDER BY id LIMIT 25`;
-  return rows as GiveawayRequest[];
-}
-
-export async function ackGiveawayRequest(id: number, status: "done" | "failed", note: string): Promise<void> {
-  await sql`UPDATE giveaway_requests SET status = ${status}, note = ${note} WHERE id = ${id}`;
+export async function ackGiveawayRequest(
+  id: number,
+  guildId: string,
+  status: "done" | "failed",
+  note: string,
+): Promise<void> {
+  await sql`UPDATE giveaway_requests SET status = ${status}, note = ${note} WHERE id = ${id} AND guild_id = ${guildId}`;
 }
 
 /** Normalisasi nilai tanggal dari postgres ke ISO string (atau null). */

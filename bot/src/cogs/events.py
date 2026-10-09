@@ -11,6 +11,7 @@ import logging
 import discord
 from discord.ext import commands, tasks
 
+from src.bot import MENTIONS_PENGUMUMAN
 from src.store import get_connection
 from src.utils.embeds import base_embed
 
@@ -156,9 +157,20 @@ class Events(commands.Cog):
         if kapan <= datetime.datetime.now(UTC):
             await ctx.send("❌ Waktu event harus di masa depan.", ephemeral=True)
             return
+        # Batas panjang agar embed tidak menabrak limit Discord
+        # (judul 256, deskripsi 4096) — input lebih panjang = API 400.
+        if len(nama.strip()) > 200:
+            await ctx.send("❌ Nama event kepanjangan (maks 200 karakter).", ephemeral=True)
+            return
+        if len(deskripsi.strip()) > 2000:
+            await ctx.send(
+                "❌ Deskripsi event kepanjangan (maks 2000 karakter).", ephemeral=True
+            )
+            return
         embed = embed_event(nama.strip(), deskripsi.strip(), kapan, {})
         try:
-            msg = await ctx.channel.send(embed=embed)
+            # Event dibuat mod -> boleh @everyone.
+            msg = await ctx.channel.send(embed=embed, allowed_mentions=MENTIONS_PENGUMUMAN)
         except discord.HTTPException:
             await ctx.send("❌ Gagal posting event (cek permission).", ephemeral=True)
             return
@@ -219,25 +231,34 @@ class Events(commands.Cog):
     async def cek_event(self):
         now = datetime.datetime.now(UTC)
         batas = now + datetime.timedelta(hours=1)
-        with get_connection() as conn:
-            rows = conn.execute(
-                "SELECT id, guild_id, channel_id, nama, kapan FROM events "
-                "WHERE notif_terkirim = 0 AND kapan > ? AND kapan <= ?",
-                (now.isoformat(), batas.isoformat()),
-            ).fetchall()
+        try:
+            with get_connection() as conn:
+                rows = conn.execute(
+                    "SELECT id, guild_id, channel_id, nama, kapan FROM events "
+                    "WHERE notif_terkirim = 0 AND kapan > ? AND kapan <= ?",
+                    (now.isoformat(), batas.isoformat()),
+                ).fetchall()
+        except Exception:
+            # Satu DB error tidak boleh membunuh loop 5-menit selamanya
+            log.exception("Gagal baca events")
+            return
         for eid, gid, cid, nama, kapan_iso in rows:
             try:
                 ts = int(datetime.datetime.fromisoformat(kapan_iso).timestamp())
             except ValueError:
                 ts = int(now.timestamp())
-            with get_connection() as conn:
-                hadir = [
-                    r[0]
-                    for r in conn.execute(
-                        "SELECT user_id FROM event_rsvp WHERE event_id = ? AND status = 'hadir'",
-                        (eid,),
-                    )
-                ]
+            try:
+                with get_connection() as conn:
+                    hadir = [
+                        r[0]
+                        for r in conn.execute(
+                            "SELECT user_id FROM event_rsvp WHERE event_id = ? AND status = 'hadir'",
+                            (eid,),
+                        )
+                    ]
+            except Exception:
+                log.exception("Gagal baca RSVP event %s", eid)
+                continue
             channel = self.bot.get_channel(cid)
             if channel is None:
                 continue  # coba lagi loop berikut
@@ -246,7 +267,8 @@ class Events(commands.Cog):
             if mentions:
                 teks += f"\n{mentions}"
             try:
-                await channel.send(teks)
+                # Nama event ditulis mod -> boleh @everyone.
+                await channel.send(teks, allowed_mentions=MENTIONS_PENGUMUMAN)
             except discord.HTTPException:
                 log.warning("Gagal kirim reminder event %s", eid)
                 continue

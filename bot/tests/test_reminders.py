@@ -49,3 +49,29 @@ class TestAmbilJatuhTempo(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCatatGagalRutin(unittest.TestCase):
+    """Helper bersama src/utils/rutin.py (ekstraksi dari polls.py & reminders.py)."""
+
+    def test_belum_batas(self):
+        from src.utils.rutin import catat_gagal_rutin
+
+        gagal: dict = {}
+        for _ in range(19):
+            self.assertFalse(catat_gagal_rutin(gagal, 7))
+        self.assertEqual(gagal[7], 19)
+
+    def test_cap_batas(self):
+        from src.utils.rutin import catat_gagal_rutin
+
+        gagal = {7: 19}
+        self.assertTrue(catat_gagal_rutin(gagal, 7))
+        self.assertEqual(gagal[7], 20)
+
+    def test_batas_kustom(self):
+        from src.utils.rutin import catat_gagal_rutin
+
+        gagal: dict = {}
+        self.assertFalse(catat_gagal_rutin(gagal, 9, batas=2))
+        self.assertTrue(catat_gagal_rutin(gagal, 9, batas=2))

@@ -21,6 +21,7 @@ from src import config
 from src.store import get_connection
 from src.utils import achievement as ach
 from src.utils import economy as eko
+from src.utils.toggle import cek_toggle
 from src.utils.embeds import base_embed, tabel
 
 log = logging.getLogger("finch")
@@ -41,14 +42,6 @@ def _get_bank(conn, guild_id: int, user_id: int) -> int:
         (user_id, guild_id),
     ).fetchone()
     return row[0] if row and row[0] else 0
-
-
-def _set_bank(conn, guild_id: int, user_id: int, jumlah: int) -> None:
-    conn.execute(
-        "UPDATE economy SET bank = ? WHERE user_id = ? AND guild_id = ?",
-        (jumlah, user_id, guild_id),
-    )
-    conn.commit()
 
 
 def _parse_jumlah_param(teks: str, tersedia: int) -> tuple[int | None, str | None]:
@@ -99,23 +92,9 @@ class Economy(commands.Cog):
 
     async def cog_check(self, ctx: commands.Context) -> bool:
         """Blokir semua command ekonomi kalau modul dimatikan per-server via dashboard."""
-        if ctx.guild is None:
-            return True
-        from src.cogs.dashboard_sync import get_guild_setting
-
-        if get_guild_setting(ctx.guild.id, "economy_enabled", "1") == "1":
-            return True
-        pesan = "Modul ekonomi dimatikan oleh admin server ini."
-        try:
-            if ctx.interaction is None:
-                await ctx.send(pesan)
-            elif ctx.interaction.response.is_done():
-                await ctx.interaction.followup.send(pesan, ephemeral=True)
-            else:
-                await ctx.interaction.response.send_message(pesan, ephemeral=True)
-        except discord.HTTPException:
-            pass
-        return False
+        return await cek_toggle(
+            ctx, "economy_enabled", "Modul ekonomi dimatikan oleh admin server ini."
+        )
 
     def cog_unload(self):
         self.bunga_harian.cancel()
@@ -139,7 +118,7 @@ class Economy(commands.Cog):
             try:
                 ach.cek_buka(conn, gid, target.id, {"sultan_diam": akun["balance"]})
             except Exception:
-                pass
+                log.exception("Gagal cek achievement sultan untuk %s", target.id)
         embed = base_embed(f"🪙 Koin — {target.display_name}")
         # UI horizontal: kolom-kolom kesamping, bukan list vertikal
         embed.add_field(name="Saldo", value=f"**{akun['balance']}** koin", inline=True)
@@ -149,7 +128,7 @@ class Economy(commands.Cog):
         try:
             embed.set_thumbnail(url=target.display_avatar.url)
         except Exception:
-            pass
+            log.debug("Gagal pasang thumbnail avatar untuk %s", target.id, exc_info=True)
         await ctx.send(embed=embed)
 
     @commands.hybrid_command(name="daily", description="Klaim koin harian (24 jam sekali)")
@@ -213,7 +192,7 @@ class Economy(commands.Cog):
                             nilai += tambahan
                             bonus_txt = f"\n💰 Bonus Pedagang: +**{tambahan}** 🪙"
                 except Exception:
-                    pass
+                    log.exception("Gagal baca bonus job kerja untuk %s", ctx.author.id)
         if status == "cooldown":
             await ctx.send(
                 f"💼 Kamu sudah kerja. Istirahat dulu **{eko.format_sisa_waktu(nilai)}**.",
@@ -346,8 +325,14 @@ class Economy(commands.Cog):
             if sisa is None:
                 await ctx.send("❌ Koin kamu tidak cukup.", ephemeral=True)
                 return
-            bank_baru = _get_bank(conn, ctx.guild.id, ctx.author.id) + n
-            _set_bank(conn, ctx.guild.id, ctx.author.id, bank_baru)
+            # Increment atomik — dua deposit konkuren tidak saling menimpa
+            # (dulu: baca bank lalu SET bank+n, deposit salah satunya hilang).
+            conn.execute(
+                "UPDATE economy SET bank = bank + ? WHERE user_id = ? AND guild_id = ?",
+                (n, ctx.author.id, ctx.guild.id),
+            )
+            conn.commit()
+            bank_baru = _get_bank(conn, ctx.guild.id, ctx.author.id)
         await ctx.send(
             embed=base_embed(
                 "🏦 Deposit Berhasil",
@@ -371,12 +356,24 @@ class Economy(commands.Cog):
             if n == 0:
                 await ctx.send("❌ Bank kamu kosong.", ephemeral=True)
                 return
-            _set_bank(conn, ctx.guild.id, ctx.author.id, bank - n)
+            # Atomik: tarik hanya kalau bank masih cukup (anti double-withdraw
+            # konkuren — dulu: baca bank dulu lalu SET, dua panggilan bersamaan
+            # bisa narik 2x dari saldo yang sama).
+            cur = conn.execute(
+                "UPDATE economy SET bank = bank - ?"
+                " WHERE user_id = ? AND guild_id = ? AND bank >= ?",
+                (n, ctx.author.id, ctx.guild.id, n),
+            )
+            if cur.rowcount == 0:
+                await ctx.send("❌ Bank kamu tidak cukup.", ephemeral=True)
+                return
+            conn.commit()
+            sisa_bank = bank - n
             saldo_baru = eko.tambah_koin(conn, ctx.guild.id, ctx.author.id, n)
         await ctx.send(
             embed=base_embed(
                 "🏦 Withdraw Berhasil",
-                f"**{n}** 🪙 ditarik dari bank.\nSaldo: **{saldo_baru}** koin | Di bank: **{bank - n}** koin.",
+                f"**{n}** 🪙 ditarik dari bank.\nSaldo: **{saldo_baru}** koin | Di bank: **{sisa_bank}** koin.",
             )
         )
 
@@ -403,6 +400,8 @@ class Economy(commands.Cog):
                     ph = ",".join("?" for _ in mati)
                     cur = conn.execute(
                         "UPDATE economy SET bank = bank + CAST(bank * ? / 100 AS INTEGER)"
+                        # {ph} AMAN: hanya placeholder "?" yang digabung koma
+                        # (pola IN (?, ?, ...) standar) — bukan input mentah.
                         f" WHERE bank > 0 AND guild_id NOT IN ({ph})",
                         (bunga, *mati),
                     )

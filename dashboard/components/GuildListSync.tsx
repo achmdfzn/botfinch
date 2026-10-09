@@ -93,26 +93,33 @@ export default function GuildListSync({ initialInBot, initialNotInBot, initialHa
 
   return (
     <>
-      <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {inBot.map((g) => (
-          <GuildCard
-            key={g.id}
-            id={g.id}
-            name={g.name}
-            icon={g.icon}
-            memberText={memberText(g.memberCount)}
-            inBot
-            manageLabel={d.cardManage}
-            inviteLabel={dict.nav.inviteBot}
-            noDataLabel={d.cardNoData}
-          />
-        ))}
-      </div>
+      {inBot.length > 0 && (
+        <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {inBot.map((g) => (
+            <GuildCard
+              key={g.id}
+              id={g.id}
+              name={g.name}
+              icon={g.icon}
+              memberText={memberText(g.memberCount)}
+              inBot
+              openLabel={d.cardOpen}
+              inviteLabel={d.cardInvite}
+              noDataLabel={d.cardNoData}
+            />
+          ))}
+        </div>
+      )}
 
       {notInBot.length > 0 && (
         <section className="mt-10" aria-label={d.sectionNotInBot}>
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">{d.sectionNotInBot}</h2>
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="flex items-center gap-3">
+            <h2 className="shrink-0 text-xs font-semibold uppercase tracking-wider text-muted">
+              {d.sectionNotInBot}
+            </h2>
+            <span className="h-px flex-1 bg-edge" aria-hidden="true" />
+          </div>
+          <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {notInBot.map((g) => (
               <GuildCard
                 key={g.id}
@@ -121,8 +128,8 @@ export default function GuildListSync({ initialInBot, initialNotInBot, initialHa
                 icon={g.icon}
                 memberText={null}
                 inBot={false}
-                manageLabel={d.cardManage}
-                inviteLabel={dict.nav.inviteBot}
+                openLabel={d.cardOpen}
+                inviteLabel={d.cardInvite}
                 noDataLabel={d.cardNoData}
               />
             ))}

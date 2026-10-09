@@ -9,25 +9,26 @@ interface Props {
   /** Teks jumlah member yang sudah diformat sesuai bahasa; null = belum ada data. */
   memberText: string | null;
   inBot: boolean;
-  manageLabel: string;
+  openLabel: string;
   inviteLabel: string;
   noDataLabel: string;
 }
 
-/** Kartu server: ikon + nama (truncate, tidak overflow di 360px) + aksi 44px. */
+/** Kartu server vertikal: ikon bulat 72px di atas, nama, jumlah member, CTA full-width. */
 export default function GuildCard({
   id,
   name,
   icon,
   memberText,
   inBot,
-  manageLabel,
+  openLabel,
   inviteLabel,
   noDataLabel,
 }: Props) {
   const url = iconUrl(id, icon, 128);
+  const initial = name.trim().charAt(0).toUpperCase() || "?";
   return (
-    <div className="flex items-center gap-4 rounded-xl border border-edge bg-panel p-4">
+    <div className="flex h-full flex-col items-center rounded-2xl border border-edge bg-panel p-6 text-center transition-colors hover:border-brand/40">
       {url ? (
         <Image
           // unoptimized: icon 128px langsung dari CDN Discord, tanpa lewat
@@ -35,35 +36,42 @@ export default function GuildCard({
           // dan diblokir proteksi SSRF Next.js)
           src={url}
           alt=""
-          width={48}
-          height={48}
-          className="h-12 w-12 shrink-0 rounded-full"
+          width={72}
+          height={72}
+          className="h-[72px] w-[72px] rounded-full"
           unoptimized
         />
       ) : (
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-edge text-lg font-bold text-fg">
-          {name.slice(0, 1).toUpperCase()}
+        <div
+          aria-hidden="true"
+          className="flex h-[72px] w-[72px] items-center justify-center rounded-full bg-edge text-2xl font-bold text-fg"
+        >
+          {initial}
         </div>
       )}
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold text-fg">{name}</p>
-        <p className="truncate text-xs text-muted">{memberText ?? noDataLabel}</p>
+      <p className="mt-4 w-full truncate text-sm font-semibold text-fg" title={name}>
+        {name}
+      </p>
+      <p className="mt-1 w-full truncate text-xs text-muted">{memberText ?? noDataLabel}</p>
+      <div className="mt-auto w-full pt-5">
+        {inBot ? (
+          <Link
+            href={`/dashboard/${id}`}
+            className="inline-flex min-h-[44px] w-full items-center justify-center rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-ink hover:bg-brand-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          >
+            {openLabel}
+          </Link>
+        ) : (
+          <a
+            href={inviteUrl()}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex min-h-[44px] w-full items-center justify-center rounded-lg border border-edge px-4 py-2 text-sm font-medium text-fg hover:bg-edge focus-visible:outline-2 focus-visible:outline-brand"
+          >
+            {inviteLabel}
+          </a>
+        )}
       </div>
-      {inBot ? (
-        <Link
-          href={`/dashboard/${id}`}
-          className="inline-flex min-h-[44px] shrink-0 items-center rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-ink hover:bg-brand-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
-        >
-          {manageLabel}
-        </Link>
-      ) : (
-        <a
-          href={inviteUrl()}
-          className="inline-flex min-h-[44px] shrink-0 items-center rounded-lg border border-edge px-4 py-2 text-sm font-medium text-fg hover:bg-edge focus-visible:outline-2 focus-visible:outline-brand"
-        >
-          {inviteLabel}
-        </a>
-      )}
     </div>
   );
 }

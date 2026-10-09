@@ -7,6 +7,7 @@ from discord.ext import commands
 from src import config
 from src.store import get_connection
 from src.utils.embeds import base_embed
+from src.utils.toggle import cek_toggle
 from src.utils.xp import hitung_menit, tambah_xp
 
 log = logging.getLogger("finch")
@@ -107,6 +108,26 @@ class VoiceXP(commands.Cog):
 
         # move antar channel voice -> jangan reset, tetap hitung durasi
         # tidak perlu handle
+
+    async def cog_check(self, ctx: commands.Context) -> bool:
+        """Statistik voice milik modul Leveling (+Ekonomi untuk koin voice).
+
+        Lolos bila salah satu dari keduanya aktif; diblokir hanya bila
+        keduanya dimatikan — selaras /level & /rank yang ikut leveling_enabled.
+        """
+        if ctx.guild is None:
+            return True
+        from src.cogs.dashboard_sync import modul_aktif
+
+        if modul_aktif(ctx.guild.id, "leveling_enabled") or modul_aktif(
+            ctx.guild.id, "economy_enabled"
+        ):
+            return True
+        return await cek_toggle(
+            ctx,
+            "leveling_enabled",
+            "Modul leveling & ekonomi dimatikan oleh admin server ini.",
+        )
 
     @commands.hybrid_command(name="top-voice", description="10 member paling lama di voice")
     async def top_voice(self, ctx: commands.Context):

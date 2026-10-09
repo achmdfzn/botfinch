@@ -20,7 +20,7 @@ from src.utils.embeds import error_embed, finch_embed, sukses_embed
 
 log = logging.getLogger("finch")
 
-KATEGORI_TIKET = ["Umum", "Bantuan", "Report", "Saran"]
+from src.utils.constants import KATEGORI_TIKET  # sumber tunggal; diimpor ulang oleh tests
 
 # Auto-lockdown
 JOIN_AMBANG = 8          # >=8 join dalam 60 detik -> lockdown
@@ -41,6 +41,13 @@ class ModerasiPlus(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
+        # Auto-lockdown adalah aksi moderasi otomatis -> ikut toggle automod.
+        # Tanpa ini, admin yang mematikan AutoMod di dashboard tetap kena
+        # lockdown semua channel saat 8 join dalam 60 detik.
+        from src.cogs.dashboard_sync import get_guild_setting
+
+        if get_guild_setting(member.guild.id, "automod_enabled", "1") != "1":
+            return
         guild = member.guild
         now = time.time()
         dq = self._join_riwayat[guild.id]
@@ -257,31 +264,38 @@ class ModerasiPlus(commands.Cog):
             log.exception("Gagal baca tiket untuk SLA")
             return
         for channel_id, guild_id, owner_id, terakhir_iso in rows:
-            terakhir = parse_iso(terakhir_iso)
-            if terakhir is None:
-                continue
-            if (now - terakhir).total_seconds() < batas_jam * 3600:
-                continue
-            # Tandai di DB (persisten, anti alert ganda walau restart)
             try:
-                with get_connection() as conn:
-                    conn.execute(
-                        "INSERT OR IGNORE INTO sla_warned (channel_id, warned_at)"
-                        " VALUES (?, ?)",
-                        (channel_id, now.isoformat()),
+                terakhir = parse_iso(terakhir_iso)
+                if terakhir is None:
+                    continue
+                if (now - terakhir).total_seconds() < batas_jam * 3600:
+                    continue
+                # Tandai di DB (persisten, anti alert ganda walau restart)
+                try:
+                    with get_connection() as conn:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO sla_warned (channel_id, warned_at)"
+                            " VALUES (?, ?)",
+                            (channel_id, now.isoformat()),
+                        )
+                        conn.commit()
+                except Exception:
+                    log.exception("Gagal catat sla_warned %s", channel_id)
+                    continue
+                # Satu baris yang gagal kirim log tidak boleh membunuh loop 30-menit.
+                try:
+                    await modlog.log_event(
+                        self.bot,
+                        "⏰ SLA Tiket",
+                        f"Tiket <#{channel_id}> (<@{owner_id}>) tidak ada balasan mod "
+                        f"lebih dari **{batas_jam} jam**. Mohon segera ditindaklanjuti.",
+                        discord.Color.orange(),
                     )
-                    conn.commit()
+                except Exception:
+                    log.exception("Gagal kirim peringatan SLA tiket %s", channel_id)
+                log.warning("SLA tiket %s terlewati (%dh).", channel_id, batas_jam)
             except Exception:
-                log.exception("Gagal catat sla_warned %s", channel_id)
-                continue
-            await modlog.log_event(
-                self.bot,
-                "⏰ SLA Tiket",
-                f"Tiket <#{channel_id}> (<@{owner_id}>) tidak ada balasan mod "
-                f"lebih dari **{batas_jam} jam**. Mohon segera ditindaklanjuti.",
-                discord.Color.orange(),
-            )
-            log.warning("SLA tiket %s terlewati (%dh).", channel_id, batas_jam)
+                log.exception("Gagal proses SLA tiket %s", channel_id)
 
     @cek_sla.before_loop
     async def _before_sla(self):

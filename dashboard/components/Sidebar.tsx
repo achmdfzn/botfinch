@@ -49,11 +49,11 @@ export interface SidebarSection {
 interface Props {
   guildName: string;
   guildIconUrl: string | null;
-  /** Item utama di atas seksi: Plugins, Overview, Leaderboard. */
+  /** Item utama di atas seksi: Plugins, Ringkasan, Leaderboard, Templates, Pengaturan. */
   topItems: SidebarEntry[];
-  /** Seksi grup collapsible ala MEE6: Esensial, Engagement & Fun, ... */
+  /** Seksi grup plugin (Esensial, Engagement & Fun, Moderasi, Utilitas), default expanded. */
   sections: SidebarSection[];
-  /** Item di bawah seksi: Mod Log, Modules, Settings. */
+  /** Item di bawah divider: Mod Log, Modul. */
   bottomItems: SidebarEntry[];
   backHref: string;
   backLabel: string;
@@ -200,7 +200,12 @@ function SidebarIcon({ id, className }: { id: SidebarIconId; className?: string 
 }
 
 function isActivePath(pathname: string, href: string): boolean {
-  return pathname === href || pathname === `${href}/`;
+  // Strip query/hash: link plugin "?tab=engagement" harus aktif di halaman
+  // Plugins, dan "#welcome" harus aktif di halaman /settings.
+  const clean = (s: string) => s.split(/[?#]/)[0];
+  const p = clean(pathname);
+  const h = clean(href);
+  return p === h || p === `${h}/`;
 }
 
 function EntryLink({
@@ -236,7 +241,7 @@ function EntryLink({
 
 /**
  * Navigasi modul per-server ala MEE6: header server dengan dropdown,
- * item berikon, dan seksi grup collapsible.
+ * item berikon, lalu divider + item bawah.
  * Link aktif ditandai bg-edge plus indikator brand 3px di kiri,
  * motif "indikator server terpilih" dari DESIGN.md.
  */

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { latestSnapshot } from "@/lib/db";
-import { requireSession } from "@/lib/access";
+import { requireManager } from "@/lib/access";
 
 export const instant = false;
 
@@ -8,9 +8,9 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const denied = await requireSession();
-  if (denied) return denied;
   const { id } = await params;
+  const denied = await requireManager(id);
+  if (denied) return denied;
   const snap = await latestSnapshot();
   const guild = snap?.guilds.find((g) => g.id === id);
   if (!guild) {

@@ -68,16 +68,20 @@ def punya_aktif(conn, guild_id: int, user_id: int, item_id: str) -> bool:
 
 
 def konsumsi_satu(conn, guild_id: int, user_id: int, item_id: str) -> bool:
-    """Kurangi 1 item bila aktif. Return True bila berhasil."""
+    """Kurangi 1 item bila aktif. Return True bila berhasil.
+
+    Atomik: dua `/dagang pakai` bersamaan tidak bisa menghabiskan item
+    yang sama 2x (dulu: cek dulu lalu UPDATE — jumlah bisa jadi negatif).
+    """
     if not punya_aktif(conn, guild_id, user_id, item_id):
         return False
-    conn.execute(
+    cur = conn.execute(
         "UPDATE inventory SET jumlah = jumlah - 1"
-        " WHERE user_id = ? AND guild_id = ? AND item_id = ?",
+        " WHERE user_id = ? AND guild_id = ? AND item_id = ? AND jumlah > 0",
         (user_id, guild_id, item_id),
     )
     conn.commit()
-    return True
+    return cur.rowcount > 0
 
 
 def daftar_item(conn, guild_id: int, user_id: int) -> list[tuple[str, int, str | None]]:

@@ -13,6 +13,7 @@
 """
 import random
 import time
+import logging
 
 import discord
 from discord.ext import commands
@@ -22,9 +23,12 @@ from src.store import get_connection
 from src.utils import achievement as ach
 from src.utils import consumable as cons
 from src.utils import economy as eko
+from src.utils.toggle import cek_toggle
 from src.utils.embeds import base_embed, finch_embed
 from src.utils.teks import acak_huruf
 from src.utils.views import TimeoutSafeView, bind_view_message
+
+log = logging.getLogger("finch")
 
 # --- logika murni (gampang dites) ---
 SLOT_SIMBOL = ["🍒", "🍋", "🔔", "⭐", "💎", "7️⃣"]
@@ -170,26 +174,34 @@ class TriviaView(TimeoutSafeView):
             item.disabled = True
         benar = pilih == self.kunci
         dibuka: list[tuple[str, str]] = []
+        hadiah_diberi = 0
         if benar and self.hadiah > 0:
+            from src.cogs.dashboard_sync import modul_aktif
+
             gid = interaction.guild.id if interaction.guild else 0
-            with get_connection() as conn:
-                eko.tambah_koin(conn, gid, self.author_id, self.hadiah)
-                row = conn.execute(
-                    "SELECT COALESCE(trivia_menang, 0) FROM economy WHERE user_id = ? AND guild_id = ?",
-                    (self.author_id, gid),
-                ).fetchone()
-                n = (row[0] if row else 0) + 1
-                conn.execute(
-                    "UPDATE economy SET trivia_menang = ? WHERE user_id = ? AND guild_id = ?",
-                    (n, self.author_id, gid),
-                )
-                conn.commit()
-                dibuka = ach.cek_buka(conn, gid, self.author_id, {"trivia": n})
-        teks = (
-            f"✅ **Benar!** +{self.hadiah} 🪙"
-            if benar
-            else f"❌ Salah! Jawaban benar: **{chr(65 + self.kunci)}**"
-        )
+            if modul_aktif(gid, "economy_enabled"):
+                with get_connection() as conn:
+                    eko.tambah_koin(conn, gid, self.author_id, self.hadiah)
+                    row = conn.execute(
+                        "SELECT COALESCE(trivia_menang, 0) FROM economy WHERE user_id = ? AND guild_id = ?",
+                        (self.author_id, gid),
+                    ).fetchone()
+                    n = (row[0] if row else 0) + 1
+                    conn.execute(
+                        "UPDATE economy SET trivia_menang = ? WHERE user_id = ? AND guild_id = ?",
+                        (n, self.author_id, gid),
+                    )
+                    conn.commit()
+                    dibuka = ach.cek_buka(conn, gid, self.author_id, {"trivia": n})
+                hadiah_diberi = self.hadiah
+        if benar:
+            teks = (
+                f"✅ **Benar!** +{hadiah_diberi} 🪙"
+                if hadiah_diberi
+                else "✅ **Benar!** (modul ekonomi dimatikan — tanpa hadiah)"
+            )
+        else:
+            teks = f"❌ Salah! Jawaban benar: **{chr(65 + self.kunci)}**"
         try:
             await interaction.response.edit_message(content=teks, view=self)
         except discord.HTTPException:
@@ -270,6 +282,13 @@ class BlackjackView(TimeoutSafeView):
         for item in self.children:
             item.disabled = True
         hasil, payout = self._selesaikan()
+        from src.cogs.dashboard_sync import modul_aktif
+
+        ekonomi_mati = not modul_aktif(self.guild_id, "economy_enabled")
+        if ekonomi_mati and hasil in ("blackjack", "menang"):
+            # Modul dimatikan di tengah permainan: kemenangan tidak dibayar.
+            # (Seri tetap refund — itu koin pemain sendiri, bukan hadiah.)
+            payout = 0
         if payout > 0:
             with get_connection() as conn:
                 eko.tambah_koin(conn, self.guild_id, self.author_id, payout)
@@ -279,6 +298,8 @@ class BlackjackView(TimeoutSafeView):
             "kalah": f"😅 Kalah... -**{self.taruhan}** 🪙",
             "seri": "🤝 Seri! Taruhan kembali.",
         }[hasil]
+        if ekonomi_mati and hasil in ("blackjack", "menang"):
+            teks_hasil += "\n_(modul ekonomi dimatikan — kemenangan tanpa hadiah)_"
         embed = self._embed_jalan(buka_dealer=True)
         embed.description += f"\n{teks_hasil}"
         try:
@@ -347,23 +368,9 @@ class MiniGames(commands.Cog):
 
     async def cog_check(self, ctx: commands.Context) -> bool:
         """Minigames memakai koin — bagian modul Ekonomi, ikut `economy_enabled`."""
-        if ctx.guild is None:
-            return True
-        from src.cogs.dashboard_sync import modul_aktif
-
-        if modul_aktif(ctx.guild.id, "economy_enabled"):
-            return True
-        pesan = "Modul ekonomi dimatikan oleh admin server ini."
-        try:
-            if ctx.interaction is None:
-                await ctx.send(pesan)
-            elif ctx.interaction.response.is_done():
-                await ctx.interaction.followup.send(pesan, ephemeral=True)
-            else:
-                await ctx.interaction.response.send_message(pesan, ephemeral=True)
-        except discord.HTTPException:
-            pass
-        return False
+        return await cek_toggle(
+            ctx, "economy_enabled", "Modul ekonomi dimatikan oleh admin server ini."
+        )
 
     @commands.hybrid_group(name="game", description="🎮 Game Finch")
     async def game(self, ctx: commands.Context):
@@ -393,7 +400,9 @@ class MiniGames(commands.Cog):
             if err:
                 await ctx.send(err, ephemeral=True)
                 return
-            eko.kurang_koin(conn, ctx.guild.id, ctx.author.id, taruhan)
+            if eko.kurang_koin(conn, ctx.guild.id, ctx.author.id, taruhan) is None:
+                await ctx.send("❌ Koin kamu tidak cukup.", ephemeral=True)
+                return
         hasil = lempar_koin()
         menang = hasil == pilihan
         if menang:
@@ -419,7 +428,9 @@ class MiniGames(commands.Cog):
             if err:
                 await ctx.send(err, ephemeral=True)
                 return
-            eko.kurang_koin(conn, ctx.guild.id, ctx.author.id, taruhan)
+            if eko.kurang_koin(conn, ctx.guild.id, ctx.author.id, taruhan) is None:
+                await ctx.send("❌ Koin kamu tidak cukup.", ephemeral=True)
+                return
         simbol = putar_slot()
         bayar = bayar_slot(simbol, taruhan)
         if bayar:
@@ -449,7 +460,9 @@ class MiniGames(commands.Cog):
             if err:
                 await ctx.send(err, ephemeral=True)
                 return
-            eko.kurang_koin(conn, ctx.guild.id, ctx.author.id, taruhan)
+            if eko.kurang_koin(conn, ctx.guild.id, ctx.author.id, taruhan) is None:
+                await ctx.send("❌ Koin kamu tidak cukup.", ephemeral=True)
+                return
         rahasia = undi_tebak()
         if angka == rahasia:
             hadiah = taruhan * TEBAK_MULT
@@ -526,7 +539,9 @@ class MiniGames(commands.Cog):
             if err:
                 await ctx.send(err, ephemeral=True)
                 return
-            eko.kurang_koin(conn, ctx.guild.id, ctx.author.id, taruhan)
+            if eko.kurang_koin(conn, ctx.guild.id, ctx.author.id, taruhan) is None:
+                await ctx.send("❌ Koin kamu tidak cukup.", ephemeral=True)
+                return
         view = BlackjackView(ctx.author.id, taruhan, ctx.guild.id)
         msg = await ctx.send(embed=view._embed_jalan(), view=view)
         await bind_view_message(ctx, view, msg)
@@ -547,7 +562,9 @@ class MiniGames(commands.Cog):
             if err:
                 await ctx.send(err, ephemeral=True)
                 return
-            eko.kurang_koin(conn, ctx.guild.id, ctx.author.id, taruhan)
+            if eko.kurang_koin(conn, ctx.guild.id, ctx.author.id, taruhan) is None:
+                await ctx.send("❌ Koin kamu tidak cukup.", ephemeral=True)
+                return
         hasil = random.randint(1, 6)
         if angka == hasil:
             hadiah = taruhan * 5
@@ -579,7 +596,9 @@ class MiniGames(commands.Cog):
             if err:
                 await ctx.send(err, ephemeral=True)
                 return
-            eko.kurang_koin(conn, ctx.guild.id, ctx.author.id, taruhan)
+            if eko.kurang_koin(conn, ctx.guild.id, ctx.author.id, taruhan) is None:
+                await ctx.send("❌ Koin kamu tidak cukup.", ephemeral=True)
+                return
         bot_pilih = random.choice(RPS_PILIHAN)
         hasil = hasil_rps(pilihan, bot_pilih)
         emoji = {"gunting": "✌️", "batu": "✊", "kertas": "✋"}
@@ -642,13 +661,19 @@ class MiniGames(commands.Cog):
                     "bonus_maling", 0
                 )
             except Exception:
+                log.exception("Gagal baca bonus job maling untuk %s", ctx.author.id)
                 peluang = 0.6
             sukses = random.random() < peluang
             curi = 0
             if sukses:
                 curi = min(max(10, akun_t["balance"] * 10 // 100), 1000)
-                eko.kurang_koin(conn, ctx.guild.id, target.id, curi)
-                eko.tambah_koin(conn, ctx.guild.id, ctx.author.id, curi)
+                # Cek return: koin target bisa habis tepat di tengah (race
+                # dengan pencurian/pengeluaran lain) — jangan cetak koin gratis.
+                if eko.kurang_koin(conn, ctx.guild.id, target.id, curi) is None:
+                    sukses = False  # target keburu miskin → pencurian gagal
+                    curi = 0
+                else:
+                    eko.tambah_koin(conn, ctx.guild.id, ctx.author.id, curi)
         _maling_cd[ctx.author.id] = now
         _evict_terbatas(_maling_cd)
         if sukses:
@@ -710,6 +735,19 @@ class MiniGames(commands.Cog):
             return
         st = _susunkata_aktif.get(message.channel.id)
         if not st:
+            return
+        from src.cogs.dashboard_sync import modul_aktif
+
+        if not modul_aktif(message.guild.id, "economy_enabled"):
+            # Modul ekonomi dimatikan di tengah permainan: hentikan tanpa
+            # memberi koin agar toggle dashboard benar-benar berlaku.
+            _susunkata_aktif.pop(message.channel.id, None)
+            try:
+                await message.channel.send(
+                    "🔤 Permainan dihentikan: modul ekonomi dimatikan oleh admin server ini."
+                )
+            except discord.HTTPException:
+                pass
             return
         jawaban, ends_at = st
         now = time.time()

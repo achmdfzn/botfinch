@@ -17,7 +17,7 @@ import asyncio
 import io
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.bot import FinchBot
+from src.bot import MENTIONS_PENGUMUMAN, FinchBot
 from src.cogs.dashboard_sync import (
     TABEL_ANNOUNCEMENTS,
     TABEL_SETTINGS,
@@ -213,6 +213,18 @@ def _guild_announce_mock():
     return g, ch
 
 
+def _bot_announce(g, gid_nyata):
+    """Mock bot yang hanya mengenali satu guild (seperti aslinya).
+
+    Tanpa ini, get_guild mengembalikan mock untuk SEMUA id sehingga
+    sisa pengumuman guild lain dari file test lain ikut terkirim dan
+    membuat assert_called_once gagal tergantung urutan test.
+    """
+    bot = MagicMock()
+    bot.get_guild = MagicMock(side_effect=lambda gid: g if gid == gid_nyata else None)
+    return bot
+
+
 def _tambah_pengumuman():
     with get_connection() as conn:
         conn.execute(
@@ -227,9 +239,8 @@ def _tambah_pengumuman():
 def test_kirim_pengumuman_jalan_dan_substitusi():
     _bersih()
     _tambah_pengumuman()
-    bot = MagicMock()
     g, ch = _guild_announce_mock()
-    bot.get_guild = MagicMock(return_value=g)
+    bot = _bot_announce(g, GID)
     sync = DashboardSync(bot)
     asyncio.run(sync.kirim_pengumuman.coro(sync))
     ch.send.assert_called_once()
@@ -241,9 +252,8 @@ def test_kirim_pengumuman_mati_skip():
     _bersih()
     _set("announcements_enabled", "0")
     _tambah_pengumuman()
-    bot = MagicMock()
     g, ch = _guild_announce_mock()
-    bot.get_guild = MagicMock(return_value=g)
+    bot = _bot_announce(g, GID)
     sync = DashboardSync(bot)
     asyncio.run(sync.kirim_pengumuman.coro(sync))
     ch.send.assert_not_called()
@@ -298,7 +308,10 @@ def test_responder_variabel_disubstitusi():
     cog = Responder(MagicMock())
     msg, ch = _pesan_responder()
     asyncio.run(cog.on_message(msg))
-    ch.send.assert_called_once_with("Hai <@4242> di Server Tes (55) via <#31337>")
+    ch.send.assert_called_once_with(
+        "Hai <@4242> di Server Tes (55) via <#31337>",
+        allowed_mentions=MENTIONS_PENGUMUMAN,
+    )
 
 
 # ---------- starboard toggle ----------
@@ -470,3 +483,91 @@ def test_welcome_message_member_count():
     sysch.send.assert_called_once()
     teks = sysch.send.call_args[0][0]
     assert teks == "Selamat datang <@123>! Member ke-100 di Server Tes."
+
+
+# ---------- regression: audit 2026-10-09 (3 pelanggaran toggle) ----------
+
+def test_leveling_cog_check_mati():
+    from src.cogs.leveling import Leveling
+
+    _bersih()
+    _set("leveling_enabled", "0")
+    cog = Leveling.__new__(Leveling)  # tanpa start loop
+    ctx = _ctx()
+    assert asyncio.run(Leveling.cog_check(cog, ctx)) is False
+    ctx.send.assert_called_once()
+
+
+def test_leveling_cog_check_nyala_default():
+    from src.cogs.leveling import Leveling
+
+    _bersih()
+    cog = Leveling.__new__(Leveling)
+    assert asyncio.run(Leveling.cog_check(cog, _ctx())) is True
+
+
+def test_minigames_susunkata_mati_tanpa_koin():
+    import time
+
+    from src.cogs import minigames as mg
+
+    _bersih()
+    _set("economy_enabled", "0")
+    cog = mg.MiniGames.__new__(mg.MiniGames)
+    ch_id = 777001
+    jawaban = "finchkeren"
+    mg._susunkata_aktif[ch_id] = (jawaban, time.time() + 60)
+    try:
+        channel = MagicMock()
+        channel.id = ch_id
+        channel.send = AsyncMock()
+        author = MagicMock()
+        author.bot = False
+        author.id = 4242
+        guild = MagicMock()
+        guild.id = GID
+        message = MagicMock()
+        message.author = author
+        message.guild = guild
+        message.channel = channel
+        message.content = jawaban
+        with patch("src.utils.economy.tambah_koin") as mock_koin:
+            asyncio.run(cog.on_message(message))
+        mock_koin.assert_not_called()
+        # permainan dihentikan + ada pemberitahuan, bukan diam
+        channel.send.assert_called_once()
+        assert mg._susunkata_aktif.get(ch_id) is None
+    finally:
+        mg._susunkata_aktif.pop(ch_id, None)
+
+
+def test_shop_cek_lelang_mati_ditunda():
+    from src.cogs.shop import Shop
+
+    _bersih()
+    _set("economy_enabled", "0")
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO lelang (guild_id, channel_id, message_id, nama_role,"
+            " harga_awal, tawaran_tertinggi, penawar_id, ends_at, ended)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)",
+            (GID, 31337, 424242, "Role Sultan", 100, 500, 999, "2000-01-01T00:00:00"),
+        )
+        conn.commit()
+    try:
+        cog = Shop.__new__(Shop)
+        cog.bot = MagicMock()
+        with patch.object(Shop, "_selesaikan_lelang", new=AsyncMock()) as mock_selesai:
+            asyncio.run(cog.cek_lelang.coro(cog))
+        # tidak diselesaikan saat modul mati...
+        mock_selesai.assert_not_called()
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT ended FROM lelang WHERE guild_id = ? AND nama_role = ?",
+                (GID, "Role Sultan"),
+            ).fetchone()
+        assert row[0] == 0, "lelang harus tetap pending saat economy_enabled=0"
+    finally:
+        with get_connection() as conn:
+            conn.execute("DELETE FROM lelang WHERE guild_id = ?", (GID,))
+            conn.commit()

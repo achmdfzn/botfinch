@@ -64,14 +64,22 @@ class Youtube(commands.Cog):
                                     conn.execute("INSERT OR IGNORE INTO yt_posts (video_id, posted_at) VALUES (?, datetime('now'))", (v["videoId"],))
                                 conn.commit()
                 except Exception:
-                    pass
+                    # Seed best-effort: gagal seed bukan fatal, loop berikut
+                    # akan mencoba lagi (self.seeded tetap False).
+                    log.warning("YouTube: gagal seed awal", exc_info=True)
+                    return
             self.seeded = True
             return
 
         # Retensi: hapus data lebih dari 90 hari
-        with get_connection() as conn:
-            conn.execute("DELETE FROM yt_posts WHERE posted_at < date('now','-90 days')")
-            conn.commit()
+        try:
+            with get_connection() as conn:
+                conn.execute("DELETE FROM yt_posts WHERE posted_at < date('now','-90 days')")
+                conn.commit()
+        except Exception:
+            # Satu DB error tidak boleh membunuh loop selamanya
+            log.exception("YouTube: gagal retensi yt_posts")
+            return
 
         # update interval dinamis
         try:
@@ -98,8 +106,12 @@ class Youtube(commands.Cog):
         videos = parse_rss(xml_text)
         if not videos:
             return
-        with get_connection() as conn:
-            existing = {r[0] for r in conn.execute("SELECT video_id FROM yt_posts").fetchall()}
+        try:
+            with get_connection() as conn:
+                existing = {r[0] for r in conn.execute("SELECT video_id FROM yt_posts").fetchall()}
+        except Exception:
+            log.exception("YouTube: gagal baca yt_posts")
+            return
 
         channel = self.bot.get_channel(notify_id)
         if channel is None or not isinstance(channel, discord.TextChannel):
@@ -124,11 +136,16 @@ class Youtube(commands.Cog):
                 ping = f"<@&{role_id}> "
             try:
                 await channel.send(content=ping + link, embed=embed)
-            except discord.Forbidden:
-                log.warning("Tidak bisa kirim notif YouTube")
-            with get_connection() as conn:
-                conn.execute("INSERT OR IGNORE INTO yt_posts (video_id, posted_at) VALUES (?, datetime('now'))", (vid,))
-                conn.commit()
+            except (discord.Forbidden, discord.HTTPException):
+                # HTTP non-Forbidden (mis. 500/429) juga tidak boleh
+                # membunuh loop — video ini dilewati, lanjut ke berikutnya.
+                log.warning("Tidak bisa kirim notif YouTube (%s)", vid)
+            try:
+                with get_connection() as conn:
+                    conn.execute("INSERT OR IGNORE INTO yt_posts (video_id, posted_at) VALUES (?, datetime('now'))", (vid,))
+                    conn.commit()
+            except Exception:
+                log.exception("YouTube: gagal tandai video %s", vid)
             await asyncio.sleep(1)
 
     @cek_youtube.before_loop

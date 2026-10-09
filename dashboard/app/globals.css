@@ -43,3 +43,26 @@ body {
 ::selection {
   background-color: rgb(46 196 182 / 0.35);
 }
+
+/* A11y kontras: teks brand (#2ec4b6) di atas permukaan terang hanya ~2.2:1
+   (gagal WCAG AA untuk teks kecil seperti badge "Aktif" dan tautan).
+   Di mode terang paksa varian lebih gelap (#0c7c71 ≈ 5.1:1 di atas putih).
+   text-brand hanya dipakai untuk teks kecil, jadi override global aman. */
+html.light .text-brand,
+html.light .hover\:text-brand:hover {
+  color: #0c7c71;
+}
+
+/* A11y kontras (pola yang sama): text-red/green/yellow-400 di mode terang
+   hanya ~2.8:1 / ~1.7:1 / ~1.5:1 (gagal WCAG AA untuk teks kecil seperti
+   pesan error dan badge status). Paksa varian lebih gelap di mode terang:
+   #b91c1c ≈ 5.9:1, #15803d ≈ 5.0:1, #a16207 ≈ 4.8:1 di atas putih. */
+html.light .text-red-400 {
+  color: #b91c1c;
+}
+html.light .text-green-400 {
+  color: #15803d;
+}
+html.light .text-yellow-400 {
+  color: #a16207;
+}

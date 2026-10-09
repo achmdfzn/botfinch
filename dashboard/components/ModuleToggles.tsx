@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import type { ModuleDef } from "@/lib/settings";
 import { useI18n } from "./I18nProvider";
@@ -20,8 +20,13 @@ export default function ModuleToggles({
   const [values, setValues] = useState<Record<string, boolean>>(initial);
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<boolean>(false);
+  // Guard klik ganda: abaikan toggle yang request-nya masih berjalan
+  // (optimistik + rollback; race dua PUT bisa membalik rollback).
+  const inflight = useRef(new Set<string>());
 
   async function toggle(key: string, v: boolean) {
+    if (inflight.current.has(key)) return;
+    inflight.current.add(key);
     setError(false);
     setSaving(key);
     setValues((prev) => ({ ...prev, [key]: v }));
@@ -36,6 +41,7 @@ export default function ModuleToggles({
       setValues((prev) => ({ ...prev, [key]: !v }));
       setError(true);
     } finally {
+      inflight.current.delete(key);
       setSaving(null);
     }
   }
@@ -53,6 +59,10 @@ export default function ModuleToggles({
           const t = (dict.settings.modules as Record<string, { title?: string; desc?: string }>)[m.key.replace(/_enabled$/, "")];
           const title = t?.title ?? m.title;
           const desc = t?.desc ?? m.description;
+          const busy = saving === m.key;
+          // "Pengaturan detail" menaut ke seksi modul di /settings
+          // (anchor id dibuat SettingsForm dari key tanpa _enabled).
+          const detailHref = `/dashboard/${guildId}/settings#${m.key.replace(/_enabled$/, "")}`;
           return (
             <li
               key={m.key}
@@ -62,18 +72,19 @@ export default function ModuleToggles({
                 <p className="text-base font-semibold text-fg">{title}</p>
                 <p className="mt-1 text-sm text-muted">{desc}</p>
                 <Link
-                  href={`/dashboard/${guildId}`}
+                  href={detailHref}
                   className="mt-2 inline-flex min-h-[44px] items-center text-sm text-brand hover:underline focus-visible:outline-2 focus-visible:outline-brand"
                 >
                   {dict.guild.modul.detailLink}
                 </Link>
               </div>
               <div className="flex shrink-0 items-center gap-3">
-                {saving === m.key && <span className="text-xs text-muted">{dict.guild.modul.saving}</span>}
+                {busy && <span className="text-xs text-muted">{dict.guild.modul.saving}</span>}
                 <Toggle
                   checked={on}
                   onChange={(v) => toggle(m.key, v)}
                   label={fmt(dict.guild.modul[on ? "toggleOn" : "toggleOff"], { title })}
+                  disabled={busy}
                 />
               </div>
             </li>

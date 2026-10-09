@@ -7,6 +7,7 @@ export const id = {
   nav: {
     myServers: "Server Saya",
     inviteBot: "Undang Bot",
+    signInShort: "Masuk",
     logoAlt: "Logo Finch",
     back: "Kembali ke daftar server",
   },
@@ -15,7 +16,6 @@ export const id = {
     signOut: "Keluar",
   },
   theme: {
-    label: "Tema",
     toLight: "Ganti ke mode terang",
     toDark: "Ganti ke mode gelap",
   },
@@ -28,60 +28,69 @@ export const id = {
     add: "Tambah",
     remove: "Hapus",
     loading: "Memuat...",
+    refreshError: "Gagal memuat ulang. Data yang tampil mungkin basi.",
   },
   loading: {
     ariaLabel: "Memuat",
-  },
-  errors: {
-    loadFailed: "Gagal memuat data. Coba muat ulang halaman.",
-    saveFailed: "Gagal menyimpan. Coba lagi.",
   },
   landing: {
     metaTitle: "Finch Dashboard",
     metaDescription: "Kelola bot Discord Finch: modul per-server, statistik, dan invite.",
     heroAlt: "Maskot Finch",
-    heroTitle: "Satu dasbor untuk semua server Finch",
+    heroTitle: "Satu bot untuk semua kebutuhan server Discord-mu",
     heroSubtitle:
-      "Atur modul bot per-server dan pantau statistik langsung dari browser. Masuk pakai Discord, tanpa password baru.",
+      "Leveling, ekonomi, moderasi, giveaway, reaction roles, kartu welcome, dan lainnya — 137 slash command yang diatur per server langsung dari dashboard web.",
     ctaInvite: "Undang Finch ke Server",
-    statsAria: "Statistik bot",
-    statServers: "Server",
-    statMembers: "Total member",
-    statUpdated: "Data diperbarui",
-    statsEmptyTitle: "Statistik belum tersedia",
-    statsEmptyBody:
-      "Angka di sini muncul otomatis setelah bot Finch mengirim data pertamanya (tiap 5 menit). Tidak ada angka karangan.",
-    modulesAria: "Modul yang bisa diatur",
-    modulesTitle: "Modul yang bisa diatur",
-    modulesSubtitle:
-      "Tiap server punya pengaturannya sendiri. Perubahan tersimpan di dasbor dan dibaca bot otomatis dalam beberapa menit.",
-    modules: {
+    ctaDashboard: "Buka Dashboard",
+    numbersAria: "Angka nyata Finch",
+    numCommands: "Slash command",
+    numPlugins: "Plugin",
+    numCogs: "Cog",
+    numbersNote: "Angka nyata dari hasil audit kode — bukan karangan.",
+    featuresAria: "Fitur unggulan",
+    featuresTitle: "Fitur yang bikin server hidup",
+    featuresSubtitle:
+      "Tiap fitur adalah plugin yang bisa dinyalakan atau dimatikan per server dari dashboard.",
+    featureCta: "Atur di dashboard",
+    features: {
       welcome: {
-        title: "Welcome",
-        desc: "Kartu selamat datang bergambar untuk tiap member baru, channel bisa dipilih per-server.",
+        emoji: "👋",
+        title: "Welcome & Goodbye",
+        desc: "Kartu selamat datang bergambar dengan 4 tema (default, midnight, sunset, ocean), auto-role untuk member baru, plus pesan perpisahan yang bisa dikustom.",
       },
       leveling: {
-        title: "Leveling",
-        desc: "XP otomatis dari chat dan voice, rank card, dan role reward tiap naik level.",
+        emoji: "⭐",
+        title: "Leveling & XP",
+        desc: "XP otomatis dari chat dan voice, rank card, 4 gaya pesan level-up, dan role reward tiap naik level.",
       },
-      economy: {
-        title: "Ekonomi",
-        desc: "Koin, daily, kerja, bank berbunga, toko, dan lelang antar member.",
+      selfroles: {
+        emoji: "🎭",
+        title: "Reaction Roles",
+        desc: "Member mengambil role sendiri dengan reaksi emoji. Buat dan kelola semuanya dari dashboard.",
       },
       automod: {
-        title: "AutoMod",
-        desc: "Anti-spam, anti invite link, auto-mute, dan slowmode otomatis.",
+        emoji: "🛡️",
+        title: "Moderasi & AutoMod",
+        desc: "Anti-spam, anti invite link, auto-mute, dan slowmode otomatis — lengkap dengan log moderasi yang bisa dilihat di web.",
       },
-      starboard: {
-        title: "Starboard",
-        desc: "Pesan yang dapat banyak bintang diteruskan ke channel khusus.",
+      economy: {
+        emoji: "🪙",
+        title: "Economy & Games",
+        desc: "Koin, daily, kerja, bank berbunga, toko, minigames, lelang, sampai saham dan turnamen antar member.",
+      },
+      giveaway: {
+        emoji: "🎉",
+        title: "Giveaways",
+        desc: "Buat dan kelola giveaway langsung dari dashboard — bot yang memposting dan mengundi pemenangnya.",
       },
     },
+    finalTitle: "Siap meramaikan server-mu?",
+    finalSubtitle: "Undang Finch sekarang, atur pluginnya dari dashboard, dan biarkan bot yang bekerja.",
+    footerDashboard: "Dashboard",
     aboutAria: "Tentang data",
     aboutTitle: "Dari mana datanya?",
     aboutBody:
       "Bot Finch yang jalan di server mengirim ringkasan (nama server, jumlah member, daftar channel) ke dasbor ini tiap 5 menit. Dasbor tidak pernah mengarang angka: kalau bot belum mengirim, bagian statistik dikosongkan dengan jujur.",
-    aboutCta: "Buka dasbor server saya",
     footerTagline: "Finch, bot Discord untuk semua server.",
     footerInvite: "Undang Finch ke server Discord",
   },
@@ -96,14 +105,16 @@ export const id = {
     emptyTitle: "Tidak ada server yang bisa dikelola",
     emptyBody:
       "Kamu belum punya izin Kelola Server di server manapun, atau Discord belum memberi daftarnya. Minta role admin di servermu lalu muat ulang.",
+    retry: "Muat ulang",
     sectionNotInBot: "Bot belum ada di server ini",
     checking:
-      "Setelah mengundang bot, halaman ini memeriksa otomatis tiap 15 detik: tombol Kelola muncul sendiri.",
+      "Setelah mengundang bot, halaman ini memeriksa otomatis tiap 15 detik: tombol Buka Dashboard muncul sendiri.",
     notDetected: "Belum terdeteksi. Pastikan bot online dengan DASHBOARD_URL dan DASHBOARD_SECRET terisi.",
     botEmptyTitle: "Bot belum mengirim data",
     botEmptyBody:
       "Finch belum pernah mengirim snapshot ke dasbor ini. Pastikan bot berjalan dengan DASHBOARD_URL dan DASHBOARD_SECRET terisi.",
-    cardManage: "Kelola",
+    cardOpen: "Buka Dashboard",
+    cardInvite: "Undang Bot",
     cardNoData: "Belum ada data dari bot",
     cardMembers: "{n} member",
     navOpen: "Buka menu navigasi",
@@ -140,10 +151,6 @@ export const id = {
       signinBody: "Login dengan Discord untuk mengatur server.",
       dbBody: "Dasbor ini butuh Vercel Postgres untuk menyimpan pengaturan. Lihat README bagian Deploy.",
       subtitle: "Statistik dari bot, jalan pintas ke tiap bagian, dan pengaturan modul.",
-      tabOverview: "Ringkasan",
-      tabSettings: "Pengaturan",
-      tabPlugins: "Plugins",
-      tablistLabel: "Bagian halaman server",
       statsTitle: "Statistik server",
       statMembers: "Member",
       statChannels: "Channel",
@@ -154,10 +161,7 @@ export const id = {
       statsWaitingBody:
         "Angka statistik muncul setelah bot mengirim snapshot pertamanya untuk server ini.",
       shortcutsTitle: "Jalan pintas",
-      welcomeAria: "Sambutan server",
       pluginActiveCount: "{on} dari {total} plugin aktif",
-      managePlugins: "Kelola plugin",
-      settingsTitle: "Pengaturan modul",
       settingsDesc: "Nyalakan atau matikan modul, pilih channel. Bot membaca perubahan dalam beberapa menit.",
       waitingBody:
         "Daftar channel butuh snapshot terbaru dari bot. Toggle tetap bisa disimpan; pilihan channel muncul setelah bot mengirim data.",
@@ -175,9 +179,6 @@ export const id = {
     },
     plugins: {
       metaTitle: "Plugins",
-      signinBody: "Login dengan Discord untuk mengatur plugin server.",
-      dbBody: "Fitur ini butuh Vercel Postgres untuk menyimpan pengaturan. Lihat README bagian Deploy.",
-      subtitle: "Nyalakan atau matikan plugin ala MEE6. Bot membaca perubahan dalam beberapa menit.",
       tabAll: "Semua Plugin",
       enable: "Aktifkan",
       disable: "Nonaktifkan",
@@ -266,6 +267,7 @@ export const id = {
       listTitle: "Daftar self-role ({n})",
       emptyList: "Belum ada self-role.",
       rowMessage: "pesan {id}",
+      confirmDelete: 'Hapus self-role "{preview}"?',
     },
     responder: {
       metaTitle: "Auto-responder",
@@ -280,6 +282,7 @@ export const id = {
       addError: "Gagal menyimpan. Coba lagi.",
       listTitle: "Daftar responder ({n})",
       emptyList: "Belum ada auto-responder.",
+      confirmDelete: 'Hapus auto-responder "{preview}"?',
     },
     giveaway: {
       metaTitle: "Giveaway",
@@ -477,7 +480,10 @@ export const id = {
         title: "Ekonomi",
         desc: "Koin, daily, kerja, bank, dan toko. Mati = semua command ekonomi ditolak.",
         fields: {
-          economy_daily: { label: "Hadiah /daily" },
+          economy_daily: {
+            label: "Hadiah /daily",
+            hint: "Jangan diubah: bot memberi hadiah acak 100–300. Isi angka untuk memakai hadiah tetap.",
+          },
           economy_work_min: { label: "/kerja minimal" },
           economy_work_max: { label: "/kerja maksimal" },
         },

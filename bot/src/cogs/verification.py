@@ -106,6 +106,10 @@ class Verification(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
+        if member.bot:
+            # Bot tidak bisa klik tombol verifikasi — jangan kunci mereka di
+            # role "Belum Verifikasi" selamanya.
+            return
         verified, unverified = _find_roles(member.guild)
         if verified is None or unverified is None:
             log.warning(

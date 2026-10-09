@@ -3,11 +3,20 @@
 Semua data bot (Level, riwayat moderasi, dsb) disimpan di data/finch.db.
 """
 import logging
+import re
 import sqlite3
 from pathlib import Path
 
 log = logging.getLogger("finch")
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "finch.db"
+
+# Validasi nama tabel/kolom untuk query DDL yang memakai f-string
+# (SQLite tidak mendukung parameter binding untuk identifier).
+_IDENT_AMAN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# Definisi kolom DDL (tipe + DEFAULT) — hanya karakter yang wajar untuk
+# "INTEGER DEFAULT 0" / "TEXT" / "VARCHAR(32)" dsb. Tanpa ini, definisi
+# yang lolos dari input luar bisa menyuntik statement tambahan.
+_DEFINISI_AMAN = re.compile(r"^[A-Za-z0-9_(),\s']+$")  # kutip tunggal diizinkan untuk DEFAULT '...'
 
 
 def get_connection():
@@ -195,6 +204,8 @@ def init_db():
         # Migrasi invites_log lama jika PK-nya masih user_id saja
         cols_inv = [r[1] for r in conn.execute("PRAGMA table_info(invites_log)").fetchall()]
         if cols_inv and cols_inv[0] == "user_id":
+            # Idempoten: buang sisa tabel sementara dari migrasi yang terinterupsi.
+            conn.execute("DROP TABLE IF EXISTS invites_log_old")
             conn.execute("ALTER TABLE invites_log RENAME TO invites_log_old")
             conn.execute("""
                 CREATE TABLE invites_log (
@@ -225,6 +236,14 @@ def init_db():
         """)
         # --- Migrasi Tahap 10: kolom baru di tabel yang sudah ada ---
         def _tambah_kolom(tabel: str, kolom: str, definisi: str) -> None:
+            # Identifier tidak bisa di-parameterize -> validasi ketat.
+            # Semua pemanggil memakai literal internal, jadi ini tidak
+            # mengubah perilaku; hanya mencegah injeksi bila suatu saat
+            # ada input luar yang lolos ke sini.
+            if not _IDENT_AMAN.match(tabel) or not _IDENT_AMAN.match(kolom):
+                raise ValueError(f"Nama tabel/kolom tidak valid: {tabel}.{kolom}")
+            if not _DEFINISI_AMAN.match(definisi):
+                raise ValueError(f"Definisi kolom tidak valid: {definisi!r}")
             cols = [r[1] for r in conn.execute(
                 f"PRAGMA table_info({tabel})").fetchall()]
             if kolom not in cols:

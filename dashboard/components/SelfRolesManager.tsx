@@ -28,52 +28,76 @@ export default function SelfRolesManager({
   const g = dict.guild.selfroles;
 
   const [rows, setRows] = useState<Row[]>(initialRows);
-  const [loading, setLoading] = useState(false);
   const [messageId, setMessageId] = useState("");
   const [emoji, setEmoji] = useState("");
   const [roleId, setRoleId] = useState("");
   const [status, setStatus] = useState<"idle" | "ok" | "error">("idle");
+  // Guard klik ganda: satu request tambah dalam satu waktu.
+  const [saving, setSaving] = useState(false);
+  // Error khusus refresh pasca-mutasi: list lama tetap tampil + peringatan.
+  const [refreshError, setRefreshError] = useState(false);
+  // Guard klik ganda per baris saat hapus.
+  const [busyRows, setBusyRows] = useState<ReadonlySet<string>>(new Set());
 
   async function reload() {
-    setLoading(true);
+    setRefreshError(false);
     try {
       const res = await fetch(`/api/guilds/${guildId}/selfroles`);
+      if (!res.ok) throw new Error("http");
       const data = await res.json();
       setRows(data.selfroles ?? []);
     } catch {
-      /* biarkan kosong */
-    } finally {
-      setLoading(false);
+      setRefreshError(true);
     }
   }
 
   const roleName = (id: string) => roles.find((r) => r.id === id)?.name ?? id;
 
   async function add() {
+    if (saving) return;
+    setSaving(true);
     setStatus("idle");
-    const res = await fetch(`/api/guilds/${guildId}/selfroles`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message_id: messageId.trim(), emoji: emoji.trim(), role_id: roleId }),
-    });
-    if (res.ok) {
-      setMessageId("");
-      setEmoji("");
-      setRoleId("");
-      setStatus("ok");
-      reload();
-    } else {
+    try {
+      const res = await fetch(`/api/guilds/${guildId}/selfroles`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message_id: messageId.trim(), emoji: emoji.trim(), role_id: roleId }),
+      });
+      if (res.ok) {
+        setMessageId("");
+        setEmoji("");
+        setRoleId("");
+        setStatus("ok");
+        reload();
+      } else {
+        setStatus("error");
+      }
+    } catch {
       setStatus("error");
+    } finally {
+      setSaving(false);
     }
   }
 
-  async function remove(message_id: string, em: string) {
-    const res = await fetch(`/api/guilds/${guildId}/selfroles`, {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message_id, emoji: em }),
-    });
-    if (res.ok) reload();
+  async function remove(message_id: string, em: string, preview: string) {
+    if (!confirm(fmt(g.confirmDelete, { preview }))) return;
+    const key = `${message_id}:${em}`;
+    if (busyRows.has(key)) return;
+    setBusyRows((prev) => new Set(prev).add(key));
+    try {
+      const res = await fetch(`/api/guilds/${guildId}/selfroles`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message_id, emoji: em }),
+      });
+      if (res.ok) reload();
+    } finally {
+      setBusyRows((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }
   }
 
   return (
@@ -120,10 +144,10 @@ export default function SelfRolesManager({
         </div>
         <button
           onClick={add}
-          disabled={!messageId.trim() || !emoji.trim() || !roleId}
+          disabled={!messageId.trim() || !emoji.trim() || !roleId || saving}
           className="mt-4 rounded-lg bg-brand px-6 py-2.5 text-sm font-semibold text-ink hover:bg-brand-deep disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand min-h-[44px]"
         >
-          {dict.common.add}
+          {saving ? dict.settings.saving : dict.common.add}
         </button>
         {status === "ok" && <p role="status" className="mt-2 text-sm text-brand">{g.addOk}</p>}
         {status === "error" && <p role="alert" className="mt-2 text-sm text-red-400">{g.addError}</p>}
@@ -131,28 +155,32 @@ export default function SelfRolesManager({
 
       <div className="mt-6">
         <h2 className="text-sm font-semibold text-fg">{fmt(g.listTitle, { n: rows.length })}</h2>
-        {loading ? (
-          <p className="mt-3 text-sm text-muted">{dict.common.loading}</p>
-        ) : rows.length === 0 ? (
+        {rows.length === 0 ? (
           <p className="mt-3 text-sm text-muted">{g.emptyList}</p>
         ) : (
-          <ul className="mt-3 divide-y divide-edge overflow-hidden rounded-xl border border-edge bg-panel">
-            {rows.map((r) => (
-              <li key={r.id} className="flex items-center gap-3 px-5 py-3">
-                <span className="text-xl" aria-hidden="true">{r.emoji}</span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-fg">{roleName(r.role_id)}</p>
-                  <p className="font-mono text-xs text-muted">{fmt(g.rowMessage, { id: r.message_id })}</p>
-                </div>
-                <button
-                  onClick={() => remove(r.message_id, r.emoji)}
-                  className="shrink-0 rounded-lg border border-edge px-3 py-2 text-sm text-muted hover:bg-edge focus-visible:outline-2 focus-visible:outline-brand min-h-[44px]"
-                >
-                  {dict.common.remove}
-                </button>
-              </li>
-            ))}
-          </ul>
+          <>
+            {refreshError && (
+              <p role="alert" className="mt-3 text-sm text-red-400">{dict.common.refreshError}</p>
+            )}
+            <ul className="mt-3 divide-y divide-edge overflow-hidden rounded-xl border border-edge bg-panel">
+              {rows.map((r) => (
+                <li key={r.id} className="flex items-center gap-3 px-5 py-3">
+                  <span className="text-xl" aria-hidden="true">{r.emoji}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-fg">{roleName(r.role_id)}</p>
+                    <p className="font-mono text-xs text-muted">{fmt(g.rowMessage, { id: r.message_id })}</p>
+                  </div>
+                  <button
+                    onClick={() => remove(r.message_id, r.emoji, `${r.emoji} → ${roleName(r.role_id)}`)}
+                    disabled={busyRows.has(`${r.message_id}:${r.emoji}`)}
+                    className="shrink-0 rounded-lg border border-edge px-3 py-2 text-sm text-muted hover:bg-edge disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-brand min-h-[44px]"
+                  >
+                    {dict.common.remove}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </div>
     </div>

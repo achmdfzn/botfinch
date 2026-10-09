@@ -174,11 +174,21 @@ class Turnamen(commands.Cog):
         now = discord.utils.utcnow()
         berakhir = (now + datetime.timedelta(minutes=durasi_menit)).isoformat()
         with get_connection() as conn:
+            # Atomik: dua /lomba buat konkuren tidak bisa membuat dua
+            # turnamen aktif sekaligus (dulu: cek SELECT dulu lalu INSERT).
             cur = conn.execute(
                 "INSERT INTO turnamen (guild_id, jenis, status, dibuat, berakhir)"
-                " VALUES (?, 'susunkata', 'buka', ?, ?)",
-                (ctx.guild.id, now.isoformat(), berakhir),
+                " SELECT ?, 'susunkata', 'buka', ?, ?"
+                " WHERE NOT EXISTS (SELECT 1 FROM turnamen"
+                " WHERE guild_id = ? AND status IN ('buka', 'jalan'))",
+                (ctx.guild.id, now.isoformat(), berakhir, ctx.guild.id),
             )
+            if cur.rowcount == 0:
+                await ctx.send(
+                    embed=error_embed("Sudah ada turnamen aktif di server ini."),
+                    ephemeral=True,
+                )
+                return
             tid = cur.lastrowid
             conn.commit()
         self._channel_turnamen[tid] = ctx.channel.id
@@ -329,9 +339,16 @@ class Turnamen(commands.Cog):
             )
             return
         with get_connection() as conn:
-            berakhir = conn.execute(
+            row = conn.execute(
                 "SELECT berakhir FROM turnamen WHERE id = ?", (tid,)
-            ).fetchone()[0]
+            ).fetchone()
+            if row is None:
+                # Turnamen baru saja ditutup loop di tengah command — jangan crash
+                await ctx.send(
+                    embed=error_embed("Tidak ada turnamen aktif."), ephemeral=True
+                )
+                return
+            berakhir = row[0]
             top = conn.execute(
                 "SELECT user_id, skor FROM turnamen_peserta WHERE turnamen_id = ?"
                 " ORDER BY skor DESC LIMIT 9",
@@ -391,9 +408,16 @@ class Turnamen(commands.Cog):
 
     async def _selesaikan_turnamen(self, tid: int, gid: int) -> None:
         # Tandai selesai DULU baru kasih hadiah (crash di tengah = hadiah hilang,
-        # bukan dibayar 2x — pola aman seperti lotre).
+        # bukan dibayar 2x — pola aman seperti lotre). Guard status: pemanggilan
+        # ganda untuk turnamen yang sama tidak payout ulang.
         with get_connection() as conn:
-            conn.execute("UPDATE turnamen SET status = 'selesai' WHERE id = ?", (tid,))
+            cur = conn.execute(
+                "UPDATE turnamen SET status = 'selesai' WHERE id = ?"
+                " AND status IN ('buka', 'jalan')",
+                (tid,),
+            )
+            if cur.rowcount == 0:
+                return  # sudah diselesaikan (panggilan ganda)
             top = conn.execute(
                 "SELECT user_id, skor FROM turnamen_peserta WHERE turnamen_id = ?"
                 " ORDER BY skor DESC LIMIT 1",
@@ -591,17 +615,27 @@ class Turnamen(commands.Cog):
                 warna="game",
             )
         else:
+            from src.cogs.dashboard_sync import modul_aktif
+
             uid, poin = top[0]
             hadiah = config.settings.kuis_reward * 10
-            try:
-                with get_connection() as conn:
-                    eko.tambah_koin(conn, st["guild_id"], uid, hadiah)
-            except Exception:
-                log.exception("Gagal kasih hadiah kuis")
-                return
+            dibayar = False
+            if modul_aktif(st["guild_id"], "economy_enabled"):
+                try:
+                    with get_connection() as conn:
+                        eko.tambah_koin(conn, st["guild_id"], uid, hadiah)
+                    dibayar = True
+                except Exception:
+                    log.exception("Gagal kasih hadiah kuis")
+                    return
+            hadiah_txt = (
+                koin_text(hadiah)
+                if dibayar
+                else "_tanpa hadiah (modul ekonomi dimatikan)_"
+            )
             embed = finch_embed(
                 "🎯 Kuis Selesai!",
-                f"## 🥇 <@{uid}>\n**{poin}** poin • Hadiah: {koin_text(hadiah)}",
+                f"## 🥇 <@{uid}>\n**{poin}** poin • Hadiah: {hadiah_txt}",
                 warna="game",
             )
             for i, (u2, p2) in enumerate(top[1:4], start=2):
@@ -652,6 +686,19 @@ class Turnamen(commands.Cog):
             return
         if time.time() >= ses["berakhir"]:
             return  # biar loop cek_aducepat yang umumkan habis
+        from src.cogs.dashboard_sync import modul_aktif
+
+        if not modul_aktif(message.guild.id, "economy_enabled"):
+            # Modul ekonomi dimatikan di tengah sesi: hentikan tanpa hadiah
+            # (pola sama seperti susun-kata di minigames).
+            self._aducepat.pop(message.channel.id, None)
+            try:
+                await message.channel.send(
+                    "⚡ Adu cepat dihentikan: modul ekonomi dimatikan oleh admin server ini."
+                )
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+            return
         if message.content.strip().lower() != ses["kata"].lower():
             return
         # Pemenang!

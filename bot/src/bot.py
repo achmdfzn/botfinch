@@ -20,6 +20,22 @@ from src.utils.rankcard import make_welcome_card
 
 log = logging.getLogger("finch")
 
+# Kebijakan mention global (audit keamanan 2026-10-10):
+# - MENTIONS_AMAN: bawaan semua pesan bot — @everyone/@here DIMATIKAN agar
+#   konten user yang diposting ulang bot (/saran, /confess, /poll,
+#   /remind-rutin, transkrip tiket, log automod, dsb.) tidak bisa memicu
+#   mass-ping. Mention user & role tetap jalan (pemenang giveaway,
+#   role notifikasi YT, ...).
+# - MENTIONS_PENGUMUMAN: khusus konten resmi yang ditulis admin/mod
+#   (pengumuman dashboard, embed builder, event rutin, ...); pakai eksplisit
+#   di titik kirimnya masing-masing.
+MENTIONS_AMAN = discord.AllowedMentions(
+    everyone=False, users=True, roles=True, replied_user=True
+)
+MENTIONS_PENGUMUMAN = discord.AllowedMentions(
+    everyone=True, users=True, roles=True, replied_user=True
+)
+
 
 class FinchBot(commands.Bot):
     def __init__(self) -> None:
@@ -31,6 +47,7 @@ class FinchBot(commands.Bot):
             command_prefix=config.settings.prefix,
             intents=intents,
             help_command=None,
+            allowed_mentions=MENTIONS_AMAN,
         )
         self.start_time = datetime.now(timezone.utc)
 
@@ -190,7 +207,8 @@ class FinchBot(commands.Bot):
         except Exception:
             pass
         try:
-            await channel.send(embed=embed)
+            # Template goodbye ditulis admin via dashboard -> boleh @everyone.
+            await channel.send(embed=embed, allowed_mentions=MENTIONS_PENGUMUMAN)
         except (discord.Forbidden, discord.HTTPException):
             pass
 
@@ -261,6 +279,9 @@ class FinchBot(commands.Bot):
                     f"👋 Selamat datang di **{member.guild.name}**, {member.mention}!\n"
                     "Jangan lupa baca rules ya, dan have fun! 🎮"
                 )
-            await channel.send(teks, file=file)
+            # Template welcome ditulis admin via dashboard -> boleh @everyone.
+            await channel.send(
+                teks, file=file, allowed_mentions=MENTIONS_PENGUMUMAN
+            )
         except discord.Forbidden:
             log.warning("Tidak bisa kirim welcome (cek permission).")

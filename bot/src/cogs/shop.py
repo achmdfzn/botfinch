@@ -8,6 +8,7 @@ Config `.env`: SHOP_ITEMS="VIP:5000,Warna Emas:2500" (nama role:harga, pisah kom
 """
 import datetime
 import logging
+import sqlite3
 
 import discord
 from discord.ext import commands, tasks
@@ -15,10 +16,92 @@ from discord.ext import commands, tasks
 from src import config
 from src.store import get_connection
 from src.utils import economy as eko
+from src.utils.toggle import cek_toggle
 from src.utils.embeds import base_embed
 from src.utils.filters import parse_durasi
 
 log = logging.getLogger("finch")
+
+
+def _eksekusi_bid(conn, guild_id: int, user_id: int, channel_id: int, jumlah: int):
+    """Jalankan satu tawaran lelang secara transaksional.
+
+    Diserialisasi via BEGIN IMMEDIATE: dua /bid konkuren tidak bisa saling
+    menimpa — yang kalah melihat tawaran terbaru (atau lelang yang sudah
+    selesai) dan koinnya tidak hangus.
+
+    Return (status, info):
+      'ok'          -> info = (lelang_id, nama_role)
+      'tidak-ada'   -> tidak ada lelang aktif (atau sudah diselesaikan loop)
+      'minimal'     -> info = tawaran minimal yang diterima
+      'sendiri'     -> user sudah penawar tertinggi
+      'koin-kurang' -> saldo tidak cukup (koin TIDAK dipotong)
+
+    Koin penawar dipotong di dalam transaksi yang sama; escrow penawar lama
+    dikembalikan berdasarkan bacaan segar di dalam transaksi — tidak ada
+    refund ganda dan tidak ada escrow yang bocor.
+    """
+    try:
+        eko.get_akun(conn, guild_id, user_id)  # pastikan baris economy ada
+    except sqlite3.IntegrityError:
+        pass  # balapan pembuatan akun: baris sudah ada sekarang
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        status, info = _bid_dalam_transaksi(conn, guild_id, user_id, channel_id, jumlah)
+    except Exception:
+        conn.rollback()
+        raise
+    if status == "ok":
+        conn.commit()
+    else:
+        conn.rollback()  # tidak ada perubahan; bebaskan lock segera
+    return status, info
+
+
+def _bid_dalam_transaksi(conn, guild_id: int, user_id: int, channel_id: int, jumlah: int):
+    """Inti _eksekusi_bid. Dipanggil setelah BEGIN IMMEDIATE; JANGAN commit
+    di sini — commit/rollback diurus pemanggil."""
+    row = conn.execute(
+        "SELECT id, nama_role, harga_awal, tawaran_tertinggi, penawar_id FROM lelang"
+        " WHERE guild_id = ? AND channel_id = ? AND ended = 0"
+        " ORDER BY id DESC LIMIT 1",
+        (guild_id, channel_id),
+    ).fetchone()
+    if not row:
+        return ("tidak-ada", None)
+    lid, nama_role, harga_awal, tertinggi, penawar = row
+    tertinggi = tertinggi or 0
+    minimal = max(harga_awal, tertinggi) + 1
+    if jumlah < minimal:
+        return ("minimal", minimal)
+    if user_id == penawar:
+        return ("sendiri", None)
+    # Potong koin penawar baru (atomik, dalam transaksi yang sama)
+    cur = conn.execute(
+        "UPDATE economy SET balance = balance - ?"
+        " WHERE user_id = ? AND guild_id = ? AND balance >= ?",
+        (jumlah, user_id, guild_id, jumlah),
+    )
+    if cur.rowcount == 0:
+        return ("koin-kurang", None)
+    # Kembalikan escrow penawar lama (bacaan segar — bukan data basi)
+    if penawar and tertinggi:
+        conn.execute(
+            "INSERT INTO economy (user_id, guild_id, balance, total_earned)"
+            " VALUES (?, ?, ?, ?)"
+            " ON CONFLICT(user_id, guild_id) DO UPDATE SET"
+            " balance = balance + ?, total_earned = total_earned + ?",
+            (penawar, guild_id, tertinggi, tertinggi, tertinggi, tertinggi),
+        )
+    conn.execute(
+        "UPDATE lelang SET tawaran_tertinggi = ?, penawar_id = ? WHERE id = ?",
+        (jumlah, user_id, lid),
+    )
+    conn.execute(
+        "INSERT INTO lelang_bid (lelang_id, user_id, jumlah, waktu) VALUES (?, ?, ?, ?)",
+        (lid, user_id, jumlah, discord.utils.utcnow().isoformat()),
+    )
+    return ("ok", (lid, nama_role))
 
 
 
@@ -33,25 +116,13 @@ class Shop(commands.Cog):
     async def cog_check(self, ctx: commands.Context) -> bool:
         """Shop adalah bagian modul Ekonomi — ikut toggle `economy_enabled`.
 
-        Lelang yang sudah berjalan tetap diselesaikan loop agar tidak menggantung.
+        Lelang yang sudah berjalan DITUNDA loop saat modul mati (bukan
+        dibatalkan): begitu modul dinyalakan lagi, lelang diselesaikan
+        sehingga koin escrow tidak hangus.
         """
-        if ctx.guild is None:
-            return True
-        from src.cogs.dashboard_sync import modul_aktif
-
-        if modul_aktif(ctx.guild.id, "economy_enabled"):
-            return True
-        pesan = "Modul ekonomi dimatikan oleh admin server ini."
-        try:
-            if ctx.interaction is None:
-                await ctx.send(pesan)
-            elif ctx.interaction.response.is_done():
-                await ctx.interaction.followup.send(pesan, ephemeral=True)
-            else:
-                await ctx.interaction.response.send_message(pesan, ephemeral=True)
-        except discord.HTTPException:
-            pass
-        return False
+        return await cek_toggle(
+            ctx, "economy_enabled", "Modul ekonomi dimatikan oleh admin server ini."
+        )
 
     @commands.hybrid_command(name="shop", description="Lihat barang yang bisa dibeli pakai koin")
     async def shop(self, ctx: commands.Context):
@@ -207,48 +278,24 @@ class Shop(commands.Cog):
             await ctx.send("❌ Tawaran harus lebih dari 0.", ephemeral=True)
             return
         with get_connection() as conn:
-            row = conn.execute(
-                "SELECT id, nama_role, harga_awal, tawaran_tertinggi, penawar_id FROM lelang"
-                " WHERE guild_id = ? AND channel_id = ? AND ended = 0"
-                " ORDER BY id DESC LIMIT 1",
-                (ctx.guild.id, ctx.channel.id),
-            ).fetchone()
-            if not row:
-                await ctx.send("❌ Tidak ada lelang aktif di channel ini.", ephemeral=True)
-                return
-            lid, nama_role, harga_awal, tertinggi, penawar = row
-            minimal = max(harga_awal, tertinggi) + 1
-            if jumlah < minimal:
-                await ctx.send(
-                    f"❌ Tawaran harus ≥ **{minimal}** 🪙.", ephemeral=True
-                )
-                return
-            if ctx.author.id == penawar:
-                await ctx.send("❌ Kamu sudah penawar tertinggi.", ephemeral=True)
-                return
-            akun = eko.get_akun(conn, ctx.guild.id, ctx.author.id)
-            if akun["balance"] < jumlah:
-                await ctx.send(
-                    "❌ Koin kamu tidak cukup untuk tawaran ini.", ephemeral=True
-                )
-                return
-            # Escrow: potong penawar baru, kembalikan tawaran penawar lama
-            # (bug lama: tanpa escrow, pemenang bisa habiskan koin sebelum settlement)
-            sisa = eko.kurang_koin(conn, ctx.guild.id, ctx.author.id, jumlah)
-            if sisa is None:
-                await ctx.send("❌ Koin kamu tidak cukup.", ephemeral=True)
-                return
-            if penawar and tertinggi:
-                eko.tambah_koin(conn, ctx.guild.id, penawar, tertinggi)
-            conn.execute(
-                "UPDATE lelang SET tawaran_tertinggi = ?, penawar_id = ? WHERE id = ?",
-                (jumlah, ctx.author.id, lid),
+            status, info = _eksekusi_bid(
+                conn, ctx.guild.id, ctx.author.id, ctx.channel.id, jumlah
             )
-            conn.execute(
-                "INSERT INTO lelang_bid (lelang_id, user_id, jumlah, waktu) VALUES (?, ?, ?, ?)",
-                (lid, ctx.author.id, jumlah, discord.utils.utcnow().isoformat()),
+        if status == "tidak-ada":
+            await ctx.send("❌ Tidak ada lelang aktif di channel ini.", ephemeral=True)
+            return
+        if status == "minimal":
+            await ctx.send(
+                f"❌ Tawaran harus ≥ **{info}** 🪙.", ephemeral=True
             )
-            conn.commit()
+            return
+        if status == "sendiri":
+            await ctx.send("❌ Kamu sudah penawar tertinggi.", ephemeral=True)
+            return
+        if status == "koin-kurang":
+            await ctx.send("❌ Koin kamu tidak cukup.", ephemeral=True)
+            return
+        _lid, nama_role = info
         await ctx.send(
             f"🔨 {ctx.author.mention} menawar **{jumlah}** 🪙 untuk **{nama_role}**!"
         )
@@ -268,6 +315,14 @@ class Shop(commands.Cog):
             return
         for lid, gid, cid, nama_role, tertinggi, penawar in rows:
             try:
+                from src.cogs.dashboard_sync import modul_aktif
+
+                if not modul_aktif(gid, "economy_enabled"):
+                    # Modul ekonomi dimatikan: lelang ditunda, bukan dibatalkan.
+                    # Begitu modul dinyalakan lagi, loop menyelesaikan lelang ini
+                    # (ends_at sudah lewat) sehingga koin escrow tidak hangus.
+                    log.info("Lelang %s ditunda: economy_enabled=0 (guild %s)", lid, gid)
+                    continue
                 await self._selesaikan_lelang(lid, gid, cid, nama_role, tertinggi, penawar)
             except Exception:
                 log.exception("Gagal selesaikan lelang %s", lid)

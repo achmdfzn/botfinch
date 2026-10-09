@@ -14,6 +14,7 @@ from discord.ext import commands, tasks
 from src import config
 from src.store import get_connection
 from src.utils.embeds import base_embed, finch_embed, level_embed
+from src.utils.toggle import cek_toggle
 from src.utils.rankcard import make_rank_card
 from src.utils.xp import tambah_xp, beri_role_reward
 
@@ -84,12 +85,24 @@ class Leveling(commands.Cog):
     def cog_unload(self):
         self.bersih_cooldown.cancel()
 
+    async def cog_check(self, ctx: commands.Context) -> bool:
+        """Leveling ikut toggle `leveling_enabled` dari dashboard."""
+        return await cek_toggle(
+            ctx, "leveling_enabled", "Modul leveling dimatikan oleh admin server ini."
+        )
+
     @tasks.loop(minutes=30)
     async def bersih_cooldown(self):
-        """Evict entry _xp_cooldown lebih tua dari 1 jam biar dict tidak tumbuh selamanya."""
+        """Evict entry cooldown lebih tua dari 1 jam biar dict tidak tumbuh selamanya.
+
+        Catatan: _reaction_cooldown sempat tidak ikut di-evict (bocor memori
+        lambat) — sekarang dibersihkan bersama _xp_cooldown.
+        """
         batas = time.time() - 3600
         for key in [k for k, v in _xp_cooldown.items() if v < batas]:
             del _xp_cooldown[key]
+        for key in [k for k, v in _reaction_cooldown.items() if v < batas]:
+            del _reaction_cooldown[key]
 
     @bersih_cooldown.before_loop
     async def _before_bersih(self):

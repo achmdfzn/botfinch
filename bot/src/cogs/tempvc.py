@@ -9,7 +9,7 @@
 import logging
 import time
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from src import config
 from src.store import get_connection
@@ -21,6 +21,58 @@ _vc_cooldown = {}
 class TempVC(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.bersih_yatim.start()
+
+    def cog_unload(self):
+        self.bersih_yatim.cancel()
+
+    @tasks.loop(minutes=15)
+    async def bersih_yatim(self):
+        """Hapus channel tempvc yatim.
+
+        Kasus: semua member keluar saat bot down/crash -> tidak ada event
+        voice_state_update -> channel kosong + baris DB tertinggal selamanya.
+        Juga membersihkan baris DB yang channel-nya sudah dihapus manual.
+        Berjalan tiap 15 menit (termasuk tak lama setelah startup).
+        """
+        try:
+            with get_connection() as conn:
+                rows = conn.execute(
+                    "SELECT channel_id, guild_id FROM tempvc"
+                ).fetchall()
+        except Exception:
+            log.exception("Gagal baca tabel tempvc")
+            return
+        for channel_id, guild_id in rows:
+            try:
+                guild = self.bot.get_guild(guild_id)
+                ch = guild.get_channel(channel_id) if guild else None
+                if ch is None or not isinstance(ch, discord.VoiceChannel):
+                    # Channel dihapus manual / guild hilang -> bersihkan baris DB
+                    with get_connection() as conn:
+                        conn.execute(
+                            "DELETE FROM tempvc WHERE channel_id = ?",
+                            (channel_id,),
+                        )
+                        conn.commit()
+                    continue
+                if len(ch.members) == 0:
+                    await ch.delete(reason="TempVC yatim: kosong")
+                    with get_connection() as conn:
+                        conn.execute(
+                            "DELETE FROM tempvc WHERE channel_id = ?",
+                            (channel_id,),
+                        )
+                        conn.commit()
+                    log.info("TempVC yatim dihapus: %s", channel_id)
+            except (discord.Forbidden, discord.HTTPException) as e:
+                log.warning("Gagal bersihkan tempvc %s: %s", channel_id, e)
+            except Exception:
+                log.exception("Gagal bersihkan tempvc %s", channel_id)
+
+    @bersih_yatim.before_loop
+    async def _before_bersih(self):
+        await self.bot.wait_until_ready()
 
     @commands.Cog.listener()
     async def on_voice_state_update(

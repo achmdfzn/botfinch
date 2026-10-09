@@ -4,9 +4,11 @@ import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
 import SiteHeader from "@/components/SiteHeader";
 import EmptyState from "@/components/EmptyState";
+import ReloadButton from "@/components/ReloadButton";
 import PageHeader from "@/components/PageHeader";
-import { auth } from "@/auth";
-import { canManage, fetchUserGuilds } from "@/lib/discord";
+import { getSessionSafe } from "@/lib/access";
+import { canManage } from "@/lib/discord";
+import { fetchUserGuilds } from "@/lib/access";
 import {
   createAnnouncement,
   dbConfigured,
@@ -99,7 +101,7 @@ export default async function GuildTemplate({
     : "welcome";
   const status = sp.status === "ok" || sp.status === "error" ? sp.status : null;
 
-  const session = await auth();
+  const session = await getSessionSafe();
   if (!session?.accessToken) {
     return (
       <div>
@@ -112,21 +114,25 @@ export default async function GuildTemplate({
   }
 
   let guildName = guildId;
+  // notFound() dipanggil di luar try/catch: ia melempar error kontrol
+  // Next yang tidak boleh tertelan catch — guild tak ditemukan harus 404.
+  let guilds: Awaited<ReturnType<typeof fetchUserGuilds>>;
   try {
-    const guilds = await fetchUserGuilds(session.accessToken);
-    const mine = guilds.find((g) => g.id === guildId && canManage(g));
-    if (!mine) notFound();
-    guildName = mine.name;
+    guilds = await fetchUserGuilds(session.accessToken);
   } catch {
     return (
       <div>
         <SiteHeader />
         <main className="mx-auto max-w-3xl px-4 py-16">
-          <EmptyState title={dict.guild.common.loadTitle} body={dict.guild.common.loadBody} />
+          <EmptyState title={dict.guild.common.loadTitle} body={dict.guild.common.loadBody} action={<ReloadButton />} />
         </main>
       </div>
     );
   }
+
+  const mine = guilds.find((g) => g.id === guildId && canManage(g));
+  if (!mine) notFound();
+  guildName = mine.name;
 
   if (!dbConfigured()) {
     return (
@@ -154,138 +160,135 @@ export default async function GuildTemplate({
       : t.applyError;
 
   return (
-    <div>
-      <SiteHeader />
-      <main className="mx-auto max-w-4xl px-4 py-10">
-        <Link
-          href="/dashboard"
-          className="text-sm text-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-brand"
+    <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+      <Link
+        href="/dashboard"
+        className="inline-flex min-h-[44px] items-center text-sm text-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-brand"
+      >
+        {dict.nav.back}
+      </Link>
+      <div className="mt-3">
+        <PageHeader title={t.metaTitle} description={t.subtitle} />
+      </div>
+
+      {status && (
+        <div
+          role="status"
+          className={`mb-5 rounded-xl border px-4 py-3 text-sm ${
+            statusOk
+              ? "border-green-500/40 bg-green-500/10 text-green-400"
+              : "border-red-500/40 bg-red-500/10 text-red-400"
+          }`}
         >
-          {dict.nav.back}
-        </Link>
-        <div className="mt-3">
-          <PageHeader title={t.metaTitle} description={t.subtitle} />
+          <span className="font-semibold">{statusOk ? t.statusOk : t.statusError}: </span>
+          {statusText}
         </div>
+      )}
 
-        {status && (
-          <div
-            role="status"
-            className={`mb-5 rounded-xl border px-4 py-3 text-sm ${
-              statusOk
-                ? "border-green-500/40 bg-green-500/10 text-green-400"
-                : "border-red-500/40 bg-red-500/10 text-red-400"
-            }`}
-          >
-            <span className="font-semibold">{statusOk ? t.statusOk : t.statusError}: </span>
-            {statusText}
-          </div>
-        )}
+      <nav aria-label={t.metaTitle} className="mb-6 flex flex-wrap gap-1">
+        {TEMPLATE_CATEGORIES.map((c) => {
+          const active = c === cat;
+          return (
+            <Link
+              key={c}
+              href={tabUrl(guildId, c)}
+              aria-current={active ? "page" : undefined}
+              className={`flex min-h-[44px] items-center rounded-lg px-4 py-2.5 text-sm font-medium focus-visible:outline-2 focus-visible:outline-brand ${
+                active ? "bg-edge text-fg" : "text-muted hover:bg-edge hover:text-fg"
+              }`}
+            >
+              {t.tabs[c]}
+            </Link>
+          );
+        })}
+      </nav>
 
-        <nav aria-label={t.metaTitle} className="mb-6 flex flex-wrap gap-1">
-          {TEMPLATE_CATEGORIES.map((c) => {
-            const active = c === cat;
-            return (
-              <Link
-                key={c}
-                href={tabUrl(guildId, c)}
-                aria-current={active ? "page" : undefined}
-                className={`flex min-h-[44px] items-center rounded-lg px-4 py-2.5 text-sm font-medium focus-visible:outline-2 focus-visible:outline-brand ${
-                  active ? "bg-edge text-fg" : "text-muted hover:bg-edge hover:text-fg"
-                }`}
-              >
-                {t.tabs[c]}
-              </Link>
-            );
-          })}
-        </nav>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {shown.map((tpl) => {
+          const text = tpl.text[lang];
+          const preview =
+            cat === "announcement" ? text : renderTemplatePreview(text, guildName);
+          return (
+            <article
+              key={tpl.id}
+              className="flex flex-col rounded-xl border border-edge bg-panel p-5"
+            >
+              <h2 className="text-base font-semibold text-fg">{tpl.name[lang]}</h2>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {shown.map((tpl) => {
-            const text = tpl.text[lang];
-            const preview =
-              cat === "announcement" ? text : renderTemplatePreview(text, guildName);
-            return (
-              <article
-                key={tpl.id}
-                className="flex flex-col rounded-xl border border-edge bg-panel p-5"
-              >
-                <h2 className="text-base font-semibold text-fg">{tpl.name[lang]}</h2>
+              <p className="mt-1 text-xs font-medium text-muted">{t.previewLabel}</p>
+              <div className="mt-1 rounded-lg border border-edge bg-ink p-3">
+                <p className="whitespace-pre-wrap text-sm text-fg">{preview}</p>
+              </div>
+              {cat !== "announcement" && (
+                <p className="mt-2 text-xs text-muted">{t.previewHint}</p>
+              )}
 
-                <p className="mt-1 text-xs font-medium text-muted">{t.previewLabel}</p>
-                <div className="mt-1 rounded-lg border border-edge bg-ink p-3">
-                  <p className="whitespace-pre-wrap text-sm text-fg">{preview}</p>
-                </div>
-                {cat !== "announcement" && (
-                  <p className="mt-2 text-xs text-muted">{t.previewHint}</p>
-                )}
-
-                <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                  <span className="text-xs font-medium text-muted">{t.placeholdersLabel}:</span>
-                  {tpl.placeholders.length > 0 ? (
-                    tpl.placeholders.map((ph) => (
-                      <code
-                        key={ph}
-                        className="rounded bg-edge px-1.5 py-0.5 font-mono text-xs text-fg"
-                      >
-                        {ph}
-                      </code>
-                    ))
-                  ) : (
-                    <span className="text-xs text-muted">{t.noPlaceholders}</span>
-                  )}
-                </div>
-
-                <div className="mt-4 flex-1" />
-
-                {cat === "announcement" ? (
-                  <form action={createAnnouncementFromTemplate} className="mt-2 space-y-3">
-                    <input type="hidden" name="guild_id" value={guildId} />
-                    <input type="hidden" name="text" value={text} />
-                    <div>
-                      <label
-                        htmlFor={`tpl-channel-${tpl.id}`}
-                        className="text-xs font-medium text-muted"
-                      >
-                        {t.channelLabel}
-                      </label>
-                      <select
-                        id={`tpl-channel-${tpl.id}`}
-                        name="channel_id"
-                        required
-                        defaultValue=""
-                        className={`${inputCls} mt-1 w-full`}
-                      >
-                        <option value="">{t.selectChannel}</option>
-                        {channels.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            #{c.name}
-                          </option>
-                        ))}
-                      </select>
-                      {channels.length === 0 && (
-                        <p className="mt-1 text-xs text-muted">{t.noChannelsHint}</p>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted">{t.sendNowHint}</p>
-                    <button type="submit" className={`${buttonCls} w-full`}>
-                      {t.create}
-                    </button>
-                  </form>
+              <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                <span className="text-xs font-medium text-muted">{t.placeholdersLabel}:</span>
+                {tpl.placeholders.length > 0 ? (
+                  tpl.placeholders.map((ph) => (
+                    <code
+                      key={ph}
+                      className="rounded bg-edge px-1.5 py-0.5 font-mono text-xs text-fg"
+                    >
+                      {ph}
+                    </code>
+                  ))
                 ) : (
-                  <form action={applyTemplate} className="mt-2">
-                    <input type="hidden" name="guild_id" value={guildId} />
-                    <input type="hidden" name="cat" value={cat} />
-                    <input type="hidden" name="text" value={text} />
-                    <button type="submit" className={`${buttonCls} w-full`}>
-                      {t.apply}
-                    </button>
-                  </form>
+                  <span className="text-xs text-muted">{t.noPlaceholders}</span>
                 )}
-              </article>
-            );
-          })}
-        </div>
-      </main>
-    </div>
+              </div>
+
+              <div className="mt-4 flex-1" />
+
+              {cat === "announcement" ? (
+                <form action={createAnnouncementFromTemplate} className="mt-2 space-y-3">
+                  <input type="hidden" name="guild_id" value={guildId} />
+                  <input type="hidden" name="text" value={text} />
+                  <div>
+                    <label
+                      htmlFor={`tpl-channel-${tpl.id}`}
+                      className="text-xs font-medium text-muted"
+                    >
+                      {t.channelLabel}
+                    </label>
+                    <select
+                      id={`tpl-channel-${tpl.id}`}
+                      name="channel_id"
+                      required
+                      defaultValue=""
+                      className={`${inputCls} mt-1 w-full`}
+                    >
+                      <option value="">{t.selectChannel}</option>
+                      {channels.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          #{c.name}
+                        </option>
+                      ))}
+                    </select>
+                    {channels.length === 0 && (
+                      <p className="mt-1 text-xs text-muted">{t.noChannelsHint}</p>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted">{t.sendNowHint}</p>
+                  <button type="submit" className={`${buttonCls} w-full`}>
+                    {t.create}
+                  </button>
+                </form>
+              ) : (
+                <form action={applyTemplate} className="mt-2">
+                  <input type="hidden" name="guild_id" value={guildId} />
+                  <input type="hidden" name="cat" value={cat} />
+                  <input type="hidden" name="text" value={text} />
+                  <button type="submit" className={`${buttonCls} w-full`}>
+                    {t.apply}
+                  </button>
+                </form>
+              )}
+            </article>
+          );
+        })}
+      </div>
+    </main>
   );
 }

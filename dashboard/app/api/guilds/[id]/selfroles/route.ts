@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { addSelfRole, deleteSelfRole, getSelfRoles } from "@/lib/db";
 import { botAuthorized, requireManager } from "@/lib/access";
+import { discordId, str } from "@/lib/validate";
 
 export const instant = false;
-
-const ID_RE = /^\d{5,25}$/;
 
 export async function GET(
   req: Request,
@@ -32,10 +31,10 @@ export async function POST(
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
-  const messageId = typeof body.message_id === "string" ? body.message_id.trim() : "";
-  const emoji = typeof body.emoji === "string" ? body.emoji.trim() : "";
-  const roleId = typeof body.role_id === "string" ? body.role_id.trim() : "";
-  if (!ID_RE.test(messageId) || !ID_RE.test(roleId) || emoji.length === 0 || emoji.length > 64) {
+  const messageId = discordId(body.message_id);
+  const emoji = str(body.emoji, 64, true);
+  const roleId = discordId(body.role_id);
+  if (messageId === undefined || roleId === undefined || emoji === undefined) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
   await addSelfRole(id, messageId, emoji, roleId);
@@ -55,9 +54,9 @@ export async function DELETE(
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
-  const messageId = typeof body.message_id === "string" ? body.message_id.trim() : "";
+  const messageId = discordId(body.message_id);
   const emoji = typeof body.emoji === "string" ? body.emoji.trim() : "";
-  if (!ID_RE.test(messageId) || emoji.length === 0) {
+  if (messageId === undefined || emoji.length === 0) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
   await deleteSelfRole(id, messageId, emoji);

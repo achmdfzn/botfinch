@@ -32,7 +32,14 @@ interface FieldTexts {
 type ModuleDict = Dict["settings"]["modules"][keyof Dict["settings"]["modules"]];
 
 function moduleDict(dictModules: Record<string, ModuleDict>, key: string): ModuleDict | undefined {
-  return dictModules[key.replace(/_enabled$/, "")];
+  const t = dictModules[key.replace(/_enabled$/, "")];
+  // Fallback judul/deskripsi Indonesia di lib/settings.ts tidak pernah boleh
+  // tampil diam-diam: modul baru yang lupa didaftarkan di kamus i18n harus
+  // ketahuan saat development.
+  if (!t && process.env.NODE_ENV === "development") {
+    console.warn(`[i18n] modul tanpa entri kamus: ${key}`);
+  }
+  return t;
 }
 
 function parseLevelRoles(s: string): LevelRole[] {
@@ -211,16 +218,47 @@ export default function SettingsForm({ guildId, guildName, modules, initial, cha
   const [values, setValues] = useState(initial);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<"idle" | "ok" | "error">("idle");
+  // Dirty-tracking: hanya key yang benar-benar diubah user yang dikirim saat
+  // save. Tanpa ini, default hasil mergeSettings (mis. economy_daily: 100)
+  // ikut terkirim dan menimpa perilaku bot (hadiah acak 100–300 bila key
+  // tidak diset di DB). PUT /api/guilds/[id]/settings melakukan merge
+  // {...stored, ...clean}, jadi partial PUT aman.
+  const [dirty, setDirty] = useState<ReadonlySet<string>>(new Set());
+
+  function setValue(key: string, v: boolean | string | number) {
+    setValues((sv) => ({ ...sv, [key]: v }));
+    setDirty((prev) => {
+      if (prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
+  }
 
   async function save() {
+    // Guard klik ganda: tombol memang disabled saat saving, tapi tanpa guard
+    // ini double-click sangat cepat sebelum re-render bisa mengirim 2 PUT.
+    if (saving) return;
+    // Snapshot key yang dikirim: bila user mengubah field lain SELAMA
+    // request berjalan, key baru tetap di `dirty` dan tidak ikut terhapus
+    // saat sukses (sebelumnya hilang diam-diam tanpa terkirim).
+    const sent = new Set(dirty);
     setSaving(true);
     setStatus("idle");
     try {
+      const body = Object.fromEntries([...sent].map((k) => [k, values[k]]));
       const res = await fetch(`/api/guilds/${guildId}/settings`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(values),
+        body: JSON.stringify(body),
       });
+      if (res.ok) {
+        setDirty((prev) => {
+          const next = new Set(prev);
+          for (const k of sent) next.delete(k);
+          return next;
+        });
+      }
       setStatus(res.ok ? "ok" : "error");
     } catch {
       setStatus("error");
@@ -238,7 +276,14 @@ export default function SettingsForm({ guildId, guildName, modules, initial, cha
           const desc = t?.desc ?? m.description;
           const fieldsTexts = (t?.fields as Record<string, FieldTexts> | undefined) ?? {};
           return (
-            <div key={m.key} className="rounded-xl border border-edge bg-panel p-4 sm:p-5">
+            // id anchor per modul (mis. #welcome) agar sidebar bisa menaut
+            // langsung ke seksi yang relevan; scroll-mt agar tidak tertutup
+            // topbar sticky mobile.
+            <div
+              key={m.key}
+              id={m.key.replace(/_enabled$/, "")}
+              className="scroll-mt-20 rounded-xl border border-edge bg-panel p-4 sm:p-5"
+            >
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <h2 className="text-sm font-semibold text-fg">{title}</h2>
@@ -246,7 +291,7 @@ export default function SettingsForm({ guildId, guildName, modules, initial, cha
                 </div>
                 <Toggle
                   checked={Boolean(values[m.key])}
-                  onChange={(v) => setValues((sv) => ({ ...sv, [m.key]: v }))}
+                  onChange={(v) => setValue(m.key, v)}
                   label={fmt(dict.guild.modul[values[m.key] ? "toggleOn" : "toggleOff"], { title })}
                 />
               </div>
@@ -263,7 +308,7 @@ export default function SettingsForm({ guildId, guildName, modules, initial, cha
                           field={f}
                           texts={texts}
                           value={values[f.key] ?? false}
-                          onChange={(v) => setValues((sv) => ({ ...sv, [f.key]: v }))}
+                          onChange={(v) => setValue(f.key, v)}
                           channels={channels}
                           roles={roles}
                         />
@@ -277,7 +322,7 @@ export default function SettingsForm({ guildId, guildName, modules, initial, cha
                           field={f}
                           texts={texts}
                           value={values[f.key] ?? ""}
-                          onChange={(v) => setValues((sv) => ({ ...sv, [f.key]: v }))}
+                          onChange={(v) => setValue(f.key, v)}
                           channels={channels}
                           roles={roles}
                         />

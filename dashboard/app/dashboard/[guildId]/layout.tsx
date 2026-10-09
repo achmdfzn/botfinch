@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { auth } from "@/auth";
-import { canManage, fetchUserGuilds, iconUrl } from "@/lib/discord";
+import { getSessionSafe } from "@/lib/access";
+import { canManage, iconUrl } from "@/lib/discord";
+import { fetchUserGuilds } from "@/lib/access";
 import { getDict, getLang } from "@/lib/i18n";
 import DashboardShell from "@/components/DashboardShell";
 import type { SidebarNavItem } from "@/components/Sidebar";
@@ -20,7 +21,7 @@ export default async function GuildLayout({
 }) {
   const { guildId } = await params;
   const dict = getDict(await getLang());
-  const session = await auth();
+  const session = await getSessionSafe();
 
   let guildName: string | null = null;
   let guildIconUrl: string | null = null;

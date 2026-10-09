@@ -128,8 +128,14 @@ class Starboard(commands.Cog):
                         content=f"⭐ **{count}** | {channel.mention}", embed=embed
                     )
                     return
-                except (discord.NotFound, discord.Forbidden):
-                    pass
+                except discord.NotFound:
+                    # Pesan starboard dihapus manual -> posting ulang & klaim ulang.
+                    # (Dulu: jatuh ke `if not claimed: return` -> entri basi,
+                    # update count berhenti selamanya.)
+                    claimed = True
+                except discord.Forbidden:
+                    log.warning("Tidak bisa edit pesan starboard (cek permission).")
+                    return
             if not claimed:
                 return  # handler lain sedang memposting pesan ini
             try:

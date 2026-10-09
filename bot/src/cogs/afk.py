@@ -55,7 +55,7 @@ class Afk(commands.Cog):
                             f"👋 Selamat datang kembali, {message.author.mention}!",
                             delete_after=10,
                         )
-                    except discord.Forbidden:
+                    except (discord.Forbidden, discord.HTTPException):
                         pass
 
         # 2. mention ke user AFK → balas statusnya (satu balasan biar tidak spam)
@@ -69,11 +69,14 @@ class Afk(commands.Cog):
                 ).fetchone()
             if row:
                 try:
+                    # Alasan AFK ditulis user: matikan mention agar tidak bisa
+                    # dipakai untuk nge-ping orang lain lewat balasan otomatis.
                     await message.channel.send(
                         format_balas_afk(member.display_name, row[0], row[1]),
                         delete_after=15,
+                        allowed_mentions=discord.AllowedMentions.none(),
                     )
-                except discord.Forbidden:
+                except (discord.Forbidden, discord.HTTPException):
                     pass
                 break
 

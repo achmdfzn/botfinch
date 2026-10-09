@@ -30,11 +30,6 @@ ACHIEVEMENTS: list[tuple[str, str, str, str, int]] = [
 HIDDEN: set[str] = {"hantu", "sultan_diam", "kolektor", "sosialita"}
 
 
-def is_hidden(kode: str) -> bool:
-    """True jika achievement tersembunyi."""
-    return kode in HIDDEN
-
-
 def hidden_terkunci(conn, guild_id: int, user_id: int) -> list[str]:
     """Kode hidden achievement yang BELUM dibuka user (untuk tampil "???" di /achievement)."""
     sudah = {
@@ -65,11 +60,15 @@ def cek_buka(conn, guild_id: int, user_id: int, stats: dict) -> list[tuple[str, 
         if kode in sudah:
             continue
         if stats.get(kunci, 0) >= ambang:
-            conn.execute(
-                "INSERT INTO achievement (user_id, guild_id, kode, tgl) VALUES (?, ?, ?, ?)",
+            # INSERT OR IGNORE: dua pemicu bersamaan tidak IntegrityError
+            # (PK user_id, guild_id, kode) — hanya satu yang tercatat.
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO achievement (user_id, guild_id, kode, tgl)"
+                " VALUES (?, ?, ?, ?)",
                 (user_id, guild_id, kode, _sekarang_iso()),
             )
-            baru.append((kode, nama))
+            if cur.rowcount:
+                baru.append((kode, nama))
     if baru:
         conn.commit()
     return baru

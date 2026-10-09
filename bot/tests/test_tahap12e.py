@@ -98,8 +98,8 @@ class TestBumpKoin(unittest.TestCase):
 class TestHiddenAchievement(unittest.TestCase):
     def test_flag_hidden(self):
         for kode in ("hantu", "sultan_diam", "kolektor", "sosialita"):
-            self.assertTrue(ach.is_hidden(kode), kode)
-        self.assertFalse(ach.is_hidden("level10"))
+            self.assertIn(kode, ach.HIDDEN, kode)
+        self.assertNotIn("level10", ach.HIDDEN)
 
     def test_struktur_tetap_5_tuple(self):
         # cek_buka unpack 5 elemen — achievement baru harus kompatibel

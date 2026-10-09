@@ -183,7 +183,7 @@ class Settings:
     economy_daily_min: int = field(default_factory=lambda: _getenv_int("ECONOMY_DAILY_MIN", 100))
     economy_daily_max: int = field(default_factory=lambda: _getenv_int("ECONOMY_DAILY_MAX", 300))
     economy_work_min: int = field(default_factory=lambda: _getenv_int("ECONOMY_WORK_MIN", 50))
-    economy_work_max: int = field(default_factory=lambda: _getenv_int("ECONOMY_WORK_MAX", 200))
+    economy_work_max: int = field(default_factory=lambda: _getenv_int("ECONOMY_WORK_MAX", 150))
     economy_work_cooldown: int = field(default_factory=lambda: _getenv_int("ECONOMY_WORK_COOLDOWN", 3600))
     economy_level_bonus: int = field(default_factory=lambda: _getenv_int("ECONOMY_LEVEL_BONUS", 50))
 

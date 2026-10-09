@@ -78,11 +78,16 @@ class Birthday(commands.Cog):
         now = datetime.datetime.now(datetime.timezone.utc)
         hari_ini = now.strftime("%d-%m")
         tahun = now.strftime("%Y")
-        with get_connection() as conn:
-            rows = conn.execute(
-                "SELECT user_id, guild_id, tahun_terakhir FROM birthday WHERE tgl = ?",
-                (hari_ini,),
-            ).fetchall()
+        try:
+            with get_connection() as conn:
+                rows = conn.execute(
+                    "SELECT user_id, guild_id, tahun_terakhir FROM birthday WHERE tgl = ?",
+                    (hari_ini,),
+                ).fetchall()
+        except Exception:
+            # Satu DB error tidak boleh membunuh loop harian selamanya
+            log.exception("Gagal baca birthday")
+            return
         for user_id, guild_id, tahun_terakhir in rows:
             if tahun_terakhir == tahun:
                 continue

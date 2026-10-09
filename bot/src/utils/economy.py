@@ -6,14 +6,24 @@ Waktu disimpan sebagai ISO string; perbandingan cooldown pakai detik epoch.
 
 import datetime
 import random
+import re
 
 from src.utils.waktu import parse_iso
 
 DAILY_COOLDOWN_DETIK = 24 * 3600
 
+# Nama kolom tidak bisa di-parameterize di SQLite -> validasi ketat.
+# Semua pemanggil memakai literal internal; ini pencegah bila suatu saat
+# ada input luar yang lolos ke helper ini.
+_KOLOM_AMAN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
 
 def get_akun(conn, guild_id: int, user_id: int) -> dict:
-    """Ambil akun koin; buat baru dengan saldo awal kalau belum ada."""
+    """Ambil akun koin; buat baru dengan saldo awal kalau belum ada.
+
+    INSERT OR IGNORE: dua pemanggilan konkuren untuk user baru tidak
+    IntegrityError — hanya satu yang benar-benar membuat baris.
+    """
     from src import config
 
     row = conn.execute(
@@ -30,46 +40,76 @@ def get_akun(conn, guild_id: int, user_id: int) -> dict:
             "baru": False,
         }
     mulai = max(0, config.settings.economy_start_balance)
-    conn.execute(
-        "INSERT INTO economy (user_id, guild_id, balance, total_earned)"
+    cur = conn.execute(
+        "INSERT OR IGNORE INTO economy (user_id, guild_id, balance, total_earned)"
         " VALUES (?, ?, ?, ?)",
         (user_id, guild_id, mulai, mulai),
     )
     conn.commit()
+    if cur.rowcount == 0:
+        # Kalah balapan pembuatan akun: baca baris milik pemenang.
+        row = conn.execute(
+            "SELECT balance, total_earned, last_daily, last_work FROM economy"
+            " WHERE user_id = ? AND guild_id = ?",
+            (user_id, guild_id),
+        ).fetchone()
+        return {
+            "balance": row[0],
+            "total_earned": row[1],
+            "last_daily": row[2],
+            "last_work": row[3],
+            "baru": False,
+        }
     return {"balance": mulai, "total_earned": mulai, "last_daily": None,
             "last_work": None, "baru": True}
 
 
 def tambah_koin(conn, guild_id: int, user_id: int, jumlah: int) -> int:
-    """Tambah koin (jumlah > 0). Return saldo baru. total_earned ikut naik."""
+    """Tambah koin (jumlah > 0). Return saldo baru. total_earned ikut naik.
+
+    Atomik: UPDATE relatif (balance = balance + ?) — dua pemanggilan
+    konkuren tidak saling menimpa (dulu: baca saldo lalu SET nilai
+    hitungan, salah satu penambahan hilang).
+    """
     if jumlah <= 0:
         raise ValueError("jumlah harus positif")
-    akun = get_akun(conn, guild_id, user_id)
-    baru = akun["balance"] + jumlah
-    total = akun["total_earned"] + jumlah
+    get_akun(conn, guild_id, user_id)  # pastikan baris ada
     conn.execute(
-        "UPDATE economy SET balance = ?, total_earned = ?"
+        "UPDATE economy SET balance = balance + ?, total_earned = total_earned + ?"
         " WHERE user_id = ? AND guild_id = ?",
-        (baru, total, user_id, guild_id),
+        (jumlah, jumlah, user_id, guild_id),
     )
     conn.commit()
-    return baru
+    row = conn.execute(
+        "SELECT balance FROM economy WHERE user_id = ? AND guild_id = ?",
+        (user_id, guild_id),
+    ).fetchone()
+    return row[0] if row else 0
 
 
 def kurang_koin(conn, guild_id: int, user_id: int, jumlah: int) -> int | None:
-    """Kurangi koin. Return saldo baru, atau None kalau saldo tidak cukup."""
+    """Kurangi koin. Return saldo baru, atau None kalau saldo tidak cukup.
+
+    Atomik: cek saldo & kurangi dalam SATU statement UPDATE kondisional,
+    sehingga dua pemanggilan konkuren tidak bisa overdraft (dulu: baca saldo
+    dulu lalu UPDATE — dua panggilan bersamaan bisa sama-sama lolos cek).
+    """
     if jumlah <= 0:
         raise ValueError("jumlah harus positif")
-    akun = get_akun(conn, guild_id, user_id)
-    if akun["balance"] < jumlah:
-        return None
-    baru = akun["balance"] - jumlah
-    conn.execute(
-        "UPDATE economy SET balance = ? WHERE user_id = ? AND guild_id = ?",
-        (baru, user_id, guild_id),
+    get_akun(conn, guild_id, user_id)  # pastikan baris ada
+    cur = conn.execute(
+        "UPDATE economy SET balance = balance - ?"
+        " WHERE user_id = ? AND guild_id = ? AND balance >= ?",
+        (jumlah, user_id, guild_id, jumlah),
     )
+    if cur.rowcount == 0:
+        return None
     conn.commit()
-    return baru
+    row = conn.execute(
+        "SELECT balance FROM economy WHERE user_id = ? AND guild_id = ?",
+        (user_id, guild_id),
+    ).fetchone()
+    return row[0] if row else None
 
 
 def _klaim_cooldown(
@@ -85,24 +125,43 @@ def _klaim_cooldown(
 ) -> tuple[str, int]:
     """Helper generik klaim ber-cooldown.
 
+    Atomik: cek cooldown & kredit dalam SATU statement UPDATE kondisional.
+    Dua panggilan konkuren (mis. double-click /daily) tidak bisa sama-sama
+    lolos — hanya satu yang rowcount-nya 1 (dulu: SELECT cek dulu lalu UPDATE,
+    keduanya bisa lolos sebelum salah satunya commit).
+
     Return (status, nilai): 'ok' -> nilai = koin didapat;
     'cooldown' -> nilai = sisa detik sampai bisa klaim lagi.
     """
+    if not _KOLOM_AMAN.match(kolom):
+        raise ValueError(f"Nama kolom tidak valid: {kolom!r}")
     rng = rng or random
-    akun = get_akun(conn, guild_id, user_id)
-    terakhir = parse_iso(akun[kolom])
+    get_akun(conn, guild_id, user_id)  # pastikan baris ada
+    jumlah = rng.randint(jumlah_min, jumlah_max)
+    # Batas waktu dalam ISO: klaim lama yang lebih tua dari ini sudah kedaluwarsa.
+    # Format ISO konsisten (aware UTC) sehingga perbandingan leksikografis = kronologis.
+    batas = (sekarang - datetime.timedelta(seconds=cooldown_detik)).isoformat()
+    cur = conn.execute(
+        f"UPDATE economy SET balance = balance + ?, total_earned = total_earned + ?,"
+        f" {kolom} = ? WHERE user_id = ? AND guild_id = ?"
+        f" AND ({kolom} IS NULL OR {kolom} <= ?)",
+        (jumlah, jumlah, sekarang.isoformat(), user_id, guild_id, batas),
+    )
+    if cur.rowcount > 0:
+        conn.commit()
+        return "ok", jumlah
+    # Gagal update = masih cooldown (klaim lain menang race). Baca ulang
+    # timestamp TERBARU untuk hitung sisa (bacaan awal bisa basi).
+    row = conn.execute(
+        f"SELECT {kolom} FROM economy WHERE user_id = ? AND guild_id = ?",
+        (user_id, guild_id),
+    ).fetchone()
+    terakhir = parse_iso(row[0] if row else None)
     if terakhir is not None:
         sisa = cooldown_detik - int((sekarang - terakhir).total_seconds())
         if sisa > 0:
             return "cooldown", sisa
-    jumlah = rng.randint(jumlah_min, jumlah_max)
-    conn.execute(
-        f"UPDATE economy SET balance = balance + ?, total_earned = total_earned + ?,"
-        f" {kolom} = ? WHERE user_id = ? AND guild_id = ?",
-        (jumlah, jumlah, sekarang.isoformat(), user_id, guild_id),
-    )
-    conn.commit()
-    return "ok", jumlah
+    return "cooldown", 0
 
 
 def klaim_daily(conn, guild_id: int, user_id: int,
@@ -192,25 +251,33 @@ def beri_rep(
     target_id: int,
     sekarang: datetime.datetime,
 ) -> tuple[str, int]:
-    """Kasih 1 reputasi. Return ('ok', rep_baru) atau ('cooldown', sisa_detik)."""
+    """Kasih 1 reputasi. Return ('ok', rep_baru) atau ('cooldown', sisa_detik).
+
+    Atomik: klaim slot cooldown via UPDATE kondisional — dua /rep konkuren
+    dari pemberi yang sama tidak bisa memberi 2 rep sekaligus.
+    """
     get_akun(conn, guild_id, pemberi_id)
     get_akun(conn, guild_id, target_id)
-    row = conn.execute(
-        "SELECT last_rep FROM economy WHERE user_id = ? AND guild_id = ?",
-        (pemberi_id, guild_id),
-    ).fetchone()
-    terakhir = parse_iso(row[0] if row else None)
-    if terakhir is not None:
-        sisa = REP_COOLDOWN_DETIK - int((sekarang - terakhir).total_seconds())
-        if sisa > 0:
-            return "cooldown", sisa
+    batas = (sekarang - datetime.timedelta(seconds=REP_COOLDOWN_DETIK)).isoformat()
+    cur = conn.execute(
+        "UPDATE economy SET last_rep = ? WHERE user_id = ? AND guild_id = ?"
+        " AND (last_rep IS NULL OR last_rep <= ?)",
+        (sekarang.isoformat(), pemberi_id, guild_id, batas),
+    )
+    if cur.rowcount == 0:
+        row = conn.execute(
+            "SELECT last_rep FROM economy WHERE user_id = ? AND guild_id = ?",
+            (pemberi_id, guild_id),
+        ).fetchone()
+        terakhir = parse_iso(row[0] if row else None)
+        if terakhir is not None:
+            sisa = REP_COOLDOWN_DETIK - int((sekarang - terakhir).total_seconds())
+            if sisa > 0:
+                return "cooldown", sisa
+        return "cooldown", 0
     conn.execute(
         "UPDATE economy SET rep = rep + 1 WHERE user_id = ? AND guild_id = ?",
         (target_id, guild_id),
-    )
-    conn.execute(
-        "UPDATE economy SET last_rep = ? WHERE user_id = ? AND guild_id = ?",
-        (sekarang.isoformat(), pemberi_id, guild_id),
     )
     conn.commit()
     return "ok", get_rep(conn, guild_id, target_id)

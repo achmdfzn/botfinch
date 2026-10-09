@@ -14,6 +14,7 @@ import discord
 from discord.ext import commands
 
 from src import config
+from src.bot import MENTIONS_PENGUMUMAN
 from src.store import get_connection
 from src.utils.embeds import base_embed
 
@@ -174,7 +175,8 @@ class Responder(commands.Cog):
                 channel=message.channel.mention,
             )
             try:
-                await message.channel.send(respons)
+                # Respons ditulis mod -> boleh @everyone.
+                await message.channel.send(respons, allowed_mentions=MENTIONS_PENGUMUMAN)
             except discord.HTTPException:
                 log.warning("Gagal kirim auto-respons di %s", message.channel.id)
 

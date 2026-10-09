@@ -27,6 +27,11 @@ export function iconUrl(guildId: string, icon: string | null, size = 128): strin
 }
 
 export function inviteUrl(): string {
-  const clientId = process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID ?? "";
+  // Fallback berantai: operator lama mungkin hanya mengisi DISCORD_CLIENT_ID
+  // (dipakai auth.ts), sementara tombol "Undang Bot" baca yang NEXT_PUBLIC_.
+  // Di client bundle hanya NEXT_PUBLIC_ yang ter-inline; fallback lainnya
+  // aman karena undefined -> "".
+  const clientId =
+    process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID ?? process.env.DISCORD_CLIENT_ID ?? "";
   return `https://discord.com/oauth2/authorize?client_id=${clientId}&scope=bot+applications.commands&permissions=8`;
 }

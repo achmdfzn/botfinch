@@ -60,19 +60,21 @@ export default function EmbedBuilder({
   const [requests, setRequests] = useState<EmbedRequest[]>([]);
   const [loadingReq, setLoadingReq] = useState(true);
   const [reqError, setReqError] = useState(false);
+  // Error khusus refresh pasca-kirim: list lama tetap tampil + peringatan.
+  const [refreshError, setRefreshError] = useState(false);
 
+  // Refresh riwayat TANPA mengganti list dengan teks "loading":
+  // list lama tetap tampil (tidak berkedip); bila refresh gagal, list lama
+  // dipertahankan dan pesan error ditampilkan.
   async function reload() {
-    setLoadingReq(true);
-    setReqError(false);
+    setRefreshError(false);
     try {
       const res = await fetch(`/api/guilds/${guildId}/embed-requests`);
       if (!res.ok) throw new Error("http");
       const data = await res.json();
       setRequests(data.embed_requests ?? []);
     } catch {
-      setReqError(true);
-    } finally {
-      setLoadingReq(false);
+      setRefreshError(true);
     }
   }
 
@@ -100,6 +102,8 @@ export default function EmbedBuilder({
     };
   }, [guildId]);
 
+  // Hanya channel teks yang bisa menerima kiriman (voice/stage tidak).
+  const textChannels = channels.filter((c) => c.type === 0 || c.type === 5);
   const channelName = (id: string) => channels.find((c) => c.id === id)?.name ?? id;
 
   function addField() {
@@ -140,6 +144,15 @@ export default function EmbedBuilder({
       });
       if (res.ok) {
         setStatus("ok");
+        // Reset form agar klik "Kirim" lagi tidak mengirim duplikat.
+        setChannelId("");
+        setTitle("");
+        setDescription("");
+        setColor(PRESETS[0].hex);
+        setFields([]);
+        setFooter("");
+        setImageUrl("");
+        setThumbnailUrl("");
         reload();
       } else {
         setStatus("error");
@@ -166,13 +179,13 @@ export default function EmbedBuilder({
             className={`${inputCls} mt-1 w-full`}
           >
             <option value="">{g.selectChannel}</option>
-            {channels.map((c) => (
+            {textChannels.map((c) => (
               <option key={c.id} value={c.id}>
                 #{c.name}
               </option>
             ))}
           </select>
-          {channels.length === 0 && (
+          {textChannels.length === 0 && (
             <p className="mt-1 text-xs text-muted">{g.noChannelsHint}</p>
           )}
         </div>
@@ -372,9 +385,9 @@ export default function EmbedBuilder({
               {fields.length > 0 && (
                 <div className="mt-3 grid grid-cols-3 gap-3">
                   {fields.map((f, i) => (
-                    <div key={i} className={f.inline ? "" : "col-span-3"}>
-                      <p className="text-xs font-semibold text-white">{f.name || `${g.fieldName} ${i + 1}`}</p>
-                      <p className="mt-0.5 whitespace-pre-wrap text-xs text-zinc-300">{f.value || "..."}</p>
+                    <div key={i} className={f.inline ? "min-w-0" : "col-span-3"}>
+                      <p className="break-words text-xs font-semibold text-white">{f.name || `${g.fieldName} ${i + 1}`}</p>
+                      <p className="mt-0.5 break-words whitespace-pre-wrap text-xs text-zinc-300">{f.value || "..."}</p>
                     </div>
                   ))}
                 </div>
@@ -407,12 +420,16 @@ export default function EmbedBuilder({
         ) : requests.length === 0 ? (
           <p className="mt-3 text-sm text-muted">{g.historyEmpty}</p>
         ) : (
-          <ul className="mt-3 divide-y divide-edge overflow-hidden rounded-xl border border-edge bg-panel">
-            {requests.map((r) => (
+          <>
+            {refreshError && (
+              <p role="alert" className="mt-3 text-sm text-red-400">{dict.common.refreshError}</p>
+            )}
+            <ul className="mt-3 divide-y divide-edge overflow-hidden rounded-xl border border-edge bg-panel">
+              {requests.map((r) => (
               <li key={r.id} className="flex items-center gap-3 px-5 py-3">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-fg">{r.title}</p>
-                  <p className="font-mono text-xs text-muted">
+                  <p className="truncate font-mono text-xs text-muted">
                     #{channelName(r.channel_id)} · {formatWaktu(r.created_at, locale)}
                   </p>
                   {r.note && <p className="mt-0.5 text-xs text-muted">{r.note}</p>}
@@ -431,6 +448,7 @@ export default function EmbedBuilder({
               </li>
             ))}
           </ul>
+          </>
         )}
       </div>
     </div>

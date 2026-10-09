@@ -20,6 +20,7 @@ from src.store import get_connection
 from src.utils import consumable as cons
 from src.utils.waktu import parse_iso
 from src.utils import economy as eko
+from src.utils.toggle import cek_toggle
 from src.utils.embeds import finch_embed, koin_text, error_embed, sukses_embed
 
 log = logging.getLogger("finch")
@@ -59,6 +60,30 @@ def hari_valid_deposito(hari: int, pilihan: list[tuple[int, int]]) -> bool:
     return any(h == hari for h, _ in pilihan)
 
 
+def _coba_buka_pinjaman(conn, guild_id: int, user_id: int, jumlah: int,
+                        bunga_pct: int, tenor_hari: int,
+                        sekarang: datetime.datetime) -> int | None:
+    """Buka pinjaman baru secara atomik.
+
+    Satu statement INSERT...SELECT...WHERE NOT EXISTS — dua /dagang pinjam
+    konkuren tidak bisa membuat dua pinjaman aktif sekaligus (dulu: cek
+    SELECT dulu lalu INSERT, keduanya bisa lolos).
+
+    Return id pinjaman baru, atau None bila user masih punya pinjaman aktif.
+    """
+    jt = (sekarang + datetime.timedelta(days=tenor_hari)).isoformat()
+    cur = conn.execute(
+        "INSERT INTO pinjaman (user_id, guild_id, pokok, sisa, bunga_harian, dibuat, jatuh_tempo)"
+        " SELECT ?, ?, ?, ?, ?, ?, ?"
+        " WHERE NOT EXISTS (SELECT 1 FROM pinjaman"
+        " WHERE user_id = ? AND guild_id = ? AND sisa > 0)",
+        (user_id, guild_id, jumlah, jumlah, bunga_pct,
+         sekarang.isoformat(), jt, user_id, guild_id),
+    )
+    conn.commit()
+    return cur.lastrowid if cur.rowcount else None
+
+
 # ---------- view trade ----------
 class TradeView(discord.ui.View):
     """Tombol Terima/Tolak untuk /dagang trade.
@@ -96,6 +121,16 @@ class TradeView(discord.ui.View):
             )
             return
         self.selesai = True  # kunci dulu, baru operasi DB (anti double-click)
+        from src.cogs.dashboard_sync import modul_aktif
+
+        if not modul_aktif(self.guild_id, "economy_enabled"):
+            # Modul dimatikan di tengah window tawaran: batalkan, jangan
+            # pindahkan koin.
+            await self._tutup(
+                interaction,
+                error_embed("Modul ekonomi dimatikan oleh admin server ini. Trade dibatalkan."),
+            )
+            return
         with get_connection() as conn:
             if eko.kurang_koin(conn, self.guild_id, self.pengirim_id, self.jumlah) is None:
                 await self._tutup(
@@ -179,6 +214,14 @@ class TokoView(discord.ui.View):
                 embed=error_embed("Hanya bisa di server."), ephemeral=True
             )
             return
+        from src.cogs.dashboard_sync import modul_aktif
+
+        if not modul_aktif(interaction.guild_id, "economy_enabled"):
+            await interaction.response.send_message(
+                embed=error_embed("Modul ekonomi dimatikan oleh admin server ini."),
+                ephemeral=True,
+            )
+            return
         info = cons.ITEMS[item_id]
         with get_connection() as conn:
             sisa = eko.kurang_koin(
@@ -200,7 +243,7 @@ class TokoView(discord.ui.View):
                 unik = {r[0] for r in cons.daftar_item(conn, interaction.guild_id, interaction.user.id)}
                 ach.cek_buka(conn, interaction.guild_id, interaction.user.id, {"kolektor": len(unik)})
             except Exception:
-                pass
+                log.exception("Gagal cek achievement kolektor untuk %s", interaction.user.id)
         await interaction.response.send_message(
             embed=sukses_embed(
                 "Item Dibeli",
@@ -226,23 +269,9 @@ class EkonomiPlus(commands.Cog):
 
     async def cog_check(self, ctx: commands.Context) -> bool:
         """Ekonomi+ adalah bagian modul Ekonomi — ikut toggle `economy_enabled`."""
-        if ctx.guild is None:
-            return True
-        from src.cogs.dashboard_sync import modul_aktif
-
-        if modul_aktif(ctx.guild.id, "economy_enabled"):
-            return True
-        pesan = "Modul ekonomi dimatikan oleh admin server ini."
-        try:
-            if ctx.interaction is None:
-                await ctx.send(pesan)
-            elif ctx.interaction.response.is_done():
-                await ctx.interaction.followup.send(pesan, ephemeral=True)
-            else:
-                await ctx.interaction.response.send_message(pesan, ephemeral=True)
-        except discord.HTTPException:
-            pass
-        return False
+        return await cek_toggle(
+            ctx, "economy_enabled", "Modul ekonomi dimatikan oleh admin server ini."
+        )
 
     # ----- saham: seed & helper -----
     def _pastikan_saham_seed(self):
@@ -466,11 +495,11 @@ class EkonomiPlus(commands.Cog):
             return
         gid, uid = ctx.guild.id, ctx.author.id
         with get_connection() as conn:
-            aktif = conn.execute(
-                "SELECT id FROM pinjaman WHERE user_id = ? AND guild_id = ? AND sisa > 0",
-                (uid, gid),
-            ).fetchone()
-            if aktif:
+            bunga = config.settings.pinjaman_bunga_harian
+            tenor = config.settings.pinjaman_tenor_hari
+            pid = _coba_buka_pinjaman(conn, gid, uid, jumlah, bunga, tenor,
+                                      discord.utils.utcnow())
+            if pid is None:
                 await ctx.send(
                     embed=error_embed(
                         "Kamu masih punya pinjaman aktif. Lunasi dulu dengan `/dagang lunasi`."
@@ -478,16 +507,6 @@ class EkonomiPlus(commands.Cog):
                     ephemeral=True,
                 )
                 return
-            bunga = config.settings.pinjaman_bunga_harian
-            tenor = config.settings.pinjaman_tenor_hari
-            now = discord.utils.utcnow()
-            jt = (now + datetime.timedelta(days=tenor)).isoformat()
-            conn.execute(
-                "INSERT INTO pinjaman (user_id, guild_id, pokok, sisa, bunga_harian, dibuat, jatuh_tempo)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (uid, gid, jumlah, jumlah, bunga, now.isoformat(), jt),
-            )
-            conn.commit()
             eko.tambah_koin(conn, gid, uid, jumlah)
         await ctx.send(
             embed=sukses_embed(
@@ -532,9 +551,27 @@ class EkonomiPlus(commands.Cog):
                     ephemeral=True,
                 )
                 return
-            sisa_baru = sisa - bayar
-            conn.execute("UPDATE pinjaman SET sisa = ? WHERE id = ?", (sisa_baru, pid))
+            # Kurangi dari nilai TERKINI secara atomik (anti race dengan loop
+            # bunga harian / auto-debit). rowcount 0 = pinjaman berubah di tengah
+            # (mis. lunas) → koin dikembalikan, user tidak dirugikan.
+            cur = conn.execute(
+                "UPDATE pinjaman SET sisa = MAX(0, sisa - ?)"
+                " WHERE id = ? AND sisa >= ?",
+                (bayar, pid, bayar),
+            )
             conn.commit()
+            if cur.rowcount == 0:
+                eko.tambah_koin(conn, gid, uid, bayar)
+                await ctx.send(
+                    embed=sukses_embed(
+                        "Lunas!",
+                        "Pinjaman ternyata sudah lunas. Koinmu dikembalikan. 🎉",
+                    )
+                )
+                return
+            sisa_baru = conn.execute(
+                "SELECT sisa FROM pinjaman WHERE id = ?", (pid,)
+            ).fetchone()[0]
         if sisa_baru == 0:
             await ctx.send(
                 embed=sukses_embed("Lunas!", "Pinjaman sudah lunas. Sampai jumpa lagi! 🎉")
@@ -765,23 +802,26 @@ class EkonomiPlus(commands.Cog):
             return
         gid, uid = ctx.guild.id, ctx.author.id
         with get_connection() as conn:
-            row = conn.execute(
-                "SELECT jumlah FROM saham_milik WHERE user_id = ? AND guild_id = ? AND simbol = ?",
-                (uid, gid, simbol),
-            ).fetchone()
-            punya = row[0] if row else 0
-            if punya < lembar:
+            # Kurangi atomik: hanya lolos kalau lembar masih cukup (anti
+            # double-sell konkuren — dulu: baca jumlah dulu lalu UPDATE,
+            # dua /jual bersamaan bisa dibayar 2x dan jumlah jadi negatif).
+            hasil = harga[simbol] * lembar
+            cur = conn.execute(
+                "UPDATE saham_milik SET jumlah = jumlah - ?"
+                " WHERE user_id = ? AND guild_id = ? AND simbol = ? AND jumlah >= ?",
+                (lembar, uid, gid, simbol, lembar),
+            )
+            if cur.rowcount == 0:
+                row = conn.execute(
+                    "SELECT jumlah FROM saham_milik WHERE user_id = ? AND guild_id = ? AND simbol = ?",
+                    (uid, gid, simbol),
+                ).fetchone()
+                punya = row[0] if row else 0
                 await ctx.send(
                     embed=error_embed(f"Kamu cuma punya **{punya}** lembar ${simbol}."),
                     ephemeral=True,
                 )
                 return
-            hasil = harga[simbol] * lembar
-            conn.execute(
-                "UPDATE saham_milik SET jumlah = jumlah - ?"
-                " WHERE user_id = ? AND guild_id = ? AND simbol = ?",
-                (lembar, uid, gid, simbol),
-            )
             conn.commit()
             eko.tambah_koin(conn, gid, uid, hasil)
         await ctx.send(
@@ -802,11 +842,16 @@ class EkonomiPlus(commands.Cog):
         hari_ini = discord.utils.utcnow().date().isoformat()
         with get_connection() as conn:
             eko.get_akun(conn, gid, uid)  # pastikan row economy ada
-            row = conn.execute(
-                "SELECT peti_terakhir FROM economy WHERE user_id = ? AND guild_id = ?",
-                (uid, gid),
-            ).fetchone()
-            if row and row[0] == hari_ini:
+            # Klaim atomik: hanya satu pemenang race yang dapat UPDATE ini
+            # (dulu: baca peti_terakhir dulu lalu UPDATE — dua /peti bersamaan
+            # sama-sama lolos dan keduanya dapat hadiah).
+            cur = conn.execute(
+                "UPDATE economy SET peti_terakhir = ?"
+                " WHERE user_id = ? AND guild_id = ?"
+                " AND (peti_terakhir IS NULL OR peti_terakhir != ?)",
+                (hari_ini, uid, gid, hari_ini),
+            )
+            if cur.rowcount == 0:
                 await ctx.send(
                     embed=error_embed(
                         "Peti hari ini sudah dibuka. Kembali besok! 🎁"
@@ -814,6 +859,7 @@ class EkonomiPlus(commands.Cog):
                     ephemeral=True,
                 )
                 return
+            conn.commit()
             jenis, nilai = roll_peti()
             if jenis == "koin":
                 eko.tambah_koin(conn, gid, uid, nilai)
@@ -821,10 +867,6 @@ class EkonomiPlus(commands.Cog):
             else:
                 cons.beri_item(conn, gid, uid, nilai)
                 hadiah_txt = cons.ITEMS[nilai]["nama"]
-            conn.execute(
-                "UPDATE economy SET peti_terakhir = ? WHERE user_id = ? AND guild_id = ?",
-                (hari_ini, uid, gid),
-            )
             conn.commit()
         await ctx.send(
             embed=finch_embed(
@@ -854,24 +896,48 @@ class EkonomiPlus(commands.Cog):
             if not modul_aktif(gid, "economy_enabled"):
                 continue  # modul ekonomi dimatikan di server ini — bekukan
             try:
-                sisa_baru = sisa + hitung_bunga(sisa, pct)
                 jt = parse_iso(jt_iso)
-                if jt is not None and now >= jt:
+                # Bunga atomik: tambah ke nilai TERKINI, bukan timpa dari bacaan
+                # basi (dulu: UPDATE sisa = <basi>+bunga — pembayaran manual
+                # /dagang lunasi yang masuk di tengah ikut terhapus).
+                with get_connection() as conn:
+                    row = conn.execute(
+                        "SELECT sisa FROM pinjaman WHERE id = ?", (pid,)
+                    ).fetchone()
+                    sisa_kini = row[0] if row else 0
+                    bunga = hitung_bunga(sisa_kini, pct)
+                    if bunga > 0:
+                        conn.execute(
+                            "UPDATE pinjaman SET sisa = sisa + ? WHERE id = ?",
+                            (bunga, pid),
+                        )
+                        conn.commit()
+                        sisa_kini += bunga
+                if jt is not None and now >= jt and sisa_kini > 0:
                     # Auto-debit: lunasi paksa bila saldo cukup
                     with get_connection() as conn:
-                        if eko.kurang_koin(conn, gid, uid, sisa_baru) is not None:
-                            sisa_baru = 0
-                            log.info("Pinjaman #%s lunas via auto-debit.", pid)
+                        if eko.kurang_koin(conn, gid, uid, sisa_kini) is not None:
+                            # Kondisional: pastikan sisa belum berubah (mis. user
+                            # bayar manual tepat di tengah). Kalau berubah,
+                            # debit dikembalikan — jangan sampai over-debit.
+                            cur = conn.execute(
+                                "UPDATE pinjaman SET sisa = 0 WHERE id = ? AND sisa = ?",
+                                (pid, sisa_kini),
+                            )
+                            if cur.rowcount:
+                                conn.commit()
+                                log.info("Pinjaman #%s lunas via auto-debit.", pid)
+                            else:
+                                eko.tambah_koin(conn, gid, uid, sisa_kini)
+                                log.warning(
+                                    "Pinjaman #%s berubah saat auto-debit; debit dikembalikan.",
+                                    pid,
+                                )
                         else:
                             log.warning(
                                 "Pinjaman #%s MENUNGGAK (user %s, sisa %s).",
-                                pid, uid, sisa_baru,
+                                pid, uid, sisa_kini,
                             )
-                with get_connection() as conn:
-                    conn.execute(
-                        "UPDATE pinjaman SET sisa = ? WHERE id = ?", (sisa_baru, pid)
-                    )
-                    conn.commit()
             except Exception:
                 log.exception("Gagal proses pinjaman #%s", pid)
         # Deposito: panen yang jatuh tempo

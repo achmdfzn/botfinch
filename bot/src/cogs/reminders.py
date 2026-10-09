@@ -13,6 +13,7 @@ from discord.ext import commands, tasks
 from src.store import get_connection
 from src.utils.embeds import base_embed
 from src.utils.filters import parse_durasi
+from src.utils.rutin import catat_gagal_rutin
 
 log = logging.getLogger("finch")
 
@@ -137,15 +138,25 @@ class Reminders(commands.Cog):
             channel = self.bot.get_channel(channel_id)
             if channel is not None:
                 try:
-                    await channel.send(f"<@{user_id}> {teks}")
+                    # Fallback: mention user di channel asal. AllowedMentions
+                    # eksplisit karena bot memakai deny-by-default — tanpa ini
+                    # teks <@id> tidak benar-benar nge-ping.
+                    # Dibatasi HANYA ke pemilik reminder: isi pesan ditulis
+                    # user, jadi users=True polos bisa disalahgunakan untuk
+                    # nge-ping orang lain lewat reminder.
+                    await channel.send(
+                        f"<@{user_id}> {teks}",
+                        allowed_mentions=discord.AllowedMentions(
+                            users=[discord.Object(id=user_id)]
+                        ),
+                    )
                 except discord.HTTPException:
                     pass
 
     def _catat_gagal_rutin(self, rid: int) -> bool:
         """Hitung kegagalan beruntun; True bila sudah waktunya rutin dihapus."""
-        n = self._rutin_gagal.get(rid, 0) + 1
-        self._rutin_gagal[rid] = n
-        return n >= 20  # ~10 jam gagal terus → channel pasti sudah dihapus permanen
+        # ~10 jam gagal terus → channel pasti sudah dihapus permanen
+        return catat_gagal_rutin(self._rutin_gagal, rid)
 
     async def _kirim_rutin(
         self, rid: int, user_id: int, channel_id: int, teks: str, now_dt
@@ -163,7 +174,14 @@ class Reminders(commands.Cog):
                 )
             return  # jangan update `terakhir` → retry interval berikut
         try:
-            await channel.send(f"🔁 <@{user_id}> **Pengingat rutin:**\n{teks}")
+            # Mention dibatasi HANYA ke pemilik rutin: teks ditulis user,
+            # users=True polos bisa disalahgunakan untuk nge-ping orang lain.
+            await channel.send(
+                f"🔁 <@{user_id}> **Pengingat rutin:**\n{teks}",
+                allowed_mentions=discord.AllowedMentions(
+                    users=[discord.Object(id=user_id)]
+                ),
+            )
         except discord.HTTPException:
             if self._catat_gagal_rutin(rid):
                 with get_connection() as conn:
@@ -274,6 +292,9 @@ class Reminders(commands.Cog):
         teks = teks.strip()
         if not teks:
             await ctx.send("❌ Teks pengingat tidak boleh kosong.", ephemeral=True)
+            return
+        if len(teks) > 1500:
+            await ctx.send("❌ Teks pengingat maksimal 1500 karakter.", ephemeral=True)
             return
         now_iso = discord.utils.utcnow().isoformat()
         with get_connection() as conn:

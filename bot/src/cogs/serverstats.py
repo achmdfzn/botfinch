@@ -33,13 +33,11 @@ class ServerStats(commands.Cog):
 
     @tasks.loop(minutes=10)
     async def update_stats(self):
-        import logging
-
         for guild in self.bot.guilds:
             try:
                 await self._update_guild(guild)
             except Exception:  # satu guild error tidak boleh membunuh loop
-                logging.getLogger("finch").exception("update_stats gagal untuk guild %s", guild.id)
+                log.exception("update_stats gagal untuk guild %s", guild.id)
 
     @update_stats.before_loop
     async def _before(self):

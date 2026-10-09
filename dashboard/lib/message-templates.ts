@@ -207,7 +207,3 @@ export function renderTemplatePreview(text: string, serverName: string): string 
     .replaceAll("{user}", SAMPLE_USER)
     .replaceAll("{server}", serverName);
 }
-
-export function templatesByCategory(cat: TemplateCategory): MessageTemplate[] {
-  return MESSAGE_TEMPLATES.filter((t) => t.category === cat);
-}

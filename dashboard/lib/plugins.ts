@@ -1,6 +1,7 @@
-// Definisi kartu plugin ala MEE6 untuk halaman /dashboard/[guildId]/plugins
-// dan ringkasan status di overview. Nama + deskripsi diambil dari kamus i18n
-// (dict.guild.plugins.cards[<id>]).
+// Definisi kartu plugin ala MEE6 untuk halaman utama per-server
+// (/dashboard/[guildId]) dan ringkasan status di overview. Nama + deskripsi
+// diambil dari kamus i18n (dict.guild.plugins.cards[<id>]).
+// Catatan: /dashboard/[guildId]/plugins kini redirect ke halaman utama.
 export type PluginGroup = "essentials" | "engagement" | "moderation" | "utilities";
 
 export interface PluginDef {

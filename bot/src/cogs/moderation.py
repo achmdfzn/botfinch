@@ -154,6 +154,12 @@ class Moderation(commands.Cog):
                     await member.timeout(ends_at, reason="Persisten mute: spam")
             except Exception as e:
                 log.warning("Gagal re-apply mute untuk %s: %s", member, e)
+        # Anti-raid adalah aksi moderasi otomatis -> ikut toggle automod.
+        # (Re-apply mute di atas tetap jalan: itu penegakan sanksi, bukan automod.)
+        from src.cogs.dashboard_sync import get_guild_setting
+
+        if get_guild_setting(gid, "automod_enabled", "1") != "1":
+            return
         # Anti-raid: >=5 join dalam 60 detik -> naikkan verification level
         dq = _join_riwayat[gid]
         now = time.time()

@@ -17,10 +17,9 @@ from src.store import get_connection
 from src.utils import modlog
 from src.utils.embeds import base_embed
 
+from src.utils.constants import KATEGORI_TIKET  # sumber tunggal; diimpor ulang oleh tests
 TICKET_CREATE_ID = "finch:ticket-create"
 TICKET_CLOSE_ID = "finch:ticket-close"
-
-KATEGORI_TIKET = ["Umum", "Bantuan", "Report", "Saran"]
 
 
 class TicketKategoriSelect(discord.ui.Select):
@@ -173,6 +172,7 @@ def _nama_channel(member: discord.Member) -> str:
 
 
 async def buat_tiket(
+    bot: commands.Bot,
     guild: discord.Guild,
     member: discord.Member,
     laporan: discord.Message | None = None,
@@ -250,18 +250,13 @@ async def buat_tiket(
         except discord.HTTPException:
             pass
 
-        # log via bot instance dari guild
-        try:
-            bot = guild._state._get_client()  # type: ignore
-        except Exception:
-            bot = None
-        if bot is not None:
-            await modlog.log_event(
-                bot,
-                "🎫 Tiket dibuka",
-                f"{member.mention} membuka {channel.mention}.",
-                discord.Color.blurple(),
-            )
+        # log via bot instance dari caller (API publik — dulu pakai private API)
+        await modlog.log_event(
+            bot,
+            "🎫 Tiket dibuka",
+            f"{member.mention} membuka {channel.mention}.",
+            discord.Color.blurple(),
+        )
         return channel
 
 
@@ -298,7 +293,7 @@ async def _buat_tiket(interaction: discord.Interaction) -> None:
     await interaction.response.defer(ephemeral=True)
 
     try:
-        channel = await buat_tiket(guild, user)
+        channel = await buat_tiket(interaction.client, guild, user)
     except discord.Forbidden:
         await interaction.followup.send(
             "❌ Bot butuh izin Manage Channels.", ephemeral=True

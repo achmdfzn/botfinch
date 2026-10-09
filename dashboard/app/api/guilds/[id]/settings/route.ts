@@ -1,21 +1,7 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
 import { dbConfigured, getStoredSettings, putStoredSettings } from "@/lib/db";
-import { canManage, fetchUserGuilds } from "@/lib/discord";
-import { botAuthorized } from "@/lib/access";
+import { botAuthorized, requireManager } from "@/lib/access";
 import { SETTING_DEFAULTS, cleanValue } from "@/lib/settings";
-
-async function userCanManage(guildId: string): Promise<boolean> {
-  const session = await auth();
-  const token = session?.accessToken;
-  if (!token) return false;
-  try {
-    const guilds = await fetchUserGuilds(token);
-    return guilds.some((g) => g.id === guildId && canManage(g));
-  } catch {
-    return false;
-  }
-}
 
 export async function GET(
   req: Request,
@@ -38,12 +24,10 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  if (!(await userCanManage(id))) {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
-  if (!dbConfigured()) {
-    return NextResponse.json({ error: "database_not_configured" }, { status: 503 });
-  }
+  // requireManager (bukan auth() mentah): cookie sesi korup diperlakukan
+  // sebagai belum login (401), bukan crash 500 via JWTSessionError.
+  const denied = await requireManager(id);
+  if (denied) return denied;
   let body: Record<string, unknown>;
   try {
     body = (await req.json()) as Record<string, unknown>;

@@ -12,9 +12,11 @@ import logging
 import discord
 from discord.ext import commands, tasks
 
+from src.bot import MENTIONS_PENGUMUMAN
 from src.store import get_connection
 from src.utils.embeds import base_embed, get_progress_bar
 from src.utils.filters import parse_durasi
+from src.utils.rutin import catat_gagal_rutin
 
 log = logging.getLogger("finch")
 
@@ -24,6 +26,25 @@ MAX_OPSI = 5
 def parse_opsi(teks: str) -> list[str]:
     """'a, b, c' -> ['a', 'b', 'c']. Pure function — gampang dites."""
     return [o.strip() for o in (teks or "").split(",") if o.strip()]
+
+
+# Batas panjang agar embed poll tidak menabrak limit Discord
+# (deskripsi 4096, nama field 256) — input lebih panjang = API 400.
+MAKS_PERTANYAAN = 500
+MAKS_OPSI_TEKS = 100
+
+
+def validasi_teks_poll(pertanyaan: str, options: list[str]) -> str | None:
+    """Return pesan error bila teks poll kepanjangan, None bila aman.
+
+    Pure function — gampang dites.
+    """
+    if len((pertanyaan or "").strip()) > MAKS_PERTANYAAN:
+        return f"❌ Pertanyaan kepanjangan (maks {MAKS_PERTANYAAN} karakter)."
+    for opt in options:
+        if len(opt) > MAKS_OPSI_TEKS:
+            return f"❌ Opsi kepanjangan (maks {MAKS_OPSI_TEKS} karakter per opsi)."
+    return None
 
 
 def simpan_poll_db(
@@ -256,9 +277,7 @@ class Polls(commands.Cog):
 
     def _catat_gagal_rutin(self, rid: int) -> bool:
         """Hitung kegagalan beruntun; True bila sudah waktunya rutin dihapus."""
-        n = self._rutin_gagal.get(rid, 0) + 1
-        self._rutin_gagal[rid] = n
-        return n >= 20
+        return catat_gagal_rutin(self._rutin_gagal, rid)
 
     @tasks.loop(seconds=30)
     async def cek_poll(self):
@@ -311,11 +330,13 @@ class Polls(commands.Cog):
                 log.warning("Poll rutin #%s: channel %s hilang permanen — rutin dihapus.", rid, cid)
             return
         try:
+            # Poll rutin dibuat mod -> boleh @everyone.
             msg = await channel.send(
                 embed=embed_poll(
                     pertanyaan, options, [0] * len(options),
                 ),
                 view=PollView(options),
+                allowed_mentions=MENTIONS_PENGUMUMAN,
             )
         except discord.HTTPException:
             log.warning("Gagal posting poll rutin %s (cek permission).", rid)
@@ -356,6 +377,10 @@ class Polls(commands.Cog):
                 ephemeral=True,
             )
             return
+        err_teks = validasi_teks_poll(pertanyaan, options)
+        if err_teks:
+            await ctx.send(err_teks, ephemeral=True)
+            return
         ends_at = None
         ends_ts = None
         if durasi:
@@ -377,6 +402,9 @@ class Polls(commands.Cog):
         msg = await ctx.send(
             embed=embed_poll(pertanyaan, options, [0] * len(options), ends_ts),
             view=PollView(options),
+            # Poll dibuat user biasa: matikan semua mention agar pertanyaan/
+            # opsi tidak bisa dipakai untuk nge-ping orang lain.
+            allowed_mentions=discord.AllowedMentions.none(),
         )
         if msg is None and ctx.interaction:
             try:
@@ -425,6 +453,10 @@ class Polls(commands.Cog):
                 f"❌ Opsi harus 2-{MAX_OPSI}, pisahkan dengan koma.",
                 ephemeral=True,
             )
+            return
+        err_teks = validasi_teks_poll(pertanyaan, options)
+        if err_teks:
+            await ctx.send(err_teks, ephemeral=True)
             return
         now_iso = discord.utils.utcnow().isoformat()
         with get_connection() as conn:

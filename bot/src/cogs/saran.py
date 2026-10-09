@@ -114,7 +114,13 @@ class Saran(commands.Cog):
 
         try:
             # Vote murni via tombol berlabel (components > reaksi emoji)
-            msg = await channel.send(embed=embed, view=SaranVoteView())
+            # Mention dibatasi hanya ke pengirim saran: teks ditulis user,
+            # users=True polos bisa disalahgunakan untuk nge-ping orang lain.
+            msg = await channel.send(
+                embed=embed,
+                view=SaranVoteView(),
+                allowed_mentions=discord.AllowedMentions(users=[author]),
+            )
         except discord.Forbidden:
             await ctx.send("❌ Bot tidak punya izin kirim ke channel saran.", ephemeral=True)
             return

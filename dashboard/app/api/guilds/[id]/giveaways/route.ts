@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { addGiveawayRequest, getGiveawayRequests, latestSnapshot } from "@/lib/db";
 import { requireManager } from "@/lib/access";
+import { discordId, str } from "@/lib/validate";
 
 export const instant = false;
-
-const ID_RE = /^\d{5,25}$/;
 
 export async function GET(
   _req: Request,
@@ -36,14 +35,13 @@ export async function POST(
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
-  const channelId = typeof body.channel_id === "string" ? body.channel_id.trim() : "";
-  const prize = typeof body.prize === "string" ? body.prize.trim() : "";
+  const channelId = discordId(body.channel_id);
+  const prize = str(body.prize, 100, true);
   const winners = body.winners;
   const duration = body.duration_minutes;
   if (
-    !ID_RE.test(channelId) ||
-    prize.length === 0 ||
-    prize.length > 100 ||
+    channelId === undefined ||
+    prize === undefined ||
     typeof winners !== "number" ||
     !Number.isInteger(winners) ||
     winners < 1 ||

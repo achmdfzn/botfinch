@@ -28,6 +28,7 @@ import discord
 from discord.ext import commands, tasks
 
 from src import config
+from src.bot import MENTIONS_PENGUMUMAN
 from src.store import get_connection
 from src.utils.embeds import BRAND
 from src.utils.waktu import parse_iso
@@ -441,7 +442,7 @@ class DashboardSync(commands.Cog):
             try:
                 channel = guild.get_channel(int(r["channel_id"])) or await self.bot.fetch_channel(int(r["channel_id"]))
                 detik = max(60, int(r["duration_minutes"]) * 60)
-                msg_id = await cog._posting_giveaway(
+                msg_id = await cog.posting_giveaway(
                     channel,
                     guild.id,
                     self.bot.user.id if self.bot.user else 0,
@@ -506,7 +507,8 @@ class DashboardSync(commands.Cog):
                 await self._ack_embed(guild.id, req_id, "failed", "embed kosong/invalid")
                 continue
             try:
-                await channel.send(embed=embed)
+                # Embed ditulis admin via dashboard -> boleh @everyone.
+                await channel.send(embed=embed, allowed_mentions=MENTIONS_PENGUMUMAN)
             except discord.Forbidden:
                 await self._ack_embed(guild.id, req_id, "failed", "bot tidak punya izin kirim ke channel")
                 continue
@@ -557,44 +559,57 @@ class DashboardSync(commands.Cog):
             return
         now = discord.utils.utcnow()
         for ann_id, gid_s, ch_s, pesan, run_at_s, interval, last_s in rows:
-            interval_menit = _int_aman(interval)
-            run_at = parse_iso(run_at_s)
-            terakhir = parse_iso(last_s)
-            if interval_menit > 0:
-                # berulang: lewati bila interval belum lewat
-                if terakhir is not None and (now - terakhir).total_seconds() < interval_menit * 60:
-                    continue
-            elif run_at is None or terakhir is not None or run_at > now:
-                # sekali: butuh run_at valid yang sudah lewat & belum terkirim
-                continue
-            guild = self.bot.get_guild(_int_aman(gid_s))
-            if guild is None:
-                continue
-            if not modul_aktif(guild.id, "announcements_enabled"):
-                continue  # modul pengumuman dimatikan via dashboard
-            channel = guild.get_channel(_int_aman(ch_s))
-            if channel is None:
-                try:
-                    channel = await self.bot.fetch_channel(_int_aman(ch_s))
-                except Exception:
-                    continue
             try:
-                # Substitusi placeholder {server} / {date} / {member_count}
-                teks = substitusi_pengumuman(
-                    pesan, guild.name, now, guild.member_count or 0
+                await self._kirim_satu_pengumuman(now, ann_id, gid_s, ch_s, pesan, run_at_s, interval, last_s)
+            except Exception:
+                # Satu pengumuman rusak (DB/setting/channel aneh) tidak boleh
+                # membunuh loop 60-detik selamanya.
+                log.exception("dashboard: gagal kirim pengumuman %s", ann_id)
+
+    async def _kirim_satu_pengumuman(
+        self, now, ann_id: int, gid_s: str, ch_s: str, pesan: str,
+        run_at_s: str | None, interval, last_s: str | None,
+    ) -> None:
+        """Satu pengumuman terjadwal: putuskan waktunya, kirim, tandai."""
+        interval_menit = _int_aman(interval)
+        run_at = parse_iso(run_at_s)
+        terakhir = parse_iso(last_s)
+        if interval_menit > 0:
+            # berulang: lewati bila interval belum lewat
+            if terakhir is not None and (now - terakhir).total_seconds() < interval_menit * 60:
+                return
+        elif run_at is None or terakhir is not None or run_at > now:
+            # sekali: butuh run_at valid yang sudah lewat & belum terkirim
+            return
+        guild = self.bot.get_guild(_int_aman(gid_s))
+        if guild is None:
+            return
+        if not modul_aktif(guild.id, "announcements_enabled"):
+            return  # modul pengumuman dimatikan via dashboard
+        channel = guild.get_channel(_int_aman(ch_s))
+        if channel is None:
+            try:
+                channel = await self.bot.fetch_channel(_int_aman(ch_s))
+            except Exception:
+                return
+        try:
+            # Substitusi placeholder {server} / {date} / {member_count}
+            teks = substitusi_pengumuman(
+                pesan, guild.name, now, guild.member_count or 0
+            )
+            # Pengumuman ditulis admin via dashboard -> boleh @everyone.
+            await channel.send(teks, allowed_mentions=MENTIONS_PENGUMUMAN)
+        except Exception:
+            return  # gagal -> lewati diam-diam
+        try:
+            with get_connection() as conn:
+                conn.execute(
+                    "UPDATE dashboard_announcements SET last_sent_at = ? WHERE id = ?",
+                    (now.isoformat(), ann_id),
                 )
-                await channel.send(teks)
-            except Exception:
-                continue  # gagal -> lewati diam-diam
-            try:
-                with get_connection() as conn:
-                    conn.execute(
-                        "UPDATE dashboard_announcements SET last_sent_at = ? WHERE id = ?",
-                        (now.isoformat(), ann_id),
-                    )
-                    conn.commit()
-            except Exception:
-                log.warning("dashboard: gagal update last_sent_at pengumuman %s", ann_id, exc_info=True)
+                conn.commit()
+        except Exception:
+            log.warning("dashboard: gagal update last_sent_at pengumuman %s", ann_id, exc_info=True)
 
     @kirim_pengumuman.before_loop
     async def _before_kirim(self):

@@ -18,6 +18,7 @@ import discord
 from discord.ext import commands, tasks
 
 from src import config
+from src.bot import MENTIONS_PENGUMUMAN
 from src.store import DB_PATH, get_connection
 from src.utils.embeds import error_embed, finch_embed, get_progress_bar, sukses_embed
 from src.utils.filters import parse_durasi
@@ -153,7 +154,8 @@ class EmbedBuatModal(discord.ui.Modal, title="Buat Embed Pengumuman"):
         )
         embed.color = color
         try:
-            await ch.send(embed=embed)
+            # Embed ditulis mod -> boleh @everyone.
+            await ch.send(embed=embed, allowed_mentions=MENTIONS_PENGUMUMAN)
         except (discord.Forbidden, discord.HTTPException):
             await interaction.response.send_message(
                 embed=error_embed(f"Gagal kirim ke {ch.mention} (cek permission)."),
@@ -258,8 +260,11 @@ class Utilitas(commands.Cog):
         if not ch_id:
             return
         channel = self.bot.get_channel(ch_id)
-        if channel is None:
-            log.warning("Backup DB: channel %s tidak ditemukan.", ch_id)
+        if channel is None or not isinstance(channel, discord.TextChannel):
+            # Channel dihapus / ID menunjuk ke voice channel: kirim file ke
+            # channel non-teks mustahil (AttributeError) dan dulu membunuh
+            # loop harian. Fail-soft saja.
+            log.warning("Backup DB: channel %s tidak ditemukan / bukan channel teks.", ch_id)
             return
         nama = datetime.datetime.now().strftime("finch-backup-%Y%m%d.db")
         path_tmp = f"/tmp/{nama}"
@@ -413,6 +418,20 @@ class Utilitas(commands.Cog):
                 embed=error_embed("Interval minimal 1 jam."), ephemeral=True
             )
             return
+        # Batas panjang agar embed pengumuman tidak menabrak limit Discord
+        # (judul 256, deskripsi 4096) — input lebih panjang = API 400.
+        if len(nama.strip()) > 200:
+            await ctx.send(
+                embed=error_embed("Nama event kepanjangan (maks 200 karakter)."),
+                ephemeral=True,
+            )
+            return
+        if len(deskripsi.strip()) > 2000:
+            await ctx.send(
+                embed=error_embed("Deskripsi kepanjangan (maks 2000 karakter)."),
+                ephemeral=True,
+            )
+            return
         with get_connection() as conn:
             cur = conn.execute(
                 "INSERT INTO event_rutin (guild_id, channel_id, nama, deskripsi, interval_detik)"
@@ -508,7 +527,8 @@ class Utilitas(commands.Cog):
             return
         embed = finch_embed(f"🔁 {nama}", deskripsi or "Event rutin dimulai!", warna="event")
         try:
-            msg = await channel.send(embed=embed)
+            # Event rutin dibuat mod -> boleh @everyone.
+            msg = await channel.send(embed=embed, allowed_mentions=MENTIONS_PENGUMUMAN)
         except discord.HTTPException:
             log.warning("Event rutin #%s: gagal kirim pengumuman.", rid)
             return

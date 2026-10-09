@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { ackEmbedRequest, dbConfigured } from "@/lib/db";
 import { botAuthorized } from "@/lib/access";
+import { optStr } from "@/lib/validate";
 
 export const instant = false;
 
@@ -30,7 +31,10 @@ export async function POST(
   if (status !== "done" && status !== "failed") {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
-  const note = typeof body.note === "string" ? body.note.slice(0, 200) : "";
+  const note = optStr(body.note, 200);
+  if (note === undefined) {
+    return NextResponse.json({ error: "invalid_input" }, { status: 400 });
+  }
   await ackEmbedRequest(rid, id, status, note);
   return NextResponse.json({ ok: true });
 }

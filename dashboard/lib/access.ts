@@ -1,8 +1,40 @@
 import { timingSafeEqual } from "node:crypto";
+import { cache } from "react";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { canManage, fetchUserGuilds } from "@/lib/discord";
+import type { Session } from "next-auth";
+import { canManage, fetchUserGuilds as fetchUserGuildsRaw } from "@/lib/discord";
 import { dbConfigured } from "@/lib/db";
+
+/**
+ * Daftar guild user dari Discord API, di-dedup per request server via
+ * React cache(). Tiap halaman guild memanggil ini 2x (layout + page) dan
+ * tiap API call dari client component 1x — tanpa dedup, 3+ request identik
+ * ke Discord per pemuatan halaman (risiko 429). Aman karena argumennya
+ * accessToken dan cache() bersifat per-request (tidak bocor antar user).
+ *
+ * Modul ini hanya diimpor kode server (route + server component), jadi
+ * cache() dari react aman dipakai di sini.
+ */
+export const fetchUserGuilds = cache(fetchUserGuildsRaw);
+
+/**
+ * auth() yang aman untuk halaman & API: cookie sesi yang rusak/kedaluwarsa
+ * (Auth.js melempar JWTSessionError) diperlakukan sebagai "belum login"
+ * (null), bukan crash 500. Penyebab umum: AUTH_SECRET berubah setelah
+ * cookie dibuat, atau cookie korup di browser.
+ */
+export async function getSessionSafe(): Promise<Session | null> {
+  try {
+    return await auth();
+  } catch (e) {
+    console.warn(
+      "[auth] sesi tidak terbaca, dianggap belum login:",
+      e instanceof Error ? e.message : e,
+    );
+    return null;
+  }
+}
 
 /** Cek Bearer DASHBOARD_SECRET untuk bot. */
 export function botAuthorized(req: Request): boolean {
@@ -23,10 +55,13 @@ export async function requireManager(guildId: string): Promise<NextResponse | nu
   if (!dbConfigured()) {
     return NextResponse.json({ error: "database_not_configured" }, { status: 503 });
   }
-  const session = await auth();
+  const session = await getSessionSafe();
   const token = session?.accessToken;
+  // 401 = belum login; 403 = login tapi bukan manager guild ini.
+  // (Sebelumnya keduanya 403 — client tak bisa membedakan "sesi habis"
+  // dari "tidak berhak", mis. untuk mengajak login ulang.)
   if (!token) {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   try {
     const guilds = await fetchUserGuilds(token);
@@ -41,7 +76,7 @@ export async function requireManager(guildId: string): Promise<NextResponse | nu
 
 /** Pastikan ada sesi login (untuk halaman publik seperti leaderboard). */
 export async function requireSession(): Promise<NextResponse | null> {
-  const session = await auth();
+  const session = await getSessionSafe();
   if (!session) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }

@@ -5,6 +5,103 @@ bertanggal saat rilis ke server.
 
 ## Unreleased
 
+### Audit putaran-2 — race condition, keamanan, zombie (2026-10-09)
+Audit mendalam (koordinator + 4 worker: arsitektur, bug, zombie, keamanan).
+Tanpa breaking change (tidak ada nama slash command diubah).
+
+**Bug KRITIS/TINGGI diperbaiki (race condition check-then-act → UPDATE atomik):**
+- `src/utils/economy.py`: `kurang_koin()` kini `UPDATE ... WHERE balance >= ?`
+  + cek `rowcount` (sebelumnya double-spend: dua transfer/bid/taruhan
+  bersamaan bisa overdraft). `_klaim_cooldown()` atomik (anti double-claim
+  `/daily`/`/kerja`). `beri_rep()` anti double-rep via klaim slot atomik.
+- `src/cogs/economy.py`: `/withdraw` anti double-withdraw (guarded UPDATE);
+  `/deposit` kini `bank = bank + ?` atomik (sebelumnya lost update; helper
+  `_set_bank` yang jadi yatim dihapus).
+- `src/cogs/ekonomi_plus.py`: loop bunga pinjaman tidak lagi menimpa
+  pembayaran manual user (`SET sisa = sisa + ?` dari bacaan fresh; auto-debit
+  guarded); `/dagang lunasi` atomik dengan refund bila kalah race; `/dagang
+  jual` saham anti double-sell (`jumlah >= ?`); `/dagang peti` anti double-open.
+- `src/cogs/minigames.py`: 6 game taruhan + `/game maling` kini abort bila
+  debit `kurang_koin` gagal (sebelumnya race yang kalah main/curi gratis).
+- `src/utils/quests.py`: `klaim_quest()` guarded (`klaim = 1 WHERE klaim = 0`).
+- Sedang/rendah: `engagement.py` (`_proses_dailyq` dibungkus BEGIN IMMEDIATE,
+  pet XP & quest_guild increment atomik, `/pet adopsi` INSERT OR IGNORE +
+  refund), `counting.py` (klaim ganda diabaikan tanpa hukuman),
+  `turnamen.py` (`/lomba info` guard None), `consumable.py` (guard jumlah > 0),
+  `achievement.py` (cek_buka INSERT OR IGNORE).
+
+**Bug kode-mati KRITIS diperbaiki:**
+- `src/cogs/giveaway.py::_proses_rutin`: seluruh blok posting giveaway rutin
+  (~60 baris) terperangkap di bawah `return` — **/g-rutin tidak pernah
+  memposting**. Blok di-dedent ke level yang benar; kini posting + update
+  `terakhir` jalan, dengan guarded deduct pool (batalkan posting bila pool
+  kalah race). Test regresi: `tests/test_giveaway_rutin_fix.py`.
+
+**Keamanan:**
+- `src/bot.py`: `allowed_mentions` global deny-by-default
+  (`@everyone`/`@here` dimatikan) — sebelumnya tiap member bisa mass-ping
+  lewat `/saran`, `/confess`, `/poll`, `/remind-rutin`, dst. 14 titik kirim
+  konten resmi admin/mod memakai `MENTIONS_PENGUMUMAN` eksplisit agar perilaku
+  sah tidak berubah.
+- `src/store.py::_tambah_kolom()`: validasi identifier SQL defense-in-depth.
+- Pindai: secret nihil; 92 command moderasi/admin terverifikasi punya
+  permission check; tidak ada eval/exec/subprocess; tidak ada path traversal;
+  query lain sudah parameterized.
+
+**Zombie code dibersihkan:**
+- Duplikasi `cog_check` ~18 baris × 8 cog → `src/utils/toggle.py::cek_toggle()`
+  (economy, ekonomi_plus, minigames, quests, season, shop, giveaway, leveling;
+  perilaku identik). Test: `tests/test_toggle_helper.py`.
+- `sosial.py`: variabel tak terpakai `cid_menang` → `_cid_menang`.
+- Paritas key bot↔dashboard tetap **32/32** (tidak ada orphan read/write).
+
+**Arsitektur (peta, tanpa perubahan kode):** 41 cog dalam 5 kelompok
+(moderasi 6, leveling 6, ekonomi 8, utilitas 20, integrasi 1); 29 background
+loop; ±67 tabel SQLite; 3 import top-level antar-cog melanggar aturan
+ARCHITECTURE.md (`ekonomi_plus→economy`, `report→tickets`, `profil→sosial`
+— belum circular tapi rapuh); `dashboard_sync` memanggil method privat
+`Giveaway._posting_giveaway`; duplikasi substitusi variabel
+(`dashboard_sync` vs `utils/variabel.py`); 27 modul tanpa toggle dashboard;
+`ARCHITECTURE.md` kedaluwarsa (masih menyebut "tanpa database (v1)").
+
+### Audit — bug toggle, zombie code, paritas key dashboard (2026-10-09)
+Audit penuh (koordinator + 3 worker): arsitektur, 41 cog, toggle dashboard,
+paritas 32 setting key bot↔dashboard, pindai zombie code (pyflakes + AST).
+
+**Bug diperbaiki:**
+- `leveling.py`: `/level`, `/prestige`, `/rank` kini lewat `cog_check` baru
+  (`leveling_enabled`) — sebelumnya command jalan walau modul dimatikan di
+  dashboard; `/prestige` bahkan menulis DB.
+- `minigames.py`: listener susun-kata kini cek `economy_enabled` — bila modul
+  dimatikan di tengah permainan, permainan dihentikan dengan pemberitahuan
+  tanpa memberi koin (sebelumnya koin tetap diberikan).
+- `shop.py`: loop `cek_lelang` menunda penyelesaian lelang saat
+  `economy_enabled=0` (koin escrow tidak hangus; selesai otomatis begitu modul
+  dinyalakan lagi). Docstring `cog_check` dikoreksi jujur (sebelumnya
+  mengklaim loop tetap menyelesaikan).
+- `config.py` + `.env.example`: default `ECONOMY_WORK_MAX` 200 → **150**,
+  selaras default dashboard (`dashboard/lib/settings.ts`).
+- Flaky test `test_kirim_pengumuman_jalan_dan_substitusi`: mock `get_guild`
+  kini hanya mengenali satu guild — sebelumnya sisa pengumuman guild lain dari
+  file test lain ikut terkirim tergantung urutan eksekusi.
+
+**Zombie code dibersihkan:**
+- `src/utils/achievement.py`: hapus `is_hidden()` yatim (produksi memakai
+  `hidden_terkunci()`); test memakai `ach.HIDDEN` langsung.
+- Ekstraksi duplikat `_catat_gagal_rutin()` (identik di `polls.py` dan
+  `reminders.py`) → helper bersama baru `src/utils/rutin.py::catat_gagal_rutin()`;
+  kedua cog kini delegasi ke sana.
+- Pindai pyflakes 58 file: 0 import tak terpakai, 0 variabel mati, 0 branch
+  mati, 0 TODO/FIXME.
+
+**Paritas key:** 32/32 setting key bot↔dashboard cocok, tanpa orphan/typo.
+Catatan terbuka (butuh keputusan produk, tidak diubah sepihak): default
+`economy_daily` bot = acak 100–300 vs dashboard = tetap 100, dan form settings
+dashboard me-PUT seluruh object sehingga sekali Simpan mengubah perilaku
+`/daily` diam-diam — disarankan perbaikan di sisi dashboard.
+
+**Test:** 7 test baru (4 regression toggle + 3 helper rutin).
+
 ### Baru — tema kartu welcome, gaya level-up, serverinfo kaya, substitusi pengumuman (2026-10-09)
 - Tema kartu welcome (`src/utils/rankcard.py`, key dashboard `welcome_theme`):
   `make_welcome_card(..., theme="default")` dengan 4 varian palet —

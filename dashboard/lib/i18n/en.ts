@@ -8,6 +8,7 @@ export const en: Dict = {
   nav: {
     myServers: "My Servers",
     inviteBot: "Invite Bot",
+    signInShort: "Sign in",
     logoAlt: "Finch logo",
     back: "Back to server list",
   },
@@ -16,7 +17,6 @@ export const en: Dict = {
     signOut: "Sign out",
   },
   theme: {
-    label: "Theme",
     toLight: "Switch to light mode",
     toDark: "Switch to dark mode",
   },
@@ -29,60 +29,69 @@ export const en: Dict = {
     add: "Add",
     remove: "Remove",
     loading: "Loading...",
+    refreshError: "Couldn't refresh. Shown data may be stale.",
   },
   loading: {
     ariaLabel: "Loading",
-  },
-  errors: {
-    loadFailed: "Failed to load data. Try reloading the page.",
-    saveFailed: "Failed to save. Try again.",
   },
   landing: {
     metaTitle: "Finch Dashboard",
     metaDescription: "Manage the Finch Discord bot: per-server modules, stats, and invite.",
     heroAlt: "Finch mascot",
-    heroTitle: "One dashboard for all your Finch servers",
+    heroTitle: "One bot for everything your Discord server needs",
     heroSubtitle:
-      "Configure bot modules per server and watch live stats from your browser. Sign in with Discord, no new password.",
+      "Leveling, economy, moderation, giveaways, reaction roles, welcome cards, and more — 137 slash commands configured per server from the web dashboard.",
     ctaInvite: "Invite Finch to Your Server",
-    statsAria: "Bot statistics",
-    statServers: "Servers",
-    statMembers: "Total members",
-    statUpdated: "Data updated",
-    statsEmptyTitle: "No statistics yet",
-    statsEmptyBody:
-      "Numbers appear here automatically after the Finch bot sends its first data (every 5 minutes). No made-up numbers.",
-    modulesAria: "Configurable modules",
-    modulesTitle: "Configurable modules",
-    modulesSubtitle:
-      "Each server has its own settings. Changes saved in the dashboard are picked up by the bot automatically within minutes.",
-    modules: {
+    ctaDashboard: "Open Dashboard",
+    numbersAria: "Real Finch numbers",
+    numCommands: "Slash commands",
+    numPlugins: "Plugins",
+    numCogs: "Cogs",
+    numbersNote: "Real numbers from the code audit — not made up.",
+    featuresAria: "Highlighted features",
+    featuresTitle: "Features that bring your server to life",
+    featuresSubtitle:
+      "Each feature is a plugin you can turn on or off per server from the dashboard.",
+    featureCta: "Configure in dashboard",
+    features: {
       welcome: {
-        title: "Welcome",
-        desc: "Image welcome cards for every new member, channel selectable per server.",
+        emoji: "👋",
+        title: "Welcome & Goodbye",
+        desc: "Image welcome cards in 4 themes (default, midnight, sunset, ocean), auto-role for new members, plus customizable goodbye messages.",
       },
       leveling: {
-        title: "Leveling",
-        desc: "Automatic XP from chat and voice, rank cards, and role rewards on level-up.",
+        emoji: "⭐",
+        title: "Leveling & XP",
+        desc: "Automatic XP from chat and voice, rank cards, 4 level-up message styles, and role rewards on every level-up.",
       },
-      economy: {
-        title: "Economy",
-        desc: "Coins, daily, work, interest-bearing bank, shop, and member auctions.",
+      selfroles: {
+        emoji: "🎭",
+        title: "Reaction Roles",
+        desc: "Members grab roles themselves with emoji reactions. Create and manage everything from the dashboard.",
       },
       automod: {
-        title: "AutoMod",
-        desc: "Anti-spam, anti invite link, auto-mute, and automatic slowmode.",
+        emoji: "🛡️",
+        title: "Moderation & AutoMod",
+        desc: "Anti-spam, anti invite links, auto-mute, and automatic slowmode — plus a moderation log you can view on the web.",
       },
-      starboard: {
-        title: "Starboard",
-        desc: "Messages with many stars get forwarded to a special channel.",
+      economy: {
+        emoji: "🪙",
+        title: "Economy & Games",
+        desc: "Coins, daily, work, interest-bearing bank, shop, minigames, auctions, even stocks and member tournaments.",
+      },
+      giveaway: {
+        emoji: "🎉",
+        title: "Giveaways",
+        desc: "Create and manage giveaways right from the dashboard — the bot posts them and draws the winners.",
       },
     },
+    finalTitle: "Ready to liven up your server?",
+    finalSubtitle: "Invite Finch now, configure its plugins from the dashboard, and let the bot do the work.",
+    footerDashboard: "Dashboard",
     aboutAria: "About the data",
     aboutTitle: "Where does the data come from?",
     aboutBody:
       "The Finch bot running on your server sends a summary (server name, member count, channel list) to this dashboard every 5 minutes. The dashboard never invents numbers: if the bot has not sent anything, the stats section stays honestly empty.",
-    aboutCta: "Open my server dashboard",
     footerTagline: "Finch, the Discord bot for every server.",
     footerInvite: "Invite Finch to your Discord server",
   },
@@ -97,14 +106,16 @@ export const en: Dict = {
     emptyTitle: "No manageable servers",
     emptyBody:
       "You do not have the Manage Server permission on any server yet, or Discord has not provided the list. Ask for an admin role on your server, then reload.",
+    retry: "Reload",
     sectionNotInBot: "Bot is not on these servers",
     checking:
-      "After inviting the bot, this page checks automatically every 15 seconds: the Manage button appears on its own.",
+      "After inviting the bot, this page checks automatically every 15 seconds: the Open Dashboard button appears on its own.",
     notDetected: "Not detected yet. Make sure the bot is online with DASHBOARD_URL and DASHBOARD_SECRET set.",
     botEmptyTitle: "Bot has not sent data yet",
     botEmptyBody:
       "Finch has never sent a snapshot to this dashboard. Make sure the bot is running with DASHBOARD_URL and DASHBOARD_SECRET set.",
-    cardManage: "Manage",
+    cardOpen: "Open Dashboard",
+    cardInvite: "Invite Bot",
     cardNoData: "No data from the bot yet",
     cardMembers: "{n} members",
     navOpen: "Open navigation menu",
@@ -141,10 +152,6 @@ export const en: Dict = {
       signinBody: "Sign in with Discord to configure this server.",
       dbBody: "This dashboard needs Vercel Postgres to store settings. See the Deploy section of the README.",
       subtitle: "Bot statistics, shortcuts to every section, and module settings.",
-      tabOverview: "Overview",
-      tabSettings: "Settings",
-      tabPlugins: "Plugins",
-      tablistLabel: "Server page sections",
       statsTitle: "Server statistics",
       statMembers: "Members",
       statChannels: "Channels",
@@ -155,10 +162,7 @@ export const en: Dict = {
       statsWaitingBody:
         "Statistics appear after the bot sends its first snapshot for this server.",
       shortcutsTitle: "Shortcuts",
-      welcomeAria: "Server welcome",
       pluginActiveCount: "{on} of {total} plugins active",
-      managePlugins: "Manage plugins",
-      settingsTitle: "Module settings",
       settingsDesc: "Toggle modules on or off, pick channels. The bot picks up changes within minutes.",
       waitingBody:
         "The channel list needs the latest snapshot from the bot. Toggles can still be saved; channel options appear after the bot sends data.",
@@ -176,9 +180,6 @@ export const en: Dict = {
     },
     plugins: {
       metaTitle: "Plugins",
-      signinBody: "Sign in with Discord to manage this server's plugins.",
-      dbBody: "This feature needs Vercel Postgres to store settings. See the Deploy section of the README.",
-      subtitle: "Turn plugins on or off, MEE6-style. The bot picks up changes within minutes.",
       tabAll: "All Plugins",
       enable: "Enable",
       disable: "Disable",
@@ -267,6 +268,7 @@ export const en: Dict = {
       listTitle: "Self-role list ({n})",
       emptyList: "No self-roles yet.",
       rowMessage: "message {id}",
+      confirmDelete: 'Delete self-role "{preview}"?',
     },
     responder: {
       metaTitle: "Auto-responder",
@@ -281,6 +283,7 @@ export const en: Dict = {
       addError: "Failed to save. Try again.",
       listTitle: "Responder list ({n})",
       emptyList: "No auto-responders yet.",
+      confirmDelete: 'Delete auto-responder "{preview}"?',
     },
     giveaway: {
       metaTitle: "Giveaway",
@@ -478,7 +481,10 @@ export const en: Dict = {
         title: "Economy",
         desc: "Coins, daily, work, bank, and shop. Off = all economy commands are rejected.",
         fields: {
-          economy_daily: { label: "Daily reward" },
+          economy_daily: {
+            label: "Daily reward",
+            hint: "Leave untouched: the bot gives a random 100–300 reward. Enter a number for a fixed reward.",
+          },
           economy_work_min: { label: "Work minimum" },
           economy_work_max: { label: "Work maximum" },
         },

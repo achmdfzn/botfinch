@@ -57,7 +57,7 @@ class Report(commands.Cog):
             channel = guild.get_channel(channel_id)
         if channel is None or not isinstance(channel, discord.TextChannel):
             try:
-                channel = await buat_tiket(guild, member, laporan=message)
+                channel = await buat_tiket(self.bot, guild, member, laporan=message)
             except discord.Forbidden:
                 await interaction.response.send_message(
                     "❌ Bot butuh izin Manage Channels untuk membuat tiket.", ephemeral=True
