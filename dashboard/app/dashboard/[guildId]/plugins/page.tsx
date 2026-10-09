@@ -88,7 +88,7 @@ export default async function GuildPlugins({ params }: { params: Promise<{ guild
   return (
     <div>
       <SiteHeader />
-      <main className="mx-auto max-w-5xl px-4 py-10">
+      <main className="mx-auto max-w-7xl px-4 py-10">
         <PageHeader
           title={guildName}
           description={pl.subtitle}

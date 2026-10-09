@@ -123,7 +123,7 @@ export default async function GuildOverview({ params }: { params: Promise<{ guil
   return (
     <div>
       <SiteHeader />
-      <main className="mx-auto max-w-5xl px-4 py-10">
+      <main className="mx-auto max-w-7xl px-4 py-10">
         {/* Blok sambutan ala MEE6: ikon + nama server + status plugin */}
         <section aria-label={ov.welcomeAria} className="mb-8">
           <div className="flex flex-wrap items-center gap-4 rounded-xl border border-edge bg-panel p-4 sm:p-5">

@@ -138,7 +138,7 @@ export default function PluginBrowser({ guildId, plugins, initial, groupTitles, 
         aria-labelledby={`plugins-tab-${active}`}
         className="pt-6"
       >
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {visible.map((p) => {
             const on = p.toggleKey ? (values[p.toggleKey] ?? false) : true;
             const configureHref =
