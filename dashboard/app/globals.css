@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+/* Tema Finch: token warna nyata hidup di :root / html.light.
+   Utilitas Tailwind (bg-ink, text-fg, border-edge, ...) merujuk ke
+   variabel ini lewat @theme inline, jadi satu class bekerja di dua tema. */
+:root {
+  --bg: #0b0d10;
+  --panel: #13161b;
+  --edge: #23282f;
+  --fg: #f4f4f5;
+  --muted: #a1a1aa;
+  --brand: #2ec4b6;
+  --brand-deep: #1f9e92;
+  color-scheme: dark;
+}
+
+html.light {
+  --bg: #f7f8fa;
+  --panel: #ffffff;
+  --edge: #e4e7ec;
+  --fg: #14181d;
+  --muted: #5b6470;
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-ink: var(--bg);
+  --color-panel: var(--panel);
+  --color-edge: var(--edge);
+  --color-brand: var(--brand);
+  --color-brand-deep: var(--brand-deep);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background-color: rgb(46 196 182 / 0.35);
+}

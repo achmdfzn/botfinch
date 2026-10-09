@@ -1,0 +1,16 @@
+Bio "About Me" buat profil bot Finch (copy-paste ke Discord Developer Portal
+→ Application → Finch → General Information → Description, atau edit profil
+bot langsung di Discord).
+
+---
+🐤 Finch — bot seru buat semua server Discord!
+Ketik /bantuan buat daftar perintah 🎮
+Level • Koin • Game • Giveaway • Clan — semua ada!
+---
+
+Catatan:
+- Kolom "Commands" di profil bot (kayak /hunt /battle di OwO) dipilih OTOMATIS
+  oleh Discord berdasarkan command yang paling sering dipakai member — tidak
+  bisa diatur manual.
+- Status "Streaming dengan N server!" sudah otomatis dipasang kode bot
+  (src/bot.py → on_ready) begitu bot online.
