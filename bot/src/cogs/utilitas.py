@@ -359,6 +359,14 @@ class Utilitas(commands.Cog):
         if ctx.guild is None:
             await ctx.send(embed=error_embed("Hanya bisa dipakai di server."), ephemeral=True)
             return
+        from src.cogs.dashboard_sync import modul_aktif
+
+        if not modul_aktif(ctx.guild.id, "embed_enabled"):
+            await ctx.send(
+                embed=error_embed("Modul embed dimatikan oleh admin server ini."),
+                ephemeral=True,
+            )
+            return
         if ctx.interaction is None:
             await ctx.send(
                 embed=error_embed("Perintah ini hanya bisa lewat slash command `/embed-buat`."),

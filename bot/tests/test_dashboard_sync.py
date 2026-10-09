@@ -1,5 +1,4 @@
 """Test sinkronisasi dashboard web (dashboard_sync)."""
-import sqlite3
 
 from src.cogs.dashboard_sync import TABEL_SETTINGS as TABEL, _nilai, get_guild_setting
 from src.store import get_connection, init_db

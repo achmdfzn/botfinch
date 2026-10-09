@@ -3,9 +3,11 @@
 - Member kasih reaksi ⭐ ke pesan → saat mencapai STARBOARD_MIN (default 3),
   pesan dipajang di channel starboard.
 - Jumlah ⭐ di-update otomatis; kalau turun di bawah ambang, postingan dihapus.
-- Config: STARBOARD_CHANNEL_ID, STARBOARD_MIN.
+- Config: STARBOARD_CHANNEL_ID, STARBOARD_MIN (fallback env global bila
+  dashboard belum mengatur per-server).
 - Bisa dimatikan per-server via dashboard: toggle `starboard_enabled` ("1"/"0",
-  default "1" = perilaku lama tetap jalan).
+  default "0" = OFF selaras dashboard SETTING_DEFAULTS). Channel & ambang
+  per-server via key `starboard_channel_id` / `starboard_threshold`.
 """
 import logging
 
@@ -61,13 +63,20 @@ class Starboard(commands.Cog):
         await self._sync(payload)
 
     async def _sync(self, payload: discord.RawReactionActionEvent) -> None:
-        from src.cogs.dashboard_sync import modul_aktif
+        from src.cogs.dashboard_sync import get_guild_setting, get_guild_setting_int
 
-        sb_id = config.settings.starboard_channel_id
-        if not sb_id or payload.guild_id is None:
+        if payload.guild_id is None:
             return
-        # Modul starboard bisa dimatikan per-server via dashboard web
-        if not modul_aktif(payload.guild_id, "starboard_enabled"):
+        gid = payload.guild_id
+        # Starboard default OFF selaras dashboard (SETTING_DEFAULTS starboard=false).
+        # modul_aktif() default ON hanya berlaku untuk modul lama — jangan dipakai di sini.
+        if get_guild_setting(gid, "starboard_enabled", "0") != "1":
+            return
+        # Channel & ambang: utamakan per-server dari dashboard, fallback env global.
+        sb_id = get_guild_setting_int(
+            gid, "starboard_channel_id", 0
+        ) or config.settings.starboard_channel_id
+        if not sb_id:
             return
         guild = self.bot.get_guild(payload.guild_id)
         if guild is None:
@@ -88,7 +97,10 @@ class Starboard(commands.Cog):
             return
 
         count = sum(r.count for r in msg.reactions if str(r.emoji) == BINTANG)
-        ambang = max(1, config.settings.starboard_min)
+        ambang = get_guild_setting_int(gid, "starboard_threshold", 0)
+        if ambang < 1:
+            ambang = config.settings.starboard_min
+        ambang = max(1, ambang)
 
         # Klaim atomik SEBELUM kirim — dua reaksi ⭐ nyaris bersamaan tidak
         # akan membuat dua postingan (yang kalah race skip).

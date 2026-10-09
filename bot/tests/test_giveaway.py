@@ -1,7 +1,6 @@
 """Tes logika giveaway (pure function) + regression _akhiri. Jalanin:  python -m pytest tests/ -q"""
 import asyncio
 import random
-import sqlite3
 import unittest
 from unittest.mock import AsyncMock, MagicMock
 

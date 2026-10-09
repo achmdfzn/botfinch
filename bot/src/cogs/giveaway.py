@@ -852,6 +852,8 @@ class Giveaway(commands.Cog):
 
     @tasks.loop(minutes=5)
     async def cek_rutin(self):
+        from src.cogs.dashboard_sync import modul_aktif
+
         now = discord.utils.utcnow()
         with get_connection() as conn:
             rows = conn.execute(
@@ -859,6 +861,8 @@ class Giveaway(commands.Cog):
                 " koin, host_id, terakhir FROM giveaway_rutin"
             ).fetchall()
         for rid, gid, ch_id, interval, pemenang, hadiah, koin, host_id, terakhir in rows:
+            if not modul_aktif(gid, "giveaway_enabled"):
+                continue  # modul dimatikan: jangan posting giveaway BARU (rutin dijeda)
             try:
                 await self._proses_rutin(now, rid, gid, ch_id, interval, pemenang, hadiah, koin, host_id, terakhir)
             except Exception:

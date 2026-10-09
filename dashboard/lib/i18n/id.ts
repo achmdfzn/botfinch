@@ -178,6 +178,8 @@ export const id = {
       enable: "Aktifkan",
       disable: "Nonaktifkan",
       configure: "Konfigurasi",
+      statusActive: "Aktif",
+      statusInactive: "Nonaktif",
       groupEssentials: "Esensial",
       groupEngagement: "Engagement & Fun",
       groupModeration: "Moderasi",

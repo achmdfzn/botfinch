@@ -2,7 +2,8 @@
 
 Toggle modul (key "*_enabled", "1"/"0", default "1" = perilaku lama):
 - selfroles_enabled, giveaway_enabled, responder_enabled,
-  announcements_enabled, embed_enabled, starboard_enabled.
+  announcements_enabled, embed_enabled. (starboard_enabled default "0" = OFF
+  selaras dashboard; lihat test_starboard_default_off_selaras_dashboard.)
 - Pull settings dashboard generik (tanpa allowlist) -> key baru otomatis tersimpan.
 
 Fitur paritas MEE6:
@@ -16,7 +17,6 @@ import asyncio
 import io
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src import config
 from src.bot import FinchBot
 from src.cogs.dashboard_sync import (
     TABEL_ANNOUNCEMENTS,
@@ -326,8 +326,28 @@ def test_starboard_mati():
         bot.get_guild.assert_not_called()
 
 
-def test_starboard_nyala_default():
+def test_starboard_default_off_selaras_dashboard():
+    """Regresi: starboard default OFF ("0") selaras SETTING_DEFAULTS dashboard.
+
+    modul_aktif() default ON hanya untuk modul lama — guild baru sebelum pull
+    pertama tidak boleh dianggap starboard ON.
+    """
     _bersih()
+    with _pengaturan(starboard_channel_id=31337, starboard_min=3):
+        bot = MagicMock()
+        cog = Starboard(bot)
+        payload = MagicMock()
+        payload.emoji = "⭐"
+        payload.guild_id = GID
+        payload.message_id = 111
+        payload.channel_id = 222
+        asyncio.run(cog._sync(payload))
+        bot.get_guild.assert_not_called()
+
+
+def test_starboard_nyala_eksplisit():
+    _bersih()
+    _set("starboard_enabled", "1")
     with _pengaturan(starboard_channel_id=31337, starboard_min=3):
         bot = MagicMock()
         bot.get_guild = MagicMock(return_value=None)

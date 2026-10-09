@@ -210,6 +210,10 @@ class Leveling(commands.Cog):
         if user.bot or reaction.message.guild is None:
             return
         gid = reaction.message.guild.id
+        from src.cogs.dashboard_sync import get_guild_setting
+
+        if get_guild_setting(gid, "leveling_enabled", "1") != "1":
+            return
         now = time.time()
         key = (gid, user.id)
         if now - _reaction_cooldown[key] < config.settings.reaction_cooldown:

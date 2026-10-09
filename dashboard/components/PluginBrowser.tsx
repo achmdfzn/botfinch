@@ -30,6 +30,8 @@ interface Labels {
   toggleError: string;
   toggleOn: string;
   toggleOff: string;
+  statusActive: string;
+  statusInactive: string;
 }
 
 interface Props {
@@ -83,6 +85,10 @@ export default function PluginBrowser({ guildId, plugins, initial, groupTitles, 
 
   const visible = active === "all" ? plugins : plugins.filter((p) => p.group === active);
 
+  function countFor(t: TabKey): number {
+    return t === "all" ? plugins.length : plugins.filter((p) => p.group === t).length;
+  }
+
   return (
     <div>
       {error && (
@@ -109,11 +115,19 @@ export default function PluginBrowser({ guildId, plugins, initial, groupTitles, 
             tabIndex={active === t ? 0 : -1}
             onClick={() => setActive(t)}
             onKeyDown={(e) => onKeyDown(e, i)}
-            className={`min-h-[44px] flex-none rounded-t-lg px-4 py-2.5 text-sm font-medium focus-visible:outline-2 focus-visible:outline-brand ${
+            className={`flex min-h-[44px] flex-none items-center rounded-t-lg px-4 py-2.5 text-sm font-medium focus-visible:outline-2 focus-visible:outline-brand ${
               active === t ? "border-b-2 border-brand bg-panel text-fg" : "text-muted hover:text-fg"
             }`}
           >
             {tabLabel(t)}
+            <span
+              aria-hidden="true"
+              className={`ml-2 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${
+                active === t ? "bg-brand/15 text-brand" : "bg-edge text-muted"
+              }`}
+            >
+              {countFor(t)}
+            </span>
           </button>
         ))}
       </div>
@@ -137,16 +151,30 @@ export default function PluginBrowser({ guildId, plugins, initial, groupTitles, 
                 <div className="flex items-start gap-3">
                   <span
                     aria-hidden="true"
-                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-brand/10 text-2xl"
+                    className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-2xl ${
+                      on ? "bg-brand/10" : "bg-edge"
+                    }`}
                   >
                     {p.emoji}
                   </span>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <h3 className="font-semibold text-fg">{p.name}</h3>
                     <p className="mt-1 line-clamp-2 text-sm text-muted" title={p.desc}>
                       {p.desc}
                     </p>
                   </div>
+                  {p.toggleKey && (
+                    <span
+                      aria-hidden="true"
+                      className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                        on
+                          ? "border-green-500/30 bg-green-500/10 text-green-400"
+                          : "border-edge bg-ink text-muted"
+                      }`}
+                    >
+                      {on ? labels.statusActive : labels.statusInactive}
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center justify-between gap-3">
                   {configureHref ? (

@@ -135,7 +135,7 @@ def kerja(conn, guild_id: int, user_id: int,
           sekarang: datetime.datetime | None = None, rng=None) -> tuple[str, int]:
     """Kerja untuk dapat koin (cooldown dari config)."""
     from src import config
-    from src.cogs.dashboard_sync import get_guild_setting, get_guild_setting_int
+    from src.cogs.dashboard_sync import get_guild_setting_int
 
     sekarang = sekarang or datetime.datetime.now(datetime.timezone.utc)
     wmin = get_guild_setting_int(guild_id, "economy_work_min", config.settings.economy_work_min)
@@ -178,7 +178,6 @@ REP_COOLDOWN_DETIK = 24 * 3600
 
 def get_rep(conn, guild_id: int, user_id: int) -> int:
     """Jumlah reputasi user."""
-    akun = get_akun(conn, guild_id, user_id)
     row = conn.execute(
         "SELECT rep FROM economy WHERE user_id = ? AND guild_id = ?",
         (user_id, guild_id),

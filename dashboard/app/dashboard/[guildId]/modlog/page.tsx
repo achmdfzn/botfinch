@@ -86,7 +86,7 @@ export default async function GuildModlog({ params }: { params: Promise<{ guildI
 
   const snap = await latestSnapshot();
   const snapGuild = snap?.guilds.find((g) => g.id === guildId);
-  const entries = asEntries((snapGuild as unknown as { modlog?: unknown } | undefined)?.modlog);
+  const entries = asEntries(snapGuild?.modlog);
 
   return (
     <div>

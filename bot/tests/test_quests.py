@@ -1,5 +1,4 @@
 """Tes quest harian. Jalanin:  python -m pytest tests/ -q"""
-import datetime
 import sqlite3
 import unittest
 

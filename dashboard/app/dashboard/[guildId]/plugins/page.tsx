@@ -120,6 +120,8 @@ export default async function GuildPlugins({ params }: { params: Promise<{ guild
             toggleError: dict.guild.modul.toggleError,
             toggleOn: dict.guild.modul.toggleOn,
             toggleOff: dict.guild.modul.toggleOff,
+            statusActive: pl.statusActive,
+            statusInactive: pl.statusInactive,
           }}
         />
       </main>

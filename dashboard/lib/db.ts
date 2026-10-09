@@ -40,6 +40,16 @@ export interface SnapshotRole {
   name: string;
 }
 
+export interface SnapshotModLogEntry {
+  user_id: string;
+  user_name: string;
+  mod_id: string;
+  mod_name: string;
+  aksi: string;
+  alasan: string;
+  waktu: string;
+}
+
 export interface SnapshotGuild {
   id: string;
   name: string;
@@ -59,6 +69,8 @@ export interface SnapshotGuild {
     ends_at: string;
     participants: number;
   }[];
+  /** 25 aksi moderasi terakhir yang dikirim bot; dibaca halaman Mod Log. */
+  modlog: SnapshotModLogEntry[];
 }
 
 export interface SnapshotPayload {

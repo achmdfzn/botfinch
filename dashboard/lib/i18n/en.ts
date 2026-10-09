@@ -179,6 +179,8 @@ export const en: Dict = {
       enable: "Enable",
       disable: "Disable",
       configure: "Configure",
+      statusActive: "On",
+      statusInactive: "Off",
       groupEssentials: "Essentials",
       groupEngagement: "Engagement & Fun",
       groupModeration: "Moderation",

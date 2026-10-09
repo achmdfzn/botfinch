@@ -19,7 +19,6 @@ import pytest
 from src.cogs import general
 from src.cogs.general import (
     COG_KE_KATEGORI,
-    KATEGORI_BANTUAN,
     URUTAN_KATEGORI,
     HelpView,
     _bagi_ke_field,

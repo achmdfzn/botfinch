@@ -48,6 +48,26 @@ function sanitizeGiveaways(v: unknown): SnapshotGuild["giveaways"] {
     });
 }
 
+function sanitizeModlog(v: unknown): SnapshotGuild["modlog"] {
+  if (!Array.isArray(v)) return [];
+  const str = (x: unknown, max: number) => (typeof x === "string" ? (x as string).slice(0, max) : "");
+  return v
+    .filter((e) => e && typeof (e as Record<string, unknown>).user_id === "string")
+    .slice(0, 25)
+    .map((e) => {
+      const r = e as Record<string, unknown>;
+      return {
+        user_id: str(r.user_id, 32),
+        user_name: str(r.user_name, 50),
+        mod_id: str(r.mod_id, 32),
+        mod_name: str(r.mod_name, 50),
+        aksi: str(r.aksi, 30),
+        alasan: str(r.alasan, 500),
+        waktu: str(r.waktu, 40),
+      };
+    });
+}
+
 export async function POST(req: Request) {
   if (!botAuthorized(req)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -98,6 +118,7 @@ export async function POST(req: Request) {
           : [],
         leaderboards: sanitizeLeaderboards(raw.leaderboards),
         giveaways: sanitizeGiveaways(raw.giveaways),
+        modlog: sanitizeModlog(raw.modlog),
       };
     });
   await saveSnapshot({

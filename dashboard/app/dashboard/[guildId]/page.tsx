@@ -183,6 +183,8 @@ export default async function GuildOverview({ params }: { params: Promise<{ guil
                 toggleError: dict.guild.modul.toggleError,
                 toggleOn: dict.guild.modul.toggleOn,
                 toggleOff: dict.guild.modul.toggleOff,
+                statusActive: pl.statusActive,
+                statusInactive: pl.statusInactive,
               }}
             />
           }
@@ -216,7 +218,12 @@ export default async function GuildOverview({ params }: { params: Promise<{ guil
                       href={s.href}
                       className="rounded-xl border border-edge bg-panel p-4 transition-colors hover:border-brand focus-visible:outline-2 focus-visible:outline-brand sm:p-5"
                     >
-                      <p className="text-sm font-semibold text-fg">{s.title}</p>
+                      <p className="flex items-center justify-between gap-3 text-sm font-semibold text-fg">
+                        <span>{s.title}</span>
+                        <span aria-hidden="true" className="shrink-0 text-brand">
+                          →
+                        </span>
+                      </p>
                       <p className="mt-1 text-sm text-muted">{s.desc}</p>
                     </Link>
                   ))}
