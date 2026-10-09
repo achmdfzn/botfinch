@@ -46,8 +46,10 @@ export async function DELETE(
   const body = await parseJsonBody(req);
   if (!body) return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   const messageId = discordId(body.message_id);
-  const emoji = typeof body.emoji === "string" ? body.emoji.trim() : "";
-  if (messageId === undefined || emoji.length === 0) {
+  // Batas panjang sama seperti POST (str(..., 64, true)): cegah emoji
+  // raksasa dari client yang menggelembungkan query DELETE.
+  const emoji = str(body.emoji, 64, true);
+  if (messageId === undefined || emoji === undefined) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
   await deleteSelfRole(id, messageId, emoji);

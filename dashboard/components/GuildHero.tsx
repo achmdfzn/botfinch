@@ -66,7 +66,9 @@ export default function GuildHero({
             </div>
           )}
           <div className="min-w-0">
-            <h1 className="truncate text-2xl font-bold text-fg">{guildName}</h1>
+            {/* title: nama server yang terpotong (truncate) tetap bisa
+                dibaca penuh lewat tooltip bawaan browser. */}
+            <h1 title={guildName} className="truncate text-2xl font-bold text-fg">{guildName}</h1>
             <p className="mt-1 text-sm text-muted">{subtitle}</p>
           </div>
         </div>

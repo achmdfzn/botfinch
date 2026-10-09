@@ -146,6 +146,7 @@ export const en: Dict = {
     cardMembers: "{n} members",
     navOpen: "Open navigation menu",
     navClose: "Close navigation menu",
+    skipToContent: "Skip to main content",
     badgeOwner: "Owner",
     badgeManager: "Manage Server",
     openAria: "Open the dashboard for {name}",

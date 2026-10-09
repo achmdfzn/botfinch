@@ -226,6 +226,15 @@ export function cleanValue(key: string, v: unknown): boolean | string | number |
   if (rule.kind === "str") {
     if (typeof v !== "string") return undefined;
     if (key === "leveling_roles" && !validLevelRoles(v)) return undefined;
+    // CSV ID role: kosong (tak perlu auto-role) atau daftar ID digit,
+    // mis. "123456789, 987654321". Tolak format lain agar bot tidak
+    // menerima ID role sampah.
+    if (
+      key === "welcome_role_ids" &&
+      v !== "" &&
+      !/^(\d{5,25})(,\s*\d{5,25})*$/.test(v)
+    )
+      return undefined;
     // ID channel: hanya digit (atau kosong = otomatis)
     if (key.endsWith("_channel_id") && v !== "" && !/^\d{1,25}$/.test(v)) return undefined;
     return v.slice(0, rule.max);

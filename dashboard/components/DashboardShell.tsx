@@ -178,6 +178,12 @@ export default function DashboardShell({ guildName, guildIconUrl, navItems, chil
 
   return (
     <div className="min-h-screen bg-ink">
+      <a
+        href="#konten-utama"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-brand focus:px-4 focus:py-2 focus:font-semibold focus:text-ink"
+      >
+        {dict.dashboard.skipToContent}
+      </a>
       {/* Topbar mobile: hanya tampil di bawah md */}
       <div className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-edge bg-ink px-3 md:hidden">
         <button
@@ -204,7 +210,10 @@ export default function DashboardShell({ guildName, guildIconUrl, navItems, chil
         <span className="min-w-0 flex-1 truncate text-sm font-semibold text-fg">{guildName}</span>
       </div>
 
-      <div className="mx-auto flex max-w-7xl">
+      {/* True full-width: sidebar menempel tepi kiri viewport, konten
+          memakai seluruh sisa lebar. Tanpa max-w terpusat — tidak ada lagi
+          celah kosong di kiri-kanan sidebar ala layout terpusat. */}
+      <div className="flex w-full">
         {/* Sidebar desktop: kolom kiri sticky */}
         <aside className="hidden w-64 shrink-0 md:block">
           <div className="sticky top-0 h-screen border-r border-edge bg-panel">
@@ -212,11 +221,12 @@ export default function DashboardShell({ guildName, guildIconUrl, navItems, chil
           </div>
         </aside>
 
-        {/* Konten halaman: padding konsisten + max-width terpusat, senada
-            area konten referensi. Halaman di dalamnya tetap me-render
-            kontennya sendiri. */}
-        <main className="min-w-0 flex-1">
-          <div className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 md:px-8 md:py-7">
+        {/* Konten halaman: padding konsisten, full-width di sisa kolom
+            setelah sidebar. Halaman di dalamnya tetap me-render kontennya
+            sendiri; halaman form boleh membatasi lebar baca sendiri
+            (max-w-4xl rata kiri). */}
+        <main id="konten-utama" className="min-w-0 flex-1">
+          <div className="w-full px-4 py-5 sm:px-6 md:px-8 md:py-7">
             {children}
           </div>
         </main>

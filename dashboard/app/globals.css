@@ -71,8 +71,13 @@ html.light .text-yellow-400 {
    ~2.04:1 (teks nyaris putih di atas teal — gagal WCAG AA). Paksa teks gelap
    #062a27 (≈ 8.9:1 di atas #2ec4b6) di mode terang. Landing page sudah memakai
    text-[#062a27] hardcoded untuk tombol primernya — ini acuannya.
-   Selektor .bg-brand tidak menyentuh .bg-brand\/15 (badge), jadi aman. */
-html.light .bg-brand {
+   Selektor .bg-brand tidak menyentuh .bg-brand\/15 (badge), jadi aman.
+   Elemen yang sama juga membawa class hover:bg-brand-deep saat kursor di
+   atasnya (semua tombol primer) — tanpa override, teks gelap di atas
+   #1f9e92 hanya ~3,1:1. Paksa teks gelap yang sama di .bg-brand-deep
+   (≈ 4,7:1 di atas #1f9e92, lolos WCAG AA). */
+html.light .bg-brand,
+html.light .bg-brand-deep {
   color: #062a27;
 }
 

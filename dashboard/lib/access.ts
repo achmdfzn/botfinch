@@ -52,9 +52,9 @@ export function botAuthorized(req: Request): boolean {
  * Kembalikan null bila lolos, atau NextResponse error bila tidak.
  */
 export async function requireManager(guildId: string): Promise<NextResponse | null> {
-  if (!dbConfigured()) {
-    return NextResponse.json({ error: "database_not_configured" }, { status: 503 });
-  }
+  // Urutan disengaja: autentikasi dulu, baru ketersediaan DB. Pemanggil
+  // tanpa sesi selalu mendapat 401 (bukan 503) — status yang benar untuk
+  // "belum login", terlepas dari kondisi database.
   const session = await getSessionSafe();
   const token = session?.accessToken;
   // 401 = belum login; 403 = login tapi bukan manager guild ini.
@@ -62,6 +62,9 @@ export async function requireManager(guildId: string): Promise<NextResponse | nu
   // dari "tidak berhak", mis. untuk mengajak login ulang.)
   if (!token) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  if (!dbConfigured()) {
+    return NextResponse.json({ error: "database_not_configured" }, { status: 503 });
   }
   try {
     const guilds = await fetchUserGuilds(token);

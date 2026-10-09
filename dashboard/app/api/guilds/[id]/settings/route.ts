@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { dbConfigured, getStoredSettings, putStoredSettings } from "@/lib/db";
+import { dbConfigured, getStoredSettings, mergeStoredSettings } from "@/lib/db";
 import { botAuthorized, requireManager } from "@/lib/access";
 import { SETTING_DEFAULTS, cleanValue } from "@/lib/settings";
 import { parseJsonBody } from "@/lib/validate";
@@ -36,7 +36,8 @@ export async function PUT(
     const v = cleanValue(key, body[key]);
     if (v !== undefined) clean[key] = v;
   }
-  const stored = await getStoredSettings(id);
-  await putStoredSettings(id, { ...stored, ...clean });
+  // Merge atomik di Postgres (settings || $1): tanpa read-modify-write
+  // di JS, sehingga dua PUT bersamaan tidak saling menimpa.
+  await mergeStoredSettings(id, clean);
   return NextResponse.json({ ok: true });
 }

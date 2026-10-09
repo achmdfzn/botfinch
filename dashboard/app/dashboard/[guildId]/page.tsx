@@ -111,7 +111,7 @@ export default async function GuildPluginsHome({
   // Label katalog plugin kini dari kamus (dict.guild.plugins).
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+    <div className="w-full">
       {/* Banner header lebar ala MEE6: identitas server + angka nyata.
           Identitas server sudah ada di sidebar, tapi banner ini memberi
           konteks visual + statistik sekilas di halaman utama. */}

@@ -29,6 +29,22 @@ export async function putStoredSettings(guildId: string, settings: Record<string
   `;
 }
 
+/**
+ * Gabung parsial settings secara ATOMIK di Postgres (operator jsonb ||).
+ * Menggantikan pola read-modify-write di JS (getStoredSettings lalu
+ * putStoredSettings({...stored, ...clean})) yang rawan race: dua PUT
+ * bersamaan bisa saling menimpa dan menghilangkan perubahan salah satu.
+ * Baris yang belum ada di-INSERT dulu dengan settings awal {}.
+ */
+export async function mergeStoredSettings(guildId: string, settings: Record<string, unknown>): Promise<void> {
+  await sql`
+    INSERT INTO guild_settings (guild_id, settings, updated_at)
+    VALUES (${guildId}, ${JSON.stringify(settings)}::jsonb, NOW())
+    ON CONFLICT (guild_id) DO UPDATE
+    SET settings = guild_settings.settings || EXCLUDED.settings, updated_at = NOW()
+  `;
+}
+
 export interface SnapshotChannel {
   id: string;
   name: string;

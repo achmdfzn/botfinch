@@ -145,6 +145,7 @@ export const id = {
     cardMembers: "{n} member",
     navOpen: "Buka menu navigasi",
     navClose: "Tutup menu navigasi",
+    skipToContent: "Lewati ke konten utama",
     badgeOwner: "Owner",
     badgeManager: "Kelola Server",
     openAria: "Buka dashboard server {name}",
