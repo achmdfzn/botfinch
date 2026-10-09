@@ -192,7 +192,6 @@ export const en: Dict = {
       statsWaitingBody:
         "Statistics appear after the bot sends its first snapshot for this server.",
       shortcutsTitle: "Shortcuts",
-      pluginActiveCount: "{on} of {total} plugins active",
       settingsDesc: "Toggle modules on or off, pick channels. The bot picks up changes within minutes.",
       waitingBody:
         "The channel list needs the latest snapshot from the bot. Toggles can still be saved; channel options appear after the bot sends data.",
@@ -230,6 +229,10 @@ export const en: Dict = {
       groupEngagement: "Engagement & Fun",
       groupModeration: "Moderation",
       groupUtilities: "Utilities",
+      heroSubtitle: "Pick a plugin below to enable or configure Finch features on this server.",
+      heroStatPlugins: "Active plugins",
+      heroStatCommands: "Commands",
+      heroStatCogs: "Cogs",
       cards: {
         welcome: {
           name: "Welcome & Goodbye",

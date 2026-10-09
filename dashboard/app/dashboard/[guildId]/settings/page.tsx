@@ -78,7 +78,7 @@ export default async function GuildSettingsPage({ params }: { params: Promise<{ 
   const settings = mergeSettings(stored);
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
       <PageHeader title={sub.settings} description={ov.settingsDesc} />
       {!snapGuild && (
         <div className="mb-4">

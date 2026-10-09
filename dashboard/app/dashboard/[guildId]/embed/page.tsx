@@ -73,7 +73,7 @@ export default async function GuildEmbed({ params }: { params: Promise<{ guildId
   const snapGuild = snap?.guilds.find((g) => g.id === guildId);
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
       <PageHeader
         title={guildName}
         description={g.subtitle}

@@ -4,15 +4,15 @@ import type { Metadata } from "next";
 import SiteHeader from "@/components/SiteHeader";
 import EmptyState from "@/components/EmptyState";
 import ReloadButton from "@/components/ReloadButton";
-import PageHeader from "@/components/PageHeader";
+import GuildHero from "@/components/GuildHero";
 import PluginCards, { type PluginCardData } from "@/components/PluginCards";
 import { getSessionSafe } from "@/lib/access";
-import { canManage } from "@/lib/discord";
+import { canManage, iconUrl } from "@/lib/discord";
 import { fetchUserGuilds } from "@/lib/access";
 import { dbConfigured, getStoredSettings } from "@/lib/db";
 import { mergeSettings } from "@/lib/settings";
 import { PLUGINS, TOGGLEABLE_PLUGINS, parsePluginTab } from "@/lib/plugins";
-import { getDict, getLang, fmt } from "@/lib/i18n";
+import { getDict, getLang } from "@/lib/i18n";
 
 export const instant = false;
 
@@ -111,11 +111,19 @@ export default async function GuildPluginsHome({
   // Label katalog plugin kini dari kamus (dict.guild.plugins).
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
-      {/* Header kompak: identitas server sudah ada di sidebar */}
-      <PageHeader
-        title={pl.metaTitle}
-        description={fmt(ov.pluginActiveCount, { on: activePlugins, total: TOGGLEABLE_PLUGINS.length })}
+    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+      {/* Banner header lebar ala MEE6: identitas server + angka nyata.
+          Identitas server sudah ada di sidebar, tapi banner ini memberi
+          konteks visual + statistik sekilas di halaman utama. */}
+      <GuildHero
+        guildName={mine.name}
+        guildIconUrl={iconUrl(guildId, mine.icon, 128)}
+        activePlugins={activePlugins}
+        totalPlugins={TOGGLEABLE_PLUGINS.length}
+        subtitle={pl.heroSubtitle}
+        statPlugins={pl.heroStatPlugins}
+        statCommands={pl.heroStatCommands}
+        statCogs={pl.heroStatCogs}
       />
       <PluginCards
         guildId={guildId}

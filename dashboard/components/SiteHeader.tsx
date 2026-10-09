@@ -16,7 +16,7 @@ export default async function SiteHeader() {
   const dict = getDict(await getLang());
   return (
     <header className="border-b border-edge bg-panel/80 sticky top-0 z-10 backdrop-blur">
-      <div className="mx-auto flex h-16 max-w-5xl items-center justify-between gap-2 px-4">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-2 px-4">
         <Link href="/" className="flex min-h-[44px] items-center gap-3 rounded-lg focus-visible:outline-2 focus-visible:outline-brand">
           <Image src="/finch.png" alt={dict.nav.logoAlt} width={36} height={36} className="rounded-full" />
           {/* Wordmark disembunyikan di HP: ruang header 360px tidak cukup */}

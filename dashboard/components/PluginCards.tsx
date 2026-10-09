@@ -129,7 +129,7 @@ export default function PluginCards({
         role="tabpanel"
         id="plugin-tabpanel"
         aria-labelledby={`plugin-tab-${tab}`}
-        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
       >
         {visible.map((p) => {
           const hasToggle = p.toggleKey !== null;

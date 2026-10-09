@@ -77,7 +77,7 @@ export default async function Dashboard() {
   return (
     <div>
       <SiteHeader />
-      <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
         {/* Judul rata tengah ala halaman pilih server referensi */}
         <div className="text-center">
           <h1 className="text-2xl font-bold tracking-tight text-fg">{d.title}</h1>

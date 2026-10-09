@@ -191,7 +191,6 @@ export const id = {
       statsWaitingBody:
         "Angka statistik muncul setelah bot mengirim snapshot pertamanya untuk server ini.",
       shortcutsTitle: "Jalan pintas",
-      pluginActiveCount: "{on} dari {total} plugin aktif",
       settingsDesc: "Nyalakan atau matikan modul, pilih channel. Bot membaca perubahan dalam beberapa menit.",
       waitingBody:
         "Daftar channel butuh snapshot terbaru dari bot. Toggle tetap bisa disimpan; pilihan channel muncul setelah bot mengirim data.",
@@ -229,6 +228,10 @@ export const id = {
       groupEngagement: "Engagement & Fun",
       groupModeration: "Moderasi",
       groupUtilities: "Utilitas",
+      heroSubtitle: "Pilih plugin di bawah untuk mengaktifkan atau mengonfigurasi fitur Finch di server ini.",
+      heroStatPlugins: "Plugin aktif",
+      heroStatCommands: "Perintah",
+      heroStatCogs: "Cog",
       cards: {
         welcome: {
           name: "Welcome & Goodbye",
