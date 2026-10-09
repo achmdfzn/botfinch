@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, connection } from "next/server";
 import { latestSnapshot } from "@/lib/db";
 import { fetchUserGuilds, getSessionSafe } from "@/lib/access";
 import { canManage } from "@/lib/discord";
@@ -14,6 +14,13 @@ import { canManage } from "@/lib/discord";
  * pelanggan bot (enumerasi lintas-guild).
  */
 export async function GET() {
+  // Route ini membaca cookie sesi (via auth() → headers()) sehingga tidak
+  // boleh di-prerender saat build. Di Next.js 16 + cacheComponents,
+  // `export const dynamic = 'force-dynamic'` sudah dihapus — cara idiomatis
+  // adalah connection(): prerender berhenti di sini, kode di bawahnya hanya
+  // jalan saat ada request masuk. Tanpa ini, build me-log warning
+  // "[auth] sesi tidak terbaca..." yang membingungkan.
+  await connection();
   const session = await getSessionSafe();
   const token = session?.accessToken;
   if (!token) {
