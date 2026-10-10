@@ -3,6 +3,7 @@ import { connection } from "next/server";
 import type { Metadata } from "next";
 import SiteHeader from "@/components/SiteHeader";
 import EmptyState from "@/components/EmptyState";
+import GuildErrorState from "@/components/GuildErrorState";
 import ReloadButton from "@/components/ReloadButton";
 import GuildHero from "@/components/GuildHero";
 import PluginCards, { type PluginCardData } from "@/components/PluginCards";
@@ -73,14 +74,7 @@ export default async function GuildPluginsHome({
   if (!mine) notFound();
 
   if (!dbConfigured()) {
-    return (
-      <div>
-        <SiteHeader />
-        <main className="mx-auto max-w-3xl px-4 py-16">
-          <EmptyState title={gc.dbTitle} body={ov.dbBody} />
-        </main>
-      </div>
-    );
+    return <GuildErrorState title={gc.dbTitle} body={ov.dbBody} />;
   }
 
   const stored = await getStoredSettings(guildId);

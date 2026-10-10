@@ -22,7 +22,7 @@ async function getImpl(
     guild_name: guild.name,
     levels: guild.leaderboards.levels,
     coins: guild.leaderboards.coins,
-    updated_at: snap!.pushed_at,
+    updated_at: snap?.pushed_at ?? null,
   });
 }
 

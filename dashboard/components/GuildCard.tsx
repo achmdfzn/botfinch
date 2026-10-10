@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { iconUrl, inviteUrl } from "@/lib/discord";
 import { useI18n } from "@/components/I18nProvider";
@@ -17,25 +16,27 @@ interface Props {
   inviteLabel: string;
   noDataLabel: string;
   /**
-   * True bila user adalah owner server ini -> badge "Owner".
-   * Default false -> badge "Kelola Server" (semua server yang tampil di
-   * halaman ini lolos filter izin Kelola Server).
+   * True bila user adalah owner server ini -> badge pill "Owner".
+   * Non-owner tidak mendapat badge (tanpa badge palsu "Kelola Server").
    */
   isOwner?: boolean;
 }
 
 /**
- * Hash deterministik dari ID guild -> hue, dipakai untuk gradient banner
- * orisinal tiap server (Discord /users/@me/guilds tidak mengembalikan
- * banner, jadi banner selalu dibuat lokal — bukan aset pihak ketiga).
+ * Hash deterministik dari ID guild -> variasi ringan pada lightness/
+ * saturasi, dipakai untuk gradient banner orisinal tiap server.
+ * Hue DIKUNCI ke teal brand (~174) agar tetap satu identitas visual
+ * (Discord /users/@me/guilds tidak mengembalikan banner, jadi banner
+ * selalu dibuat lokal — bukan aset pihak ketiga).
  */
 function bannerGradient(guildId: string): string {
   let h = 0;
   for (let i = 0; i < guildId.length; i++) {
     h = (h * 31 + guildId.charCodeAt(i)) >>> 0;
   }
-  const hue = h % 360;
-  return `linear-gradient(135deg, hsl(${hue} 45% 34%), hsl(${(hue + 45) % 360} 55% 16%))`;
+  const lOff = h % 6; // 0..5
+  const sOff = (h >>> 3) % 10; // 0..9
+  return `linear-gradient(135deg, hsl(174 ${55 + sOff}% ${20 + lOff}%), hsl(174 ${65 + sOff}% ${10 + lOff}%))`;
 }
 
 /**
@@ -73,18 +74,19 @@ export default function GuildCard({
       </div>
 
       {/* Ikon lingkaran menumpuk di batas bawah banner */}
-      <div className="-mt-9 flex justify-center">
+      <div className="relative z-10 -mt-9 flex justify-center">
         {url ? (
-          <Image
-            // unoptimized: icon 128px langsung dari CDN Discord, tanpa lewat
-            // Image Optimization (di jaringan tertentu CDN resolve ke IP privat
-            // dan diblokir proteksi SSRF Next.js)
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            // <img> mentah (bukan next/image): ikon 128px langsung dari CDN
+            // Discord, tanpa lewat Image Optimization — di jaringan tertentu
+            // CDN resolve ke IP privat dan diblokir proteksi SSRF Next.js.
+            // Konsisten dengan GuildHero.
             src={url}
             alt=""
             width={72}
             height={72}
             className="h-[72px] w-[72px] rounded-full ring-4 ring-panel"
-            unoptimized
           />
         ) : (
           <div
@@ -100,10 +102,17 @@ export default function GuildCard({
         <h3 className="w-full truncate text-sm font-semibold text-fg" title={name}>
           {name}
         </h3>
-        <span className="mt-2 inline-flex items-center rounded-full bg-edge px-2.5 py-1 text-[11px] font-medium text-muted">
-          {isOwner ? fs.badgeOwner : fs.badgeManager}
-        </span>
-        <p className="mt-1.5 w-full truncate text-xs text-muted">{memberText ?? noDataLabel}</p>
+        {isOwner && (
+          <span className="mt-2 inline-flex items-center rounded-full bg-edge px-2.5 py-1 text-[11px] font-medium text-muted">
+            {fs.badgeOwner}
+          </span>
+        )}
+        <p
+          className="mt-1.5 w-full truncate text-xs text-muted"
+          title={memberText ? fs.cardMembersTitle : undefined}
+        >
+          {memberText ?? noDataLabel}
+        </p>
 
         <div className="mt-4 w-full">
           {inBot ? (

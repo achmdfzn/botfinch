@@ -218,7 +218,7 @@ def test_balasan_afk_tanpa_mention():
 # (atau hanya placeholder "?"), dibuktikan oleh test terpisah di bawah.
 _FSTRING_SQL_AMAN = {
     ("store.py", "_tambah_kolom"),        # tabel/kolom/definisi divalidasi regex
-    ("cogs/economy.py", "bunga_harian"),  # {ph} = placeholder "?" saja
+    ("cogs/economy.py", "terapkan_bunga_bank"),  # {ph} = placeholder "?" saja
     ("utils/economy.py", "_klaim_cooldown"),  # kolom divalidasi _KOLOM_AMAN
     ("utils/quests.py", "klaim_quest"),   # kolom_klaim divalidasi _KOLOM_AMAN
 }
@@ -304,9 +304,9 @@ def test_lokasi_fstring_sql_whitelist_benar_terjaga():
     assert "_KOLOM_AMAN" in seg
 
     src_bunga = _sumber("cogs/economy.py")
-    seg = src_bunga[src_bunga.index("async def bunga_harian"):]
+    seg = src_bunga[src_bunga.index("def terapkan_bunga_bank"):]
     # {ph} hanya dibangun dari placeholder "?":
-    assert '",".join("?" for _ in mati)' in seg
+    assert '",".join("?" for _ in kecualikan)' in seg
 
 
 def test_klaim_cooldown_tolak_kolom_jahat():

@@ -343,13 +343,28 @@ class BlackjackView(TimeoutSafeView):
 
 
 
-def _cek_taruhan(balance: int, taruhan: int) -> str | None:
+def batas_bet_guild(guild_id: int) -> tuple[int, int]:
+    """Batas taruhan minigames per-server (dashboard `economy_min_bet`/`economy_max_bet`).
+
+    Fallback ke ECONOMY_MIN_BET/ECONOMY_MAX_BET global. Bila min > max
+    (terbalik), nilainya ditukar — selaras perilaku /kerja di utils/economy.
+    """
+    from src.cogs.dashboard_sync import get_guild_setting_int
+
+    bmin = max(1, get_guild_setting_int(guild_id, "economy_min_bet", config.settings.economy_min_bet))
+    bmax = max(1, get_guild_setting_int(guild_id, "economy_max_bet", config.settings.economy_max_bet))
+    if bmin > bmax:
+        bmin, bmax = bmax, bmin
+    return bmin, bmax
+
+
+def _cek_taruhan(balance: int, taruhan: int, guild_id: int = 0) -> str | None:
     """Return pesan error, atau None kalau taruhan valid."""
-    s = config.settings
-    if taruhan < s.economy_min_bet:
-        return f"❌ Taruhan minimal **{s.economy_min_bet}** koin."
-    if taruhan > s.economy_max_bet:
-        return f"❌ Taruhan maksimal **{s.economy_max_bet}** koin."
+    bmin, bmax = batas_bet_guild(guild_id)
+    if taruhan < bmin:
+        return f"❌ Taruhan minimal **{bmin}** koin."
+    if taruhan > bmax:
+        return f"❌ Taruhan maksimal **{bmax}** koin."
     if taruhan > balance:
         return "❌ Koin kamu tidak cukup."
     return None
@@ -389,7 +404,7 @@ class MiniGames(commands.Cog):
             return
         with get_connection() as conn:
             akun = eko.get_akun(conn, ctx.guild.id, ctx.author.id)
-            err = _cek_taruhan(akun["balance"], taruhan)
+            err = _cek_taruhan(akun["balance"], taruhan, ctx.guild.id)
             if err:
                 await ctx.send(err, ephemeral=True)
                 return
@@ -417,7 +432,7 @@ class MiniGames(commands.Cog):
             return
         with get_connection() as conn:
             akun = eko.get_akun(conn, ctx.guild.id, ctx.author.id)
-            err = _cek_taruhan(akun["balance"], taruhan)
+            err = _cek_taruhan(akun["balance"], taruhan, ctx.guild.id)
             if err:
                 await ctx.send(err, ephemeral=True)
                 return
@@ -449,7 +464,7 @@ class MiniGames(commands.Cog):
             return
         with get_connection() as conn:
             akun = eko.get_akun(conn, ctx.guild.id, ctx.author.id)
-            err = _cek_taruhan(akun["balance"], taruhan)
+            err = _cek_taruhan(akun["balance"], taruhan, ctx.guild.id)
             if err:
                 await ctx.send(err, ephemeral=True)
                 return
@@ -528,7 +543,7 @@ class MiniGames(commands.Cog):
             return
         with get_connection() as conn:
             akun = eko.get_akun(conn, ctx.guild.id, ctx.author.id)
-            err = _cek_taruhan(akun["balance"], taruhan)
+            err = _cek_taruhan(akun["balance"], taruhan, ctx.guild.id)
             if err:
                 await ctx.send(err, ephemeral=True)
                 return
@@ -551,7 +566,7 @@ class MiniGames(commands.Cog):
             return
         with get_connection() as conn:
             akun = eko.get_akun(conn, ctx.guild.id, ctx.author.id)
-            err = _cek_taruhan(akun["balance"], taruhan)
+            err = _cek_taruhan(akun["balance"], taruhan, ctx.guild.id)
             if err:
                 await ctx.send(err, ephemeral=True)
                 return
@@ -585,7 +600,7 @@ class MiniGames(commands.Cog):
             return
         with get_connection() as conn:
             akun = eko.get_akun(conn, ctx.guild.id, ctx.author.id)
-            err = _cek_taruhan(akun["balance"], taruhan)
+            err = _cek_taruhan(akun["balance"], taruhan, ctx.guild.id)
             if err:
                 await ctx.send(err, ephemeral=True)
                 return

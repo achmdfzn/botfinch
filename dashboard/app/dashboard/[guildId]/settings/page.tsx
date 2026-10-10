@@ -3,6 +3,7 @@ import { connection } from "next/server";
 import type { Metadata } from "next";
 import SiteHeader from "@/components/SiteHeader";
 import EmptyState from "@/components/EmptyState";
+import GuildErrorState from "@/components/GuildErrorState";
 import ReloadButton from "@/components/ReloadButton";
 import PageHeader from "@/components/PageHeader";
 import SettingsForm from "@/components/SettingsForm";
@@ -62,14 +63,7 @@ export default async function GuildSettingsPage({ params }: { params: Promise<{ 
   guildName = mine.name;
 
   if (!dbConfigured()) {
-    return (
-      <div>
-        <SiteHeader />
-        <main className="mx-auto max-w-3xl px-4 py-16">
-          <EmptyState title={gc.dbTitle} body={ov.dbBody} />
-        </main>
-      </div>
-    );
+    return <GuildErrorState title={gc.dbTitle} body={ov.dbBody} />;
   }
 
   const snap = await latestSnapshot();

@@ -2,8 +2,8 @@
 
 Toggle modul (key "*_enabled", "1"/"0", default "1" = perilaku lama):
 - selfroles_enabled, giveaway_enabled, responder_enabled,
-  announcements_enabled, embed_enabled. (starboard_enabled default "0" = OFF
-  selaras dashboard; lihat test_starboard_default_off_selaras_dashboard.)
+  announcements_enabled, embed_enabled, starboard_enabled. (Semua default ON
+  selaras dashboard; lihat test_starboard_default_on_selaras_dashboard.)
 - Pull settings dashboard generik (tanpa allowlist) -> key baru otomatis tersimpan.
 
 Fitur paritas MEE6:
@@ -346,11 +346,12 @@ def test_starboard_mati():
         bot.get_guild.assert_not_called()
 
 
-def test_starboard_default_off_selaras_dashboard():
-    """Regresi: starboard default OFF ("0") selaras SETTING_DEFAULTS dashboard.
+def test_starboard_default_on_selaras_dashboard():
+    """Regresi D-001: starboard default ON ("1") selaras SETTING_DEFAULTS dashboard.
 
-    modul_aktif() default ON hanya untuk modul lama — guild baru sebelum pull
-    pertama tidak boleh dianggap starboard ON.
+    Konvensi bot: modul default aktif; tanpa channel terkonfigurasi starboard
+    tetap tidak beraksi. Guild baru sebelum pull pertama yang punya channel
+    env global dianggap starboard ON.
     """
     _bersih()
     with _pengaturan(starboard_channel_id=31337, starboard_min=3):
@@ -362,7 +363,7 @@ def test_starboard_default_off_selaras_dashboard():
         payload.message_id = 111
         payload.channel_id = 222
         asyncio.run(cog._sync(payload))
-        bot.get_guild.assert_not_called()
+        bot.get_guild.assert_called_once_with(GID)
 
 
 def test_starboard_nyala_eksplisit():

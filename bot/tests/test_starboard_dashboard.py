@@ -5,8 +5,9 @@ Bug yang diperbaiki di src/cogs/starboard.py::_sync:
    (`starboard_channel_id`, `starboard_threshold`) sebelumnya diabaikan —
    bot selalu memakai env global config.settings.starboard_channel_id /
    starboard_min. Sekarang: dashboard dulu, fallback env bila kosong/tak valid.
-2. Default `starboard_enabled` dibuat eksplisit "0" (OFF) selaras
-   SETTING_DEFAULTS dashboard — modul_aktif() default "1" hanya untuk modul lama.
+2. Default `starboard_enabled` dibuat eksplisit "1" (ON) selaras
+   SETTING_DEFAULTS dashboard (D-001) — konvensi bot: modul default aktif;
+   tanpa channel terkonfigurasi starboard tetap tidak beraksi.
 
 Jalanin: .venv/bin/python -m pytest tests/test_starboard_dashboard.py -q
 """
@@ -171,11 +172,37 @@ def test_threshold_tak_valid_fallback_ke_env():
         sb_ch.send.assert_called_once()  # 3 >= min env 3
 
 
-def test_default_off_tanpa_key():
-    """Tanpa key starboard_enabled -> OFF (selaras dashboard), bukan ON."""
+def test_default_on_tanpa_key():
+    """Tanpa key starboard_enabled -> ON (selaras dashboard SETTING_DEFAULTS=true)."""
     _bersih()
+    _set("starboard_channel_id", str(CHANNEL_DASH))
+    with _pengaturan(starboard_channel_id=CHANNEL_ENV, starboard_min=3):
+        msg = _pesan(3, 777005)
+        ch_src = _channel(SRC_CHANNEL, msg)
+        sb_ch = _channel(CHANNEL_DASH)
+        bot, _ = _bot_dengan(ch_src, sb_ch)
+        cog = Starboard(bot)
+        asyncio.run(cog._sync(_payload(777005)))
+        sb_ch.send.assert_called_once()
+
+
+def test_default_on_tanpa_channel_tidak_beraksi():
+    """Default ON tapi tanpa channel terkonfigurasi -> diam (tidak crash)."""
+    _bersih()
+    with _pengaturan(starboard_channel_id=0, starboard_min=3):
+        bot = MagicMock()
+        cog = Starboard(bot)
+        asyncio.run(cog._sync(_payload(777006)))  # tidak raise
+        bot.get_guild.assert_not_called()
+
+
+def test_dimatikan_eksplisit():
+    """starboard_enabled='0' -> OFF meski channel terkonfigurasi."""
+    _bersih()
+    _set("starboard_enabled", "0")
+    _set("starboard_channel_id", str(CHANNEL_DASH))
     with _pengaturan(starboard_channel_id=CHANNEL_ENV, starboard_min=3):
         bot = MagicMock()
         cog = Starboard(bot)
-        asyncio.run(cog._sync(_payload(777005)))
+        asyncio.run(cog._sync(_payload(777007)))
         bot.get_guild.assert_not_called()

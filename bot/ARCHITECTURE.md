@@ -102,14 +102,21 @@ Fitur yang masih di memori (anti-spam) bisa di-migrate ke SQLite kalau butuh riw
 1. **Hybrid command (`!` + `/`) di v2** — prefix `!` tetap jalan buat user lama, `/` buat user modern.
    Sinkronisasi command tree via `setup_hook` (instant kalau `GUILD_ID` di-set).
 2. **Config terpusat di `src/config.py`** — tidak ada `os.getenv` tersebar di
-   cog. Nambah setting baru = tambah field di `Settings` + contoh di `.env.example`.
+   cog. Catatan: pengaturan per-guild (toggle modul, channel, dsb.) BUKAN di
+   sini — alur "setting baru" ada di bawah (§7): default + aturan validasi di
+   `SETTING_DEFAULTS`/`SETTING_RULES` (`dashboard/lib/settings.ts`), ditulis
+   dashboard ke DB, dibaca bot via sinkronisasi `dashboard_sync`.
 3. **Persistensi data via `src/store.py`** — jangan taruh query SQL di dalam cog,
    akses via `get_connection()`.
 4. **Balasan user Bahasa Indonesia santai** — ini bagian dari identitas produk
    (lihat PRD), bukan sekadar gaya kode.
-5. **Dashboard web lokal opsional** (Tahap 12, `src/cogs/utilitas.py`) — bind
-   `127.0.0.1` di `DASHBOARD_PORT`, endpoint `/` + `/api/stats`. Tidak terekspos
-   ke internet.
+5. **Dashboard web (Next.js, `../dashboard/`) + `src/cogs/dashboard_sync.py`**
+   — BUKAN utilitas.py. Sinkronisasi dua arah tiap 5 menit: bot push snapshot
+   ke `/api/ingest`, lalu pull pengaturan/self-roles/auto-responder/
+   pengumuman/giveaway/embed dari `/api/guilds/{id}/sync`. Pengaturan dibaca
+   fitur lain via helper `get_guild_setting(guild_id, key, default)` agar
+   yang diubah di dashboard benar-benar berlaku di bot. Mati total kalau
+   `DASHBOARD_URL` / `DASHBOARD_SECRET` kosong di `.env`.
 6. **Batas 100 top-level slash command** (Discord) — command dikelompokkan
    dalam `@commands.hybrid_group` (`/dagang`, `/game`, `/lomba`, …). Ketik nama
    grup saja untuk bantuan subcommand. Nambah command baru: masukkan ke grup
@@ -123,8 +130,12 @@ Fitur yang masih di memori (anti-spam) bisa di-migrate ke SQLite kalau butuh riw
 
 ## 7. Kalau mau kembangin, mulai dari sini
 
+- Setting baru (per-guild) → tambah key di `SETTING_DEFAULTS` + aturan di
+  `SETTING_RULES` (`dashboard/lib/settings.ts`), tampilkan di form/Modul
+  dashboard, lalu baca di bot via `get_guild_setting()` (sumbernya sinkronisasi
+  `dashboard_sync`, bukan baca DB langsung). (Bukan lagi field `Settings` di
+  `src/config.py` — itu hanya untuk config global bot.)
 - Fitur moderasi/komunitas baru → file baru di `src/cogs/` (pola: tiru `verification.py`).
-- Setting baru → field di `Settings` + `.env.example` + test di `tests/test_config.py`.
 - Tampilan embed baru → helper di `src/utils/embeds.py`.
 - Kejadian yang perlu diaudit → `await modlog.log_event(...)`, jangan kirim manual.
 - Logika teks murni (filter, parsing) → `src/utils/filters.py` + unit test,

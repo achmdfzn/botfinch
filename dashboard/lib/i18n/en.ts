@@ -144,8 +144,8 @@ export const en: Dict = {
       "You do not have the Manage Server permission on any server yet, or Discord has not provided the list. Ask for an admin role on your server, then reload.",
     retry: "Reload",
     sectionNotInBot: "Bot is not on these servers",
-    checking:
-      "After inviting the bot, this page checks automatically every 15 seconds: the Open Dashboard button appears on its own.",
+    sectionInBot: "Bot is installed",
+    sectionCount: "{n} servers",
     notDetected: "Not detected yet. Make sure the bot is online with DASHBOARD_URL and DASHBOARD_SECRET set.",
     botEmptyTitle: "Bot has not sent data yet",
     botEmptyBody:
@@ -154,11 +154,25 @@ export const en: Dict = {
     cardInvite: "Invite Bot",
     cardNoData: "No data from the bot yet",
     cardMembers: "{n} members",
+    cardMembersTitle: "Member count from the bot's latest snapshot",
+    searchLabel: "Search servers by name",
+    searchPlaceholder: "Search server names…",
+    filterLabel: "Filter servers",
+    filterAll: "All",
+    filterInBot: "Installed",
+    filterNotInBot: "Not installed",
+    searchResults: "Showing {n} servers",
+    noSearchResultsTitle: "No results",
+    noSearchResultsBody: 'No servers match "{q}". Try a different keyword.',
+    searchReset: "Reset search",
+    checkingInterval:
+      "After inviting the bot, this page checks automatically every {seconds} seconds: the Open Dashboard button appears on its own.",
+    dbBody:
+      "This page needs Vercel Postgres to read the bot's snapshot. See the Deploy section of the README.",
     navOpen: "Open navigation menu",
     navClose: "Close navigation menu",
     skipToContent: "Skip to main content",
     badgeOwner: "Owner",
-    badgeManager: "Manage Server",
     openAria: "Open the dashboard for {name}",
     inviteAria: "Invite the Finch bot to {name} (opens in a new tab)",
   },
@@ -479,6 +493,7 @@ export const en: Dict = {
     saveError: "Failed to save. Try again.",
     levelRolesInvalid:
       "A level-role row has no role selected — pick its role first or remove the row.",
+    workMinGtMax: "Work minimum cannot be greater than work maximum.",
     footnote: "Settings for {name}. Only members with the Manage Server permission can change them.",
     channelAuto: "Automatic (server system channel)",
     selectRole: "Select a role",
@@ -533,6 +548,10 @@ export const en: Dict = {
             label: "XP rate (%)",
             hint: "100 = normal, 200 = double.",
           },
+          voicexp_xp_per_min: {
+            label: "Voice XP per minute",
+            hint: "XP earned per minute in a voice channel. 0 = voice grants no XP.",
+          },
           leveling_announce_channel_id: { label: "Level-up announcement channel" },
           leveling_roles: {
             label: "Role rewards per level",
@@ -559,6 +578,18 @@ export const en: Dict = {
           },
           economy_work_min: { label: "Work minimum" },
           economy_work_max: { label: "Work maximum" },
+          economy_min_bet: {
+            label: "Minigame minimum bet",
+            hint: "Lower bet limit for /game (coinflip, slots, blackjack, etc).",
+          },
+          economy_max_bet: {
+            label: "Minigame maximum bet",
+            hint: "Upper bet limit for /game (coinflip, slots, blackjack, etc).",
+          },
+          bank_bunga_harian: {
+            label: "Daily bank interest (%)",
+            hint: "Interest percent paid to bank balances daily. 0 = no interest.",
+          },
         },
       },
       automod: {
@@ -570,6 +601,10 @@ export const en: Dict = {
           automod_caps: { label: "Anti excessive caps" },
           automod_badwords: { label: "Profanity filter" },
           automod_mute_minutes: { label: "Mute duration (minutes)" },
+          automod_warn_max: {
+            label: "Max warnings",
+            hint: "The n-th warning triggers an auto-mute (duration above).",
+          },
           automod_log_channel_id: { label: "Moderation log channel" },
         },
       },

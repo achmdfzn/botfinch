@@ -143,8 +143,8 @@ export const id = {
       "Kamu belum punya izin Kelola Server di server manapun, atau Discord belum memberi daftarnya. Minta role admin di servermu lalu muat ulang.",
     retry: "Muat ulang",
     sectionNotInBot: "Bot belum ada di server ini",
-    checking:
-      "Setelah mengundang bot, halaman ini memeriksa otomatis tiap 15 detik: tombol Buka Dashboard muncul sendiri.",
+    sectionInBot: "Bot sudah terpasang",
+    sectionCount: "{n} server",
     notDetected: "Belum terdeteksi. Pastikan bot online dengan DASHBOARD_URL dan DASHBOARD_SECRET terisi.",
     botEmptyTitle: "Bot belum mengirim data",
     botEmptyBody:
@@ -153,11 +153,25 @@ export const id = {
     cardInvite: "Undang Bot",
     cardNoData: "Belum ada data dari bot",
     cardMembers: "{n} member",
+    cardMembersTitle: "Jumlah member menurut snapshot terakhir dari bot",
+    searchLabel: "Cari server berdasarkan nama",
+    searchPlaceholder: "Cari nama server…",
+    filterLabel: "Filter server",
+    filterAll: "Semua",
+    filterInBot: "Terpasang",
+    filterNotInBot: "Belum terpasang",
+    searchResults: "Menampilkan {n} server",
+    noSearchResultsTitle: "Tidak ada hasil",
+    noSearchResultsBody: 'Tidak ada server yang cocok dengan "{q}". Coba kata kunci lain.',
+    searchReset: "Atur ulang pencarian",
+    checkingInterval:
+      "Setelah mengundang bot, halaman ini memeriksa otomatis tiap {seconds} detik: tombol Buka Dashboard muncul sendiri.",
+    dbBody:
+      "Halaman ini butuh Vercel Postgres untuk membaca snapshot bot. Lihat README bagian Deploy.",
     navOpen: "Buka menu navigasi",
     navClose: "Tutup menu navigasi",
     skipToContent: "Lewati ke konten utama",
     badgeOwner: "Owner",
-    badgeManager: "Kelola Server",
     openAria: "Buka dashboard server {name}",
     inviteAria: "Undang bot Finch ke server {name} (dibuka di tab baru)",
   },
@@ -478,6 +492,7 @@ export const id = {
     saveError: "Gagal menyimpan. Coba lagi.",
     levelRolesInvalid:
       "Ada baris role reward yang belum memilih role — pilih role-nya dulu atau hapus barisnya.",
+    workMinGtMax: "/kerja minimal tidak boleh lebih besar dari /kerja maksimal.",
     footnote: "Pengaturan untuk {name}. Hanya member dengan izin Kelola Server yang bisa mengubahnya.",
     channelAuto: "Otomatis (channel sistem server)",
     selectRole: "Pilih role",
@@ -532,6 +547,10 @@ export const id = {
             label: "Kecepatan XP (%)",
             hint: "100 = normal, 200 = dua kali lipat.",
           },
+          voicexp_xp_per_min: {
+            label: "XP voice per menit",
+            hint: "XP yang didapat tiap menit di voice channel. 0 = voice tidak memberi XP.",
+          },
           leveling_announce_channel_id: { label: "Channel pengumuman naik level" },
           leveling_roles: {
             label: "Role reward per level",
@@ -558,6 +577,18 @@ export const id = {
           },
           economy_work_min: { label: "/kerja minimal" },
           economy_work_max: { label: "/kerja maksimal" },
+          economy_min_bet: {
+            label: "Taruhan minimal minigames",
+            hint: "Batas bawah taruhan /game (coinflip, slot, blackjack, dst).",
+          },
+          economy_max_bet: {
+            label: "Taruhan maksimal minigames",
+            hint: "Batas atas taruhan /game (coinflip, slot, blackjack, dst).",
+          },
+          bank_bunga_harian: {
+            label: "Bunga bank harian (%)",
+            hint: "Persen bunga yang dibayar ke saldo bank tiap hari. 0 = tanpa bunga.",
+          },
         },
       },
       automod: {
@@ -569,6 +600,10 @@ export const id = {
           automod_caps: { label: "Anti caps berlebihan" },
           automod_badwords: { label: "Filter kata kasar" },
           automod_mute_minutes: { label: "Durasi mute (menit)" },
+          automod_warn_max: {
+            label: "Maksimal warning",
+            hint: "Warning ke-n memicu auto-mute (durasi di atas).",
+          },
           automod_log_channel_id: { label: "Channel log moderasi" },
         },
       },

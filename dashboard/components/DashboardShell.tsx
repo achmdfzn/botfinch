@@ -255,6 +255,31 @@ export default function DashboardShell({ guildName, guildIconUrl, navItems, chil
             ref={panelRef}
             className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col border-r border-edge bg-panel"
           >
+            {/* C-002: header drawer dengan tombol tutup eksplisit (target
+                sentuh 44px, aria-label dari i18n) — selain overlay dan
+                tombol Escape, pengguna punya cara tutup yang terlihat. */}
+            <div className="flex items-center justify-between gap-2 border-b border-edge px-3 py-2">
+              <span className="min-w-0 flex-1 truncate text-sm font-semibold text-fg">{guildName}</span>
+              <button
+                type="button"
+                onClick={close}
+                aria-label={dict.dashboard.navClose}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-edge text-fg hover:bg-edge focus-visible:outline-2 focus-visible:outline-brand"
+              >
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 20 20"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  aria-hidden="true"
+                >
+                  <path d="M4 4l12 12M16 4L4 16" />
+                </svg>
+              </button>
+            </div>
             <Sidebar {...sidebarProps} onNavigate={close} />
           </div>
         </div>

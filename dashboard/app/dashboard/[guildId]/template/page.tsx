@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
 import SiteHeader from "@/components/SiteHeader";
 import EmptyState from "@/components/EmptyState";
+import GuildErrorState from "@/components/GuildErrorState";
 import ReloadButton from "@/components/ReloadButton";
 import PageHeader from "@/components/PageHeader";
 import { getSessionSafe } from "@/lib/access";
@@ -135,14 +136,7 @@ export default async function GuildTemplate({
   guildName = mine.name;
 
   if (!dbConfigured()) {
-    return (
-      <div>
-        <SiteHeader />
-        <main className="mx-auto max-w-3xl px-4 py-16">
-          <EmptyState title={dict.guild.common.dbTitle} body={t.dbBody} />
-        </main>
-      </div>
-    );
+    return <GuildErrorState title={dict.guild.common.dbTitle} body={t.dbBody} />;
   }
 
   const snap = await latestSnapshot();

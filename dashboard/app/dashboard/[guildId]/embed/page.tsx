@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import SiteHeader from "@/components/SiteHeader";
 import EmptyState from "@/components/EmptyState";
+import GuildErrorState from "@/components/GuildErrorState";
 import ReloadButton from "@/components/ReloadButton";
 import PageHeader from "@/components/PageHeader";
 import EmbedBuilder from "@/components/EmbedBuilder";
@@ -59,14 +60,7 @@ export default async function GuildEmbed({ params }: { params: Promise<{ guildId
   guildName = mine.name;
 
   if (!dbConfigured()) {
-    return (
-      <div>
-        <SiteHeader />
-        <main className="mx-auto max-w-3xl px-4 py-16">
-          <EmptyState title={dict.guild.common.dbTitle} body={g.dbBody} />
-        </main>
-      </div>
-    );
+    return <GuildErrorState title={dict.guild.common.dbTitle} body={g.dbBody} />;
   }
 
   const snap = await latestSnapshot();

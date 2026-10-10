@@ -6,7 +6,8 @@
 - Config: STARBOARD_CHANNEL_ID, STARBOARD_MIN (fallback env global bila
   dashboard belum mengatur per-server).
 - Bisa dimatikan per-server via dashboard: toggle `starboard_enabled` ("1"/"0",
-  default "0" = OFF selaras dashboard SETTING_DEFAULTS). Channel & ambang
+  default "1" = ON selaras dashboard SETTING_DEFAULTS; tanpa channel
+  terkonfigurasi starboard tetap tidak beraksi). Channel & ambang
   per-server via key `starboard_channel_id` / `starboard_threshold`.
 """
 import logging
@@ -68,9 +69,12 @@ class Starboard(commands.Cog):
         if payload.guild_id is None:
             return
         gid = payload.guild_id
-        # Starboard default OFF selaras dashboard (SETTING_DEFAULTS starboard=false).
-        # modul_aktif() default ON hanya berlaku untuk modul lama — jangan dipakai di sini.
-        if get_guild_setting(gid, "starboard_enabled", "0") != "1":
+        # Starboard default ON selaras dashboard (SETTING_DEFAULTS starboard=true):
+        # modul default aktif; tanpa channel terkonfigurasi tetap tidak beraksi
+        # (sb_id = 0 -> return di bawah).
+        # modul_aktif() tidak dipakai karena default "1"-nya tidak eksplisit
+        # untuk key non-"*_enabled" lama — di sini eksplisit "1".
+        if get_guild_setting(gid, "starboard_enabled", "1") != "1":
             return
         # Channel & ambang: utamakan per-server dari dashboard, fallback env global.
         sb_id = get_guild_setting_int(

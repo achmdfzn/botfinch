@@ -1,10 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { PluginGroup, PluginTab } from "@/lib/plugins";
 import PluginTabs, { usePluginTabQuery } from "./PluginTabs";
+import { useOptimisticSettingToggle } from "./useOptimisticSettingToggle";
 import { fmt } from "@/lib/i18n/client";
 
 export type { PluginTab };
@@ -66,38 +66,15 @@ export default function PluginCards({
   labels,
 }: Props) {
   const [tab, setTab] = usePluginTabQuery(initialTab);
-  const [values, setValues] = useState<Record<string, boolean>>(initial);
-  const [saving, setSaving] = useState<string | null>(null);
-  const [error, setError] = useState<boolean>(false);
   const router = useRouter();
-  // Guard klik ganda: abaikan toggle yang request-nya masih berjalan
-  // (optimistik + rollback; race dua PUT bisa membalik rollback).
-  const inflight = useRef(new Set<string>());
-
-  async function toggle(key: string, v: boolean) {
-    if (inflight.current.has(key)) return;
-    inflight.current.add(key);
-    setError(false);
-    setSaving(key);
-    setValues((prev) => ({ ...prev, [key]: v }));
-    try {
-      const res = await fetch(`/api/guilds/${guildId}/settings`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [key]: v }),
-      });
-      if (!res.ok) throw new Error("http");
-      // Segarkan data server (mis. hitungan "N dari M plugin aktif" di header)
-      // — state kartu sudah optimistik, jadi refresh aman.
-      router.refresh();
-    } catch {
-      setValues((prev) => ({ ...prev, [key]: !v }));
-      setError(true);
-    } finally {
-      inflight.current.delete(key);
-      setSaving(null);
-    }
-  }
+  // Toggle optimistik + rollback; setelah sukses, segarkan data server
+  // (mis. hitungan "N dari M plugin aktif" di header) — state kartu sudah
+  // optimistik, jadi refresh aman.
+  const { values, saving, error, toggle } = useOptimisticSettingToggle(
+    guildId,
+    initial,
+    () => router.refresh(),
+  );
 
   const tabLabel = (t: PluginTab): string => (t === "all" ? labels.tabAll : groupTitles[t]);
   const visible = plugins.filter((p) => tab === "all" || p.group === tab);

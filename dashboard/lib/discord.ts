@@ -37,6 +37,13 @@ export function inviteUrl(): string {
   // aman karena undefined -> "".
   const clientId =
     process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID ?? process.env.DISCORD_CLIENT_ID ?? "";
+  // E-S14: tanpa client ID, tombol "Undang Bot" menghasilkan URL rusak
+  // (client_id= kosong). Peringatan server-side agar operator tahu.
+  if (typeof window === "undefined" && !clientId) {
+    console.warn(
+      "[invite] NEXT_PUBLIC_DISCORD_CLIENT_ID kosong — tombol Undang Bot akan menghasilkan URL invite yang rusak. Isi di environment.",
+    );
+  }
   // Bitmask least-privilege hasil audit pemakaian izin nyata bot
   // (bot/src/cogs): tanpa Administrator, kick, ban, connect/speak,
   // manage_guild. Lihat INVITE_PERMISSIONS di bawah untuk rinciannya.

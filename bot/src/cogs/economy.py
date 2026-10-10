@@ -83,6 +83,73 @@ def _update_streak(conn, guild_id: int, user_id: int, now) -> tuple[int, int]:
     return streak, bonus
 
 
+def bunga_guild(guild_id: int) -> int:
+    """Bunga bank harian efektif untuk satu server (persen).
+
+    Override per-server via dashboard (`bank_bunga_harian`, 0–100);
+    fallback ke BANK_BUNGA_HARIAN global bila belum dikonfigurasi.
+    """
+    from src.cogs.dashboard_sync import get_guild_setting_int
+
+    return max(0, min(100, get_guild_setting_int(guild_id, "bank_bunga_harian", config.settings.bank_bunga_harian)))
+
+
+def bunga_override_map(conn) -> dict[int, int]:
+    """Peta guild_id -> bunga (%) dari dashboard (`bank_bunga_harian`).
+
+    Nilai mentah di-clamp 0–100; nilai 0/tak valid dilewati (server itu
+    memakai rate global). Pure DB — gampang dites.
+    """
+    hasil: dict[int, int] = {}
+    for gid_r, val in conn.execute(
+        "SELECT guild_id, value FROM dashboard_settings WHERE key = 'bank_bunga_harian'"
+    ).fetchall():
+        try:
+            r = max(0, min(100, int(val)))
+        except (TypeError, ValueError):
+            continue
+        if r > 0:
+            hasil[int(gid_r)] = r
+    return hasil
+
+
+def terapkan_bunga_bank(conn, bunga_global: int, override: dict[int, int], mati: set) -> int:
+    """Terapkan bunga bank ke semua row bank > 0. Return jumlah akun dibayar.
+
+    Server di `override` dibayar dengan rate-nya sendiri; sisanya memakai
+    `bunga_global`. Server di `mati` (modul ekonomi dimatikan) dilewati.
+    Pure DB — gampang dites.
+    """
+    total = 0
+    for gid_o, bunga in override.items():
+        if gid_o in mati:
+            continue
+        cur = conn.execute(
+            "UPDATE economy SET bank = bank + CAST(bank * ? / 100 AS INTEGER)"
+            " WHERE bank > 0 AND guild_id = ?",
+            (bunga, gid_o),
+        )
+        total += cur.rowcount
+    if bunga_global > 0:
+        kecualikan = set(mati) | set(override)
+        if kecualikan:
+            ph = ",".join("?" for _ in kecualikan)
+            cur = conn.execute(
+                "UPDATE economy SET bank = bank + CAST(bank * ? / 100 AS INTEGER)"
+                # {ph} AMAN: hanya placeholder "?" yang digabung koma
+                # (pola IN (?, ?, ...) standar) — bukan input mentah.
+                f" WHERE bank > 0 AND guild_id NOT IN ({ph})",
+                (bunga_global, *kecualikan),
+            )
+        else:
+            cur = conn.execute(
+                "UPDATE economy SET bank = bank + CAST(bank * ? / 100 AS INTEGER) WHERE bank > 0",
+                (bunga_global,),
+            )
+        total += cur.rowcount
+    return total
+
+
 class Economy(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -300,7 +367,7 @@ class Economy(commands.Cog):
         embed.add_field(name="Di Bank", value=f"**{bank}** koin", inline=True)
         embed.add_field(
             name="Bunga",
-            value=f"**{config.settings.bank_bunga_harian}%**/hari",
+            value=f"**{bunga_guild(ctx.guild.id)}%**/hari",
             inline=True,
         )
         await ctx.send(embed=embed)
@@ -383,9 +450,13 @@ class Economy(commands.Cog):
 
         Server yang mematikan modul ekonomi via dashboard (`economy_enabled=0`)
         dilewati — tidak ada bunga yang dibayar di sana.
+        Bunga bisa dioverride per-server via dashboard (`bank_bunga_harian`,
+        0–100); server tanpa override memakai BANK_BUNGA_HARIAN global.
         """
-        bunga = config.settings.bank_bunga_harian
-        if bunga <= 0:
+        bunga_global = max(0, min(100, config.settings.bank_bunga_harian))
+        with get_connection() as conn:
+            override = bunga_override_map(conn)
+        if bunga_global <= 0 and not override:
             return
         # Idempoten per hari: loop jalan lagi tiap restart bot — tanpa gate,
         # bunga dibayar ganda dalam sehari yang sama.
@@ -403,23 +474,16 @@ class Economy(commands.Cog):
                         " WHERE key = 'economy_enabled' AND value = '0'"
                     ).fetchall()
                 }
-                if mati:
-                    ph = ",".join("?" for _ in mati)
-                    cur = conn.execute(
-                        "UPDATE economy SET bank = bank + CAST(bank * ? / 100 AS INTEGER)"
-                        # {ph} AMAN: hanya placeholder "?" yang digabung koma
-                        # (pola IN (?, ?, ...) standar) — bukan input mentah.
-                        f" WHERE bank > 0 AND guild_id NOT IN ({ph})",
-                        (bunga, *mati),
+                total = terapkan_bunga_bank(conn, bunga_global, override, mati)
+                for gid_o, bunga in override.items():
+                    if gid_o in mati:
+                        continue
+                    log.info(
+                        "Bunga bank harian %d%% diterapkan (guild %d).",
+                        bunga, gid_o,
                     )
-                else:
-                    cur = conn.execute(
-                        "UPDATE economy SET bank = bank + CAST(bank * ? / 100 AS INTEGER) WHERE bank > 0",
-                        (bunga,),
-                    )
-                n = cur.rowcount
                 conn.commit()
-            log.info("Bunga bank harian %d%% diterapkan ke %d akun.", bunga, n)
+            log.info("Bunga bank harian: total %d akun dibayar (global %d%%).", total, bunga_global)
         except Exception:
             log.exception("Gagal terapkan bunga bank harian")
 

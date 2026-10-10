@@ -50,3 +50,13 @@ server terpilih. Maskot finch sebagai logo teks+avatar.
 
 "Dashboard admin web untuk admin server Discord, gaya panel admin bot Discord yang
 familiar, identitas Finch (teal, playful tapi rapi), dial ENERGY 2 / RHYTHM 2 / MOTION 1."
+
+## Pengecualian beralasan
+
+- **Gradient banner kartu server** (halaman pilih server): dikecualikan dari
+  R-01 ("tanpa gradient") karena fungsional, bukan dekorasi — banner memberi
+  identitas visual per-server agar admin cepat membedakan servernya. Hue
+  dikunci ke teal brand (~174); hash ID server hanya memvariasikan
+  lightness/saturasi dalam rentang sempit (pola titik halus dipertahankan).
+  Banner selalu dibuat lokal (Discord tidak mengembalikan banner), bukan aset
+  pihak ketiga.

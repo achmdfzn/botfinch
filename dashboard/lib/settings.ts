@@ -45,7 +45,7 @@ export const SETTING_DEFAULTS: Record<string, boolean | string | number> = {
   leveling_enabled: true,
   economy_enabled: true,
   automod_enabled: true,
-  starboard_enabled: false,
+  starboard_enabled: true,
   starboard_channel_id: "",
   starboard_threshold: 3,
   // welcome detail
@@ -60,6 +60,7 @@ export const SETTING_DEFAULTS: Record<string, boolean | string | number> = {
   leveling_xp_rate: 100,
   leveling_announce_channel_id: "",
   leveling_roles: "[]",
+  voicexp_xp_per_min: 5,
   levelup_style: "classic",
   // automod detail
   automod_spam: true,
@@ -67,11 +68,15 @@ export const SETTING_DEFAULTS: Record<string, boolean | string | number> = {
   automod_caps: true,
   automod_badwords: true,
   automod_mute_minutes: 10,
+  automod_warn_max: 3,
   automod_log_channel_id: "",
   // ekonomi detail
   economy_daily: 100,
   economy_work_min: 50,
   economy_work_max: 150,
+  economy_min_bet: 10,
+  economy_max_bet: 5000,
+  bank_bunga_harian: 2,
   // toggle plugin baru (bot menentukan default sendiri; dasbor memakai true)
   selfroles_enabled: true,
   giveaway_enabled: true,
@@ -112,16 +117,21 @@ export const SETTING_RULES: Record<string, Rule> = {
   leveling_xp_rate: { kind: "num", min: 25, max: 400 },
   leveling_announce_channel_id: { kind: "str", max: 32 },
   leveling_roles: { kind: "str", max: 4000 },
+  voicexp_xp_per_min: { kind: "num", min: 0, max: 60 },
   levelup_style: { kind: "enum", values: ["classic", "minimal", "party", "mention"] },
   automod_spam: { kind: "bool" },
   automod_invites: { kind: "bool" },
   automod_caps: { kind: "bool" },
   automod_badwords: { kind: "bool" },
   automod_mute_minutes: { kind: "num", min: 1, max: 10080 },
+  automod_warn_max: { kind: "num", min: 1, max: 10 },
   automod_log_channel_id: { kind: "str", max: 32 },
   economy_daily: { kind: "num", min: 0, max: 100000 },
   economy_work_min: { kind: "num", min: 0, max: 100000 },
   economy_work_max: { kind: "num", min: 0, max: 100000 },
+  economy_min_bet: { kind: "num", min: 1, max: 100000 },
+  economy_max_bet: { kind: "num", min: 1, max: 100000 },
+  bank_bunga_harian: { kind: "num", min: 0, max: 100 },
   selfroles_enabled: { kind: "bool" },
   giveaway_enabled: { kind: "bool" },
   responder_enabled: { kind: "bool" },
@@ -198,6 +208,14 @@ export const MODULES: ModuleDef[] = [
         max: 400,
         hint: "100 = normal, 200 = dua kali lipat.",
       },
+      {
+        key: "voicexp_xp_per_min",
+        label: "XP voice per menit",
+        kind: "number",
+        min: 0,
+        max: 60,
+        hint: "XP yang didapat tiap menit di voice channel. 0 = voice tidak memberi XP.",
+      },
       { key: "leveling_announce_channel_id", label: "Channel pengumuman naik level", kind: "channel" },
       {
         key: "leveling_roles",
@@ -218,9 +236,40 @@ export const MODULES: ModuleDef[] = [
     title: "Ekonomi",
     description: "Koin, daily, kerja, bank, dan toko. Mati = semua command ekonomi ditolak.",
     fields: [
-      { key: "economy_daily", label: "Hadiah /daily", kind: "number", min: 0, max: 100000 },
+      {
+        key: "economy_daily",
+        label: "Hadiah /daily",
+        kind: "number",
+        min: 0,
+        max: 100000,
+        hint: "Jangan diubah: bot memberi hadiah acak 100–300. Isi angka untuk memakai hadiah tetap.",
+      },
       { key: "economy_work_min", label: "/kerja minimal", kind: "number", min: 0, max: 100000 },
       { key: "economy_work_max", label: "/kerja maksimal", kind: "number", min: 0, max: 100000 },
+      {
+        key: "economy_min_bet",
+        label: "Taruhan minimal minigames",
+        kind: "number",
+        min: 1,
+        max: 100000,
+        hint: "Batas bawah taruhan /game (coinflip, slot, blackjack, dst).",
+      },
+      {
+        key: "economy_max_bet",
+        label: "Taruhan maksimal minigames",
+        kind: "number",
+        min: 1,
+        max: 100000,
+        hint: "Batas atas taruhan /game (coinflip, slot, blackjack, dst).",
+      },
+      {
+        key: "bank_bunga_harian",
+        label: "Bunga bank harian (%)",
+        kind: "number",
+        min: 0,
+        max: 100,
+        hint: "Persen bunga yang dibayar ke saldo bank tiap hari. 0 = tanpa bunga.",
+      },
     ],
   },
   {
@@ -233,6 +282,14 @@ export const MODULES: ModuleDef[] = [
       { key: "automod_caps", label: "Anti caps berlebihan", kind: "toggle" },
       { key: "automod_badwords", label: "Filter kata kasar", kind: "toggle" },
       { key: "automod_mute_minutes", label: "Durasi mute (menit)", kind: "number", min: 1, max: 10080 },
+      {
+        key: "automod_warn_max",
+        label: "Maksimal warning",
+        kind: "number",
+        min: 1,
+        max: 10,
+        hint: "Warning ke-n memicu auto-mute (durasi di atas).",
+      },
       { key: "automod_log_channel_id", label: "Channel log moderasi", kind: "channel" },
     ],
   },
@@ -332,6 +389,11 @@ export const MODULES: ModuleDef[] = [
   },
 ];
 
+/** Pola ID Discord (snowflake): 5–25 digit. Dipakai ulang di semua validasi ID. */
+const DISCORD_ID_RE = /^\d{5,25}$/;
+/** Badan pola ID tanpa anchor ^$ — untuk disusun ke pola gabungan (mis. CSV). */
+const DISCORD_ID_BODY = DISCORD_ID_RE.source.replace(/^\^|\$$/g, "");
+
 /** Validasi satu nilai sesuai rule. Kembalikan nilai bersih atau undefined (tolak). */
 export function cleanValue(key: string, v: unknown): boolean | string | number | undefined {
   const rule = SETTING_RULES[key];
@@ -344,10 +406,13 @@ export function cleanValue(key: string, v: unknown): boolean | string | number |
     // CSV ID role: kosong (tak perlu auto-role) atau daftar ID digit,
     // mis. "123456789, 987654321". Tolak format lain agar bot tidak
     // menerima ID role sampah.
+    // Catatan: DISCORD_ID_RE.source mengandung ^$, jadi anchor-nya
+    // dikupas dulu sebelum disusun ke pola CSV (kalau tidak, pola jadi
+    // ^(^\d{5,25}$)(,\s*^\d{5,25}$)*$ yang tak pernah cocok untuk >1 ID).
     if (
       key === "welcome_role_ids" &&
       v !== "" &&
-      !/^(\d{5,25})(,\s*\d{5,25})*$/.test(v)
+      !new RegExp(`^(${DISCORD_ID_BODY})(,\\s*${DISCORD_ID_BODY})*$`).test(v)
     )
       return undefined;
     // ID channel/kategori/lobby: hanya digit (atau kosong = ikut config global bot)
@@ -356,7 +421,7 @@ export function cleanValue(key: string, v: unknown): boolean | string | number |
         key.endsWith("_category_id") ||
         key.endsWith("_lobby_id")) &&
       v !== "" &&
-      !/^\d{1,25}$/.test(v)
+      !DISCORD_ID_RE.test(v)
     )
       return undefined;
     return v.slice(0, rule.max);
@@ -377,7 +442,7 @@ function validLevelRoles(s: string): boolean {
         r.level >= 1 &&
         r.level <= 500 &&
         typeof r.role_id === "string" &&
-        /^\d{5,25}$/.test(r.role_id),
+        DISCORD_ID_RE.test(r.role_id),
     );
   } catch {
     return false;

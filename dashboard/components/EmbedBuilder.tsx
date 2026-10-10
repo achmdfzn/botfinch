@@ -165,7 +165,7 @@ export default function EmbedBuilder({
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
+    <div className="grid gap-6 xl:grid-cols-2">
       {/* Form */}
       <div className="rounded-xl border border-edge bg-panel p-5">
         <h2 className="text-sm font-semibold text-fg">{g.formTitle}</h2>

@@ -1,10 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
 import Link from "next/link";
 import type { ModuleDef } from "@/lib/settings";
 import { useI18n } from "./I18nProvider";
 import { fmt } from "@/lib/i18n/client";
+import { useOptimisticSettingToggle } from "./useOptimisticSettingToggle";
 import Toggle from "./Toggle";
 
 export default function ModuleToggles({
@@ -17,34 +17,8 @@ export default function ModuleToggles({
   initial: Record<string, boolean>;
 }) {
   const { dict } = useI18n();
-  const [values, setValues] = useState<Record<string, boolean>>(initial);
-  const [saving, setSaving] = useState<string | null>(null);
-  const [error, setError] = useState<boolean>(false);
-  // Guard klik ganda: abaikan toggle yang request-nya masih berjalan
-  // (optimistik + rollback; race dua PUT bisa membalik rollback).
-  const inflight = useRef(new Set<string>());
-
-  async function toggle(key: string, v: boolean) {
-    if (inflight.current.has(key)) return;
-    inflight.current.add(key);
-    setError(false);
-    setSaving(key);
-    setValues((prev) => ({ ...prev, [key]: v }));
-    try {
-      const res = await fetch(`/api/guilds/${guildId}/settings`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [key]: v }),
-      });
-      if (!res.ok) throw new Error("http");
-    } catch {
-      setValues((prev) => ({ ...prev, [key]: !v }));
-      setError(true);
-    } finally {
-      inflight.current.delete(key);
-      setSaving(null);
-    }
-  }
+  // Toggle optimistik + rollback (alur identik dengan PluginCards).
+  const { values, saving, error, toggle } = useOptimisticSettingToggle(guildId, initial);
 
   return (
     <div>

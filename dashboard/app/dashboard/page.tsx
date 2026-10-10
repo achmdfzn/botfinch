@@ -8,7 +8,7 @@ import { SignInButton } from "@/components/AuthButtons";
 import { getSessionSafe } from "@/lib/access";
 import { canManage } from "@/lib/discord";
 import { fetchUserGuilds } from "@/lib/access";
-import { latestSnapshot } from "@/lib/db";
+import { latestSnapshot, dbConfigured } from "@/lib/db";
 import { getDict, getLang } from "@/lib/i18n";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -21,12 +21,22 @@ export default async function Dashboard() {
   const lang = await getLang();
   const dict = getDict(lang);
   const d = dict.dashboard;
+  // Skip link konsisten dengan DashboardShell (E-I07)
+  const skipLink = (
+    <a
+      href="#konten-utama"
+      className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-brand focus:px-4 focus:py-2 focus:font-semibold focus:text-ink"
+    >
+      {d.skipToContent}
+    </a>
+  );
   const session = await getSessionSafe();
   if (!session?.accessToken) {
     return (
       <div>
         <SiteHeader />
-        <main className="mx-auto max-w-3xl px-4 py-16">
+        {skipLink}
+        <main id="konten-utama" className="mx-auto max-w-3xl px-4 py-16">
           <EmptyState title={d.signinTitle} body={d.signinBody} action={<SignInButton />} />
         </main>
       </div>
@@ -38,7 +48,8 @@ export default async function Dashboard() {
   const loadError = (
     <div>
       <SiteHeader />
-      <main className="mx-auto max-w-3xl px-4 py-16">
+      {skipLink}
+      <main id="konten-utama" className="mx-auto max-w-3xl px-4 py-16">
         <EmptyState
           title={d.loadTitle}
           body={d.loadBody}
@@ -58,6 +69,20 @@ export default async function Dashboard() {
     manageable = guilds.filter(canManage);
   } catch {
     return loadError;
+  }
+
+  // DB tidak dikonfigurasi: nyatakan eksplisit sebagai error konfigurasi
+  // (A-002) — jangan disamarkan sebagai "bot belum terdeteksi".
+  if (!dbConfigured()) {
+    return (
+      <div>
+        <SiteHeader />
+        {skipLink}
+        <main id="konten-utama" className="mx-auto max-w-3xl px-4 py-16">
+          <EmptyState title={dict.guild.common.dbTitle} body={d.dbBody} />
+        </main>
+      </div>
+    );
   }
 
   // Snapshot DB bisa gagal walau DB terkonfigurasi (query error). Tanpa
@@ -82,10 +107,16 @@ export default async function Dashboard() {
     }
   }
 
+  // Urutan kartu stabil berdasarkan nama (B-009a).
+  const byName = (a: GuildLite, b: GuildLite) => a.name.localeCompare(b.name, lang);
+  inBot.sort(byName);
+  notInBot.sort(byName);
+
   return (
     <div>
       <SiteHeader />
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+      {skipLink}
+      <main id="konten-utama" className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
         {/* Judul rata tengah ala halaman pilih server referensi */}
         <div className="text-center">
           <h1 className="text-2xl font-bold tracking-tight text-fg">{d.title}</h1>

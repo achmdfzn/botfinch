@@ -63,7 +63,7 @@ export default function GuildHero({
             <p className="mt-1 text-sm text-muted">{subtitle}</p>
           </div>
         </div>
-        <dl className="flex shrink-0 gap-6 sm:gap-8">
+        <dl className="flex shrink-0 flex-wrap gap-6 sm:gap-8">
           <div>
             <dt className="text-xs text-muted">{statPlugins}</dt>
             <dd className="text-2xl font-bold text-fg">

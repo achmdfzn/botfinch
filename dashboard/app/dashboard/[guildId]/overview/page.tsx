@@ -4,6 +4,7 @@ import { connection } from "next/server";
 import type { Metadata } from "next";
 import SiteHeader from "@/components/SiteHeader";
 import EmptyState from "@/components/EmptyState";
+import GuildErrorState from "@/components/GuildErrorState";
 import ReloadButton from "@/components/ReloadButton";
 import PageHeader from "@/components/PageHeader";
 import StatCard from "@/components/StatCard";
@@ -61,14 +62,7 @@ export default async function GuildOverviewPage({ params }: { params: Promise<{ 
   if (!mine) notFound();
 
   if (!dbConfigured()) {
-    return (
-      <div>
-        <SiteHeader />
-        <main className="mx-auto max-w-3xl px-4 py-16">
-          <EmptyState title={gc.dbTitle} body={ov.dbBody} />
-        </main>
-      </div>
-    );
+    return <GuildErrorState title={gc.dbTitle} body={ov.dbBody} />;
   }
 
   const snap = await latestSnapshot();
@@ -119,7 +113,7 @@ export default async function GuildOverviewPage({ params }: { params: Promise<{ 
 
         <section aria-label={ov.shortcutsTitle}>
           <h2 className="text-base font-semibold text-fg">{ov.shortcutsTitle}</h2>
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {shortcuts.map((s) => (
               <Link
                 key={s.href}

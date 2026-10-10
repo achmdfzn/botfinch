@@ -4,7 +4,9 @@
 import type { EmbedField } from "@/lib/db";
 
 export const DISCORD_ID_RE = /^\d{5,25}$/;
-const URL_RE = /^https?:\/\//i;
+// E-S10: hanya https:// yang diterima (tolak http://) — mixed content dan
+// URL tak terenkripsi tidak pantas untuk embed/image yang dirender dashboard.
+const URL_RE = /^https:\/\//i;
 const COLOR_RE = /^[0-9A-Fa-f]{6}$/;
 
 /** String biasa, dibatasi panjang (tanpa trim paksa pada hasil selain spasi ujung). */
@@ -27,7 +29,7 @@ export function discordId(v: unknown): string | undefined {
   return DISCORD_ID_RE.test(s) ? s : undefined;
 }
 
-/** URL opsional: kosong = "", selain itu harus http(s) dan dalam batas panjang. */
+/** URL opsional: kosong = "", selain itu harus https dan dalam batas panjang. */
 export function httpUrl(v: unknown, max = 500): string | undefined {
   if (v === undefined || v === null) return "";
   if (typeof v !== "string") return undefined;

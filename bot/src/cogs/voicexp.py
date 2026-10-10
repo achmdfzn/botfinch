@@ -41,6 +41,17 @@ def sendiri_di_voice(channel, user_id: int) -> bool:
     return True
 
 
+def voicexp_per_menit(guild_id: int) -> int:
+    """XP voice per menit untuk satu server.
+
+    Override per-server via dashboard (`voicexp_xp_per_min`, 0–60);
+    fallback ke VOICE_XP_PER_MIN global bila belum dikonfigurasi.
+    """
+    from src.cogs.dashboard_sync import get_guild_setting_int
+
+    return max(0, min(60, get_guild_setting_int(guild_id, "voicexp_xp_per_min", config.settings.voice_xp_per_min)))
+
+
 class VoiceXP(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -82,7 +93,7 @@ class VoiceXP(commands.Cog):
             ekonomi_on = modul_aktif(gid, "economy_enabled")
             lvl, naik = 0, False
             if leveling_on:
-                xp = menit * config.settings.voice_xp_per_min
+                xp = menit * voicexp_per_menit(gid)
                 try:
                     with get_connection() as conn:
                         lvl, naik = tambah_xp(conn, gid, uid, xp)

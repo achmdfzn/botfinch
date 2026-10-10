@@ -3,6 +3,7 @@
 - Pesan mengandung kata di BAD_WORDS (.env) → dihapus + warning tercatat di DB.
 - Warning mencapai WARN_MAX (default 3) → auto-mute MUTE_DURATION_MINUTES
   (pakai Discord timeout, persisten seperti auto-mute spam).
+  Ambang bisa dioverride per-server via dashboard (`automod_warn_max`, 1–10).
 - Moderator (Manage Messages) bypass filter.
 - `/warnings [@user]` cek warning, `/reset-warn @user` reset (khusus mod).
 - Anti-hoist ala Dyno/MEE6: display_name yang diawali karakter dekoratif
@@ -33,6 +34,17 @@ async def _kirim_aman(channel, teks: str, **kwargs) -> None:
         await channel.send(teks, **kwargs)
     except (discord.Forbidden, discord.HTTPException):
         pass
+
+
+def warn_max_guild(guild_id: int) -> int:
+    """Ambang warning pemicu auto-mute untuk satu server.
+
+    Override per-server via dashboard (`automod_warn_max`, 1–10);
+    fallback ke WARN_MAX global bila belum dikonfigurasi.
+    """
+    from src.cogs.dashboard_sync import get_guild_setting_int
+
+    return max(1, min(10, get_guild_setting_int(guild_id, "automod_warn_max", config.settings.warn_max)))
 
 
 def _strip_hoist(nama: str) -> str | None:
@@ -169,7 +181,7 @@ class AutoMod(commands.Cog):
             )
             return
         count = row[0] if row else 1
-        maks = max(1, config.settings.warn_max)
+        maks = warn_max_guild(gid)
         # Override per-server via dashboard (batas aman 1–10080 menit)
         durasi = max(1, min(10080, get_guild_setting_int(gid, "automod_mute_minutes", config.settings.mute_duration_minutes)))
         log_ch = int(get_guild_setting(gid, "automod_log_channel_id", "") or 0) or None
@@ -242,7 +254,7 @@ class AutoMod(commands.Cog):
                 (target.id, gid),
             ).fetchone()
         count = row[0] if row else 0
-        maks = max(1, config.settings.warn_max)
+        maks = warn_max_guild(gid)
         embed = base_embed(
             f"⚠️ Warning — {target.display_name}",
             f"**{count}/{maks}** warning.\n"
