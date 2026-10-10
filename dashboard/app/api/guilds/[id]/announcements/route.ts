@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { createAnnouncement, listAnnouncements } from "@/lib/db";
+import { createAnnouncement, listAnnouncements, withDbError } from "@/lib/db";
 import { requireManager } from "@/lib/access";
 import { discordId, intervalMinutes, isoDateTime, parseJsonBody, str } from "@/lib/validate";
 
 
 /** Daftar pengumuman terjadwal/berulang (manager). */
-export async function GET(
+async function getImpl(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -20,7 +20,7 @@ export async function GET(
 }
 
 /** Buat pengumuman baru (dieksekusi bot). */
-export async function POST(
+async function postImpl(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -50,3 +50,6 @@ export async function POST(
   });
   return NextResponse.json({ ok: true, id: annId });
 }
+
+export const GET = withDbError(getImpl);
+export const POST = withDbError(postImpl);

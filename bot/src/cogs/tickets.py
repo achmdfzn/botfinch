@@ -201,7 +201,11 @@ async def buat_tiket(
         nama = f"{nama}-{member.id % 100000}"
 
     category = None
-    cat_id = config.settings.ticket_category_id
+    # Kategori tiket bisa diatur per-server via dashboard (ticket_category_id);
+    # fallback ke TICKET_CATEGORY_ID global bila belum diatur.
+    from src.cogs.dashboard_sync import channel_setting
+
+    cat_id = channel_setting(guild.id, "ticket_category_id", config.settings.ticket_category_id)
     if cat_id:
         ch = guild.get_channel(cat_id)
         if isinstance(ch, discord.CategoryChannel):

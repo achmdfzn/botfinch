@@ -40,6 +40,11 @@ class seperti `bg-panel` otomatis mengikuti tema aktif.
   `bg-[#1e1f22]` / `bg-[#2b2d31]` untuk kotak *pratinjau embed*. Itu tiruan
   tampilan Discord yang warnanya tetap gelap; biarkan hardcoded (alasan:
   preview harus terlihat seperti di Discord, bukan mengikuti tema dasbor).
+- Pengecualian tercatat (kedua): hero landing (`dashboard/app/page.tsx`)
+  memakai `bg-[#0b0e14]`, `text-[#a8adb8]`, `bg-[#2ec4b6]`, `text-[#062a27]`
+  yang hardcoded. Itu keputusan desain yang disengaja: hero gelap permanen
+  ala referensi produk (bukan mengikuti token tema), kontrasnya aman di
+  kedua tema. Jangan "memperbaiki" menjadi token tema.
 - Toggle tema: `components/ThemeToggle.tsx` (client). Menyimpan
   `localStorage 'finch-theme'`, class `light` di `<html>`. Script anti-FOUC
   di `app/layout.tsx` memasang class SEBELUM paint; jangan pindahkan.
@@ -50,11 +55,12 @@ class seperti `bg-panel` otomatis mengikuti tema aktif.
 - Kamus: `lib/i18n/id.ts` (sumber kebenaran) dan `lib/i18n/en.ts`.
   `en: Dict` (`Dict = typeof id`) membuat TypeScript **memaksa** struktur
   identik. Tambah key = wajib di dua file, atau build gagal.
-- Namespace: `nav`, `auth`, `theme`, `lang`, `common`, `loading`, `errors`,
+- Namespace: `nav`, `auth`, `theme`, `lang`, `common`, `loading`,
   `landing`, `dashboard`, `guild.{common,subnav,overview,modul,leaderboard,
   selfroles,responder,giveaway,embed,pengumuman,modlog}`, `settings`
   (termasuk `settings.modules.<key>.fields` untuk label/hint/placeholder
-  SettingsForm).
+  SettingsForm). (Catatan: namespace `errors` pernah tercantum di sini
+  tetapi tidak ada di kamus — dihapus dari daftar agar tidak menyesatkan.)
 - `lib/i18n/index.ts` (server only): `getLang()` baca cookie `finch-lang`,
   `getDict(lang)`, `fmt(tmpl, vars)` untuk interpolasi `{var}`.
 - `lib/i18n/client.ts`: versi aman-client (`getDict`, `fmt`, tipe).

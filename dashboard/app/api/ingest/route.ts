@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
-import { dbConfigured, saveSnapshot, type SnapshotGuild, type SnapshotPayload } from "@/lib/db";
+import { dbConfigured, saveSnapshot, type SnapshotGuild, type SnapshotPayload, withDbError } from "@/lib/db";
 import { botAuthorized } from "@/lib/access";
 import { DISCORD_ID_RE } from "@/lib/validate";
+
+// Hash icon Discord hanya [A-Za-z0-9_] (prefix "a_" untuk animasi).
+// Tanpa ini, pemegang DASHBOARD_SECRET bisa menyuntik string arbitrer yang
+// dirender jadi URL cdn.discordapp.com/icons/.../<icon> di dashboard.
+const ICON_HASH_RE = /^[A-Za-z0-9_]+$/;
 
 function sanitizeLeaderboards(v: unknown): SnapshotGuild["leaderboards"] {
   const empty = { levels: [], coins: [] };
@@ -40,7 +45,10 @@ function sanitizeGiveaways(v: unknown): SnapshotGuild["giveaways"] {
       const r = e as Record<string, unknown>;
       return {
         id: Math.floor(r.id as number),
-        channel_id: typeof r.channel_id === "string" ? (r.channel_id as string).slice(0, 32) : "",
+        channel_id:
+          typeof r.channel_id === "string" && DISCORD_ID_RE.test(r.channel_id)
+            ? r.channel_id
+            : "",
         prize: typeof r.prize === "string" ? (r.prize as string).slice(0, 100) : "",
         winners: Number.isFinite(r.winners) ? Math.max(1, Math.floor(r.winners as number)) : 1,
         ends_at: typeof r.ends_at === "string" ? (r.ends_at as string).slice(0, 32) : "",
@@ -69,7 +77,7 @@ function sanitizeModlog(v: unknown): SnapshotGuild["modlog"] {
     });
 }
 
-export async function POST(req: Request) {
+async function postImpl(req: Request) {
   if (!botAuthorized(req)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
@@ -95,7 +103,10 @@ export async function POST(req: Request) {
       return {
         id: g.id,
         name: typeof g.name === "string" ? g.name.slice(0, 100) : g.id,
-        icon: typeof g.icon === "string" ? g.icon : null,
+        icon:
+          typeof g.icon === "string" && ICON_HASH_RE.test(g.icon)
+            ? g.icon.slice(0, 128)
+            : null,
         member_count: Number.isFinite(g.member_count) ? Math.max(0, Math.floor(g.member_count)) : 0,
         channels: Array.isArray(g.channels)
           ? g.channels
@@ -131,3 +142,5 @@ export async function POST(req: Request) {
   });
   return NextResponse.json({ ok: true, guilds: guilds.length });
 }
+
+export const POST = withDbError(postImpl);

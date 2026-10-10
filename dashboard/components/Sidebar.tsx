@@ -2,9 +2,11 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { fmt } from "@/lib/i18n/client";
+import ThemeToggle from "./ThemeToggle";
+import LangSwitcher from "./LangSwitcher";
 
 export interface SidebarNavItem {
   href: string;
@@ -199,28 +201,43 @@ function SidebarIcon({ id, className }: { id: SidebarIconId; className?: string 
   );
 }
 
-function isActivePath(pathname: string, href: string): boolean {
-  // Strip query/hash: link plugin "?tab=engagement" harus aktif di halaman
-  // Plugins, dan "#welcome" harus aktif di halaman /settings.
-  const clean = (s: string) => s.split(/[?#]/)[0];
-  const p = clean(pathname);
-  const h = clean(href);
-  return p === h || p === `${h}/`;
+/**
+ * Link aktif: cocokkan path (hash diabaikan agar "#welcome" tetap aktif di
+ * /settings), lalu cocokkan query tab. Link item seksi plugin memakai
+ * "?tab=<grup>" menuju halaman Plugins yang sama — tanpa memeriksa tab,
+ * SEMUA item seksi itu akan terlihat aktif sekaligus. Jadi: entry tanpa
+ * query tab aktif di path-nya apa pun tab yang terbuka (mis. item
+ * "Plugins" tetap aktif saat ?tab=engagement dipilih); entry berquery tab
+ * hanya aktif saat tab kategori itu yang terbuka.
+ */
+function isActivePath(pathname: string, currentTab: string | null, href: string): boolean {
+  const withoutHash = href.split("#")[0];
+  const qIdx = withoutHash.indexOf("?");
+  const hrefPath = qIdx >= 0 ? withoutHash.slice(0, qIdx) : withoutHash;
+  const pathOk = pathname === hrefPath || pathname === `${hrefPath}/`;
+  if (!pathOk) return false;
+  const hrefTab =
+    qIdx >= 0 ? new URLSearchParams(withoutHash.slice(qIdx + 1)).get("tab") : null;
+  if (hrefTab === null) return true;
+  return (currentTab ?? "all") === hrefTab;
 }
 
 function EntryLink({
   entry,
   pathname,
+  currentTab,
   onNavigate,
   sub = false,
 }: {
   entry: SidebarEntry;
   pathname: string;
+  /** Nilai query ?tab= saat ini; null = tidak ada query. */
+  currentTab: string | null;
   onNavigate?: () => void;
   /** Item di dalam seksi: beri penanda titik kecil agar hierarki terbaca. */
   sub?: boolean;
 }) {
-  const active = isActivePath(pathname, entry.href);
+  const active = isActivePath(pathname, currentTab, entry.href);
   return (
     <Link
       href={entry.href}
@@ -272,6 +289,9 @@ export default function Sidebar({
   onNavigate,
 }: Props) {
   const pathname = usePathname();
+  // Tab kategori aktif dari URL (?tab=engagement dst.) — dipakai
+  // isActivePath agar item seksi plugin hanya aktif di tabnya sendiri.
+  const currentTab = useSearchParams().get("tab");
   const [menuOpen, setMenuOpen] = useState(false);
   const menuWrapRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -375,7 +395,7 @@ export default function Sidebar({
         <ul className="flex flex-col gap-1">
           {topItems.map((entry) => (
             <li key={entryKey(entry)}>
-              <EntryLink entry={entry} pathname={pathname} onNavigate={onNavigate} />
+              <EntryLink entry={entry} pathname={pathname} currentTab={currentTab} onNavigate={onNavigate} />
             </li>
           ))}
         </ul>
@@ -415,7 +435,7 @@ export default function Sidebar({
                 <ul id={sectionListId} className="flex flex-col gap-1">
                   {section.items.map((entry) => (
                     <li key={entryKey(entry)}>
-                      <EntryLink entry={entry} pathname={pathname} onNavigate={onNavigate} sub />
+                      <EntryLink entry={entry} pathname={pathname} currentTab={currentTab} onNavigate={onNavigate} sub />
                     </li>
                   ))}
                 </ul>
@@ -427,11 +447,17 @@ export default function Sidebar({
         <ul className="mt-4 flex flex-col gap-1 border-t border-edge pt-4">
           {bottomItems.map((entry) => (
             <li key={entryKey(entry)}>
-              <EntryLink entry={entry} pathname={pathname} onNavigate={onNavigate} />
+              <EntryLink entry={entry} pathname={pathname} currentTab={currentTab} onNavigate={onNavigate} />
             </li>
           ))}
         </ul>
       </nav>
+      {/* Footer: tema + bahasa. Sebelumnya pengguna di dashboard guild tidak
+          bisa mengganti keduanya tanpa kembali ke halaman selector. */}
+      <div className="flex items-center gap-2 border-t border-edge px-3 py-3">
+        <ThemeToggle />
+        <LangSwitcher />
+      </div>
     </div>
   );
 }

@@ -419,10 +419,16 @@ class Sosial(commands.Cog):
         if ctx.guild is None:
             await ctx.send(embed=error_embed("Hanya bisa di server."), ephemeral=True)
             return
-        channel_id = config.settings.confess_channel_id
+        # Channel confess bisa diatur per-server via dashboard
+        # (confess_channel_id); fallback ke CONFESS_CHANNEL_ID global.
+        from src.cogs.dashboard_sync import channel_setting
+
+        channel_id = channel_setting(
+            ctx.guild.id, "confess_channel_id", config.settings.confess_channel_id
+        )
         if not channel_id:
             await ctx.send(
-                embed=error_embed("Channel confess belum disetting admin (`CONFESS_CHANNEL_ID`)."),
+                embed=error_embed("Channel confess belum disetting admin."),
                 ephemeral=True,
             )
             return

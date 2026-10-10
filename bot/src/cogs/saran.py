@@ -14,6 +14,14 @@ from src.utils.embeds import base_embed, error_embed, finch_embed
 SARAN_COOLDOWN_DETIK = 60
 
 
+def _saran_channel_id(guild) -> int:
+    """Channel saran per-server via dashboard; fallback SARAN_CHANNEL_ID global."""
+    from src.cogs.dashboard_sync import channel_setting
+
+    gid = guild.id if guild else 0
+    return channel_setting(gid, "saran_channel_id", config.settings.saran_channel_id)
+
+
 def _klaim_cooldown_saran(conn, guild_id: int, user_id: int) -> float:
     """Klaim cooldown /saran atomik. Return 0 bila boleh, sisa detik bila tidak.
 
@@ -131,7 +139,7 @@ class Saran(commands.Cog):
             await ctx.send("❌ Saran tidak boleh kosong.", ephemeral=True)
             return
 
-        channel_id = config.settings.saran_channel_id
+        channel_id = _saran_channel_id(ctx.guild)
         if not channel_id:
             await ctx.send("❌ Channel saran belum dikonfigurasi admin.", ephemeral=True)
             return
@@ -200,7 +208,7 @@ class Saran(commands.Cog):
             await ctx.send("❌ message_id harus angka.", ephemeral=True)
             return
 
-        channel_id = config.settings.saran_channel_id
+        channel_id = _saran_channel_id(ctx.guild)
         if not channel_id:
             await ctx.send("❌ Channel saran belum dikonfigurasi.", ephemeral=True)
             return
@@ -274,7 +282,7 @@ class Saran(commands.Cog):
         if not rows:
             await ctx.send(embed=error_embed("Belum ada saran."), ephemeral=True)
             return
-        ch_id = config.settings.saran_channel_id
+        ch_id = _saran_channel_id(ctx.guild)
         embed = finch_embed("Top Saran", "Skor = setuju − tidak setuju", warna="info")
         for mid, teks, status, skor, up, down in rows:
             potong = teks[:90] + ("…" if len(teks) > 90 else "")

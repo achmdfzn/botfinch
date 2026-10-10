@@ -49,7 +49,13 @@ class Counting(commands.Cog):
     async def on_message(self, message: discord.Message):
         if message.author.bot or not message.guild:
             return
-        channel_id = config.settings.counting_channel_id
+        # Channel counting bisa diatur per-server via dashboard
+        # (counting_channel_id); fallback ke COUNTING_CHANNEL_ID global.
+        from src.cogs.dashboard_sync import channel_setting
+
+        channel_id = channel_setting(
+            message.guild.id, "counting_channel_id", config.settings.counting_channel_id
+        )
         if not channel_id or message.channel.id != channel_id:
             return
         gid = message.guild.id
@@ -101,9 +107,13 @@ class Counting(commands.Cog):
         if not (isinstance(ctx.author, discord.Member) and ctx.author.guild_permissions.manage_messages):
             await ctx.send("❌ Khusus moderator.", ephemeral=True)
             return
-        channel_id = config.settings.counting_channel_id
+        from src.cogs.dashboard_sync import channel_setting
+
+        channel_id = channel_setting(
+            ctx.guild.id, "counting_channel_id", config.settings.counting_channel_id
+        )
         if not channel_id:
-            await ctx.send("❌ `COUNTING_CHANNEL_ID` belum diisi di `.env`.", ephemeral=True)
+            await ctx.send("❌ Channel counting belum dikonfigurasi admin.", ephemeral=True)
             return
         with get_connection() as conn:
             conn.execute(

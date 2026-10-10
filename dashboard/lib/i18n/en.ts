@@ -11,6 +11,7 @@ export const en: Dict = {
     signInShort: "Sign in",
     logoAlt: "Finch logo",
     back: "Back to server list",
+    features: "Features",
   },
   auth: {
     signIn: "Sign in with Discord",
@@ -90,7 +91,7 @@ export const en: Dict = {
         desc: "Keep your server welcoming with anti-spam, invite-link filtering, automatic mutes, and slowmode. Every action is recorded in a moderation log you can read from the web.",
         points: [
           "Anti-spam & invite filter",
-          "Automatic mutes & slowmode",
+          "Automatic mutes & manual slowmode",
           "Moderation log on the dashboard",
         ],
       },
@@ -105,11 +106,20 @@ export const en: Dict = {
       },
       giveaway: {
         title: "Giveaway",
-        desc: "Run giveaways straight from the dashboard: set the prize and duration, and the bot posts, reminds, and draws winners fairly.",
+        desc: "Run giveaways straight from the dashboard: set the prize and duration, and the bot posts it and draws winners fairly. Winners can be re-drawn anytime.",
         points: [
           "Created & managed from the web",
           "Automatic winner draws",
-          "Scheduled announcements",
+          "Entry requirements & re-draw button",
+        ],
+      },
+      customcmd: {
+        title: "User Commands",
+        desc: "Create your own text commands like !promo that the bot answers automatically whenever someone types them. Replies can use variables to feel personal.",
+        points: [
+          "Custom triggers like !name",
+          "Variables {user}, {server}, {channel}",
+          "Managed via /cc commands",
         ],
       },
     },
@@ -494,7 +504,7 @@ export const en: Dict = {
           welcome_message: {
             label: "Custom message",
             placeholder: "Welcome {user} to {server}!",
-            hint: "You can use {user} and {server}. Leave empty for the default card.",
+            hint: "You can use {user}, {server}, {member_count}, and {channel}. Leave empty for the default card.",
           },
           welcome_role_ids: {
             label: "Auto-roles (IDs, comma-separated)",
@@ -511,7 +521,7 @@ export const en: Dict = {
           goodbye_message: {
             label: "Custom message",
             placeholder: "Goodbye {user}, thanks for stopping by {server}!",
-            hint: "You can use {user} and {server}. Leave empty for the default message.",
+            hint: "You can use {user}, {server}, {member_count}, and {channel}. Leave empty for the default message.",
           },
         },
       },

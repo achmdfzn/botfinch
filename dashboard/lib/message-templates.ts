@@ -3,11 +3,12 @@
  * dan pengumuman.
  *
  * Aturan placeholder (terverifikasi dari repo bot, baca-saja):
- * - welcome/goodbye: bot hanya mensubstitusi {user} (mention anggota) dan
- *   {server} (nama server). Lihat src/bot.py on_member_join/on_member_remove.
- * - pengumuman: bot mengirim teks APA ADANYA tanpa substitusi
- *   (channel.send(pesan) di src/cogs/dashboard_sync.py), jadi template
- *   pengumuman TIDAK memakai placeholder.
+ * - welcome/goodbye: bot mensubstitusi {user}, {server}, {member_count},
+ *   dan {channel} via substitusi_variabel (src/utils/variabel.py),
+ *   dipanggil dari on_member_join/on_member_remove (src/bot.py).
+ * - pengumuman: bot mensubstitusi {server}, {date}, dan {member_count}
+ *   via substitusi_pengumuman (src/cogs/dashboard_sync.py) — BUKAN
+ *   teks apa adanya.
  *
  * Batas panjang: welcome/goodbye maks 500 karakter (cleanValue di
  * lib/settings.ts), pengumuman maks 2000 karakter (validasi API).
@@ -198,8 +199,8 @@ export const TEMPLATE_CATEGORIES: TemplateCategory[] = [
   "announcement",
 ];
 
-/** Nilai contoh untuk pratinjau (bukan data asli). */
-const SAMPLE_USER = "@Fauzan";
+/** Nilai contoh untuk pratinjau (bukan data asli; jangan pakai nama pribadi). */
+const SAMPLE_USER = "@ContohUser";
 
 /** Substitusi placeholder dengan nilai contoh untuk pratinjau kartu. */
 export function renderTemplatePreview(text: string, serverName: string): string {

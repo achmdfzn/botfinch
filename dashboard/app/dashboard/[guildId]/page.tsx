@@ -14,8 +14,6 @@ import { mergeSettings } from "@/lib/settings";
 import { PLUGINS, TOGGLEABLE_PLUGINS, parsePluginTab } from "@/lib/plugins";
 import { getDict, getLang } from "@/lib/i18n";
 
-export const instant = false;
-
 export async function generateMetadata(): Promise<Metadata> {
   const dict = getDict(await getLang());
   return { title: `${dict.guild.plugins.metaTitle} | Finch Dashboard` };

@@ -358,15 +358,27 @@ class Engagement(commands.Cog):
 
     @tasks.loop(hours=1)
     async def loop_dailyq(self):
-        """Kirim pertanyaan harian (idempoten per tanggal)."""
-        ch_id = config.settings.dailyq_channel_id
-        if not ch_id:
-            return
-        channel = self.bot.get_channel(ch_id)
-        if channel is None:
-            return
-        gid = channel.guild.id if channel.guild else 0
+        """Kirim pertanyaan harian (idempoten per tanggal, per server).
+
+        Channel bisa diatur per-server via dashboard (dailyq_channel_id);
+        fallback ke DAILYQ_CHANNEL_ID global bila belum diatur.
+        """
+        from src.cogs.dashboard_sync import channel_setting
+
         tanggal = discord.utils.utcnow().strftime("%Y-%m-%d")
+        for guild in self.bot.guilds:
+            ch_id = channel_setting(
+                guild.id, "dailyq_channel_id", config.settings.dailyq_channel_id
+            )
+            if not ch_id:
+                continue
+            channel = guild.get_channel(ch_id)
+            if channel is None:
+                continue
+            await self._kirim_dailyq(guild.id, channel, ch_id, tanggal)
+
+    async def _kirim_dailyq(self, gid: int, channel, ch_id: int, tanggal: str) -> None:
+        """Satu pengiriman daily question ke sebuah guild (idempoten)."""
         try:
             with get_connection() as conn:
                 ada = conn.execute(
@@ -390,7 +402,7 @@ class Engagement(commands.Cog):
                 inline=True,
             )
             await channel.send(embed=embed)
-            log.info("Daily question dikirim ke channel %s", ch_id)
+            log.info("Daily question dikirim ke channel %s (guild %s)", ch_id, gid)
         except Exception:
             log.exception("Gagal kirim daily question")
 
@@ -623,8 +635,13 @@ class Engagement(commands.Cog):
             log.exception("Gagal update quest guild")
 
         # 3) Daily question: reward penjawab di channel khusus
+        # (channel bisa per-server via dashboard)
         try:
-            ch_id = config.settings.dailyq_channel_id
+            from src.cogs.dashboard_sync import channel_setting
+
+            ch_id = channel_setting(
+                gid, "dailyq_channel_id", config.settings.dailyq_channel_id
+            )
             if ch_id and message.channel.id == ch_id:
                 await self._proses_dailyq(message, gid, uid)
         except Exception:

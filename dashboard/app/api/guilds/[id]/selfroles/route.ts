@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { addSelfRole, deleteSelfRole, getSelfRoles } from "@/lib/db";
+import { addSelfRole, deleteSelfRole, getSelfRoles, withDbError } from "@/lib/db";
 import { botAuthorized, requireManager } from "@/lib/access";
 import { discordId, parseJsonBody, str } from "@/lib/validate";
 
 
-export async function GET(
+async function getImpl(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -17,7 +17,7 @@ export async function GET(
   return NextResponse.json({ guild_id: id, selfroles: await getSelfRoles(id) });
 }
 
-export async function POST(
+async function postImpl(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -36,7 +36,7 @@ export async function POST(
   return NextResponse.json({ ok: true });
 }
 
-export async function DELETE(
+async function deleteImpl(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -55,3 +55,7 @@ export async function DELETE(
   await deleteSelfRole(id, messageId, emoji);
   return NextResponse.json({ ok: true });
 }
+
+export const GET = withDbError(getImpl);
+export const POST = withDbError(postImpl);
+export const DELETE = withDbError(deleteImpl);

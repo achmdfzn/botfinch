@@ -39,7 +39,12 @@ export async function getSessionSafe(): Promise<Session | null> {
 /** Cek Bearer DASHBOARD_SECRET untuk bot. */
 export function botAuthorized(req: Request): boolean {
   const secret = process.env.DASHBOARD_SECRET;
-  if (!secret) return false;
+  // Fail-closed: secret wajib ada dan minimal 32 karakter (sesuai .env.example).
+  // Tanpa guard ini, secret lemah yang tidak sengaja dipakai akan lolos diam-diam.
+  if (!secret || secret.length < 32) {
+    console.error("[auth] DASHBOARD_SECRET tidak valid/terlalu pendek");
+    return false;
+  }
   const header = req.headers.get("authorization") ?? "";
   const given = header.startsWith("Bearer ") ? header.slice(7) : "";
   const a = Buffer.from(given);

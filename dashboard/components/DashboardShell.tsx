@@ -9,6 +9,7 @@ import Sidebar, {
 } from "@/components/Sidebar";
 import { useI18n } from "@/components/I18nProvider";
 import { PLUGINS, type PluginGroup } from "@/lib/plugins";
+import LangSwitcher from "@/components/LangSwitcher";
 
 interface Props {
   guildName: string;
@@ -208,6 +209,8 @@ export default function DashboardShell({ guildName, guildIconUrl, navItems, chil
           </svg>
         </button>
         <span className="min-w-0 flex-1 truncate text-sm font-semibold text-fg">{guildName}</span>
+        {/* Ganti bahasa tanpa membuka drawer (I-3). */}
+        <LangSwitcher />
       </div>
 
       {/* True full-width: sidebar menempel tepi kiri viewport, konten
@@ -225,7 +228,9 @@ export default function DashboardShell({ guildName, guildIconUrl, navItems, chil
             setelah sidebar. Halaman di dalamnya tetap me-render kontennya
             sendiri; halaman form boleh membatasi lebar baca sendiri
             (max-w-4xl rata kiri). */}
-        <main id="konten-utama" className="min-w-0 flex-1">
+        {/* Skip link: fokus ikut pindah ke main (tabIndex -1) agar pengguna
+            keyboard tidak hanya di-scroll tapi benar-benar berada di konten. */}
+        <main id="konten-utama" tabIndex={-1} className="min-w-0 flex-1">
           <div className="w-full px-4 py-5 sm:px-6 md:px-8 md:py-7">
             {children}
           </div>
@@ -244,7 +249,7 @@ export default function DashboardShell({ guildName, guildIconUrl, navItems, chil
             type="button"
             aria-label={dict.dashboard.navClose}
             onClick={close}
-            className="absolute inset-0 h-full w-full cursor-default bg-ink/70"
+            className="absolute inset-0 h-full w-full cursor-default bg-ink/70 focus-visible:outline-2 focus-visible:outline-brand"
           />
           <div
             ref={panelRef}

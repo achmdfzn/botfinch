@@ -1,5 +1,5 @@
 import { NextResponse, connection } from "next/server";
-import { latestSnapshot } from "@/lib/db";
+import { latestSnapshot, withDbError } from "@/lib/db";
 import { fetchUserGuilds, getSessionSafe } from "@/lib/access";
 import { canManage } from "@/lib/discord";
 
@@ -13,7 +13,7 @@ import { canManage } from "@/lib/discord";
  * tanpa filter ini, user login mana pun bisa memetakan semua server
  * pelanggan bot (enumerasi lintas-guild).
  */
-export async function GET() {
+async function getImpl() {
   // Route ini membaca cookie sesi (via auth() → headers()) sehingga tidak
   // boleh di-prerender saat build. Di Next.js 16 + cacheComponents,
   // `export const dynamic = 'force-dynamic'` sudah dihapus — cara idiomatis
@@ -46,3 +46,5 @@ export async function GET() {
       })),
   });
 }
+
+export const GET = withDbError(getImpl);

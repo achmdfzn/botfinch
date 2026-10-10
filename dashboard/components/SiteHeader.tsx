@@ -23,9 +23,15 @@ export default async function SiteHeader() {
           <span className="hidden text-lg font-bold tracking-tight sm:inline">Finch</span>
         </Link>
         <nav className="flex items-center gap-2">
+          {/* Tautan anchor ke seksi fitur landing: valid di halaman mana pun */}
+          <Link
+            href="/#fitur"
+            className="hidden min-h-[44px] items-center rounded-lg px-4 py-2 text-sm font-medium text-muted hover:bg-edge hover:text-fg focus-visible:outline-2 focus-visible:outline-brand sm:inline-flex"
+          >
+            {dict.nav.features}
+          </Link>
           {session ? (
             <>
-              {/* Tautan teks disembunyikan di HP: CTA "Buka Dashboard" sudah ada di hero landing */}
               <Link
                 href="/dashboard"
                 className="hidden min-h-[44px] items-center rounded-lg px-4 py-2 text-sm font-medium text-muted hover:bg-edge hover:text-fg focus-visible:outline-2 focus-visible:outline-brand sm:inline-flex"

@@ -369,7 +369,12 @@ class Moderation(commands.Cog):
         if not modul_aktif(message.guild.id, "msglog_enabled"):
             return
         # Anti-banjir: pesan counting yang dihapus tidak di-log
-        if message.channel.id == config.settings.counting_channel_id:
+        # (channel counting bisa per-server via dashboard)
+        from src.cogs.dashboard_sync import channel_setting as _channel_setting
+
+        if message.channel.id == _channel_setting(
+            message.guild.id, "counting_channel_id", config.settings.counting_channel_id
+        ):
             return
         try:
             await modlog.log_event(
@@ -520,8 +525,13 @@ class Moderation(commands.Cog):
         if not ctx.guild:
             await self._reply(ctx, "❌ Hanya bisa di server.", ephemeral=True)
             return
-        # block channel sensitif
-        dilindungi = {i for i in (config.settings.mod_log_channel_id, config.settings.verify_channel_id) if i}
+        # block channel sensitif (channel verifikasi bisa per-server via dashboard)
+        from src.cogs.dashboard_sync import channel_setting as _channel_setting2
+
+        _verify = _channel_setting2(
+            ctx.guild.id, "verify_channel_id", config.settings.verify_channel_id
+        )
+        dilindungi = {i for i in (config.settings.mod_log_channel_id, _verify) if i}
         if ctx.channel.id in dilindungi:
             await self._reply(ctx, "❌ Tidak boleh bersihkan di channel log/verifikasi.", ephemeral=True)
             return

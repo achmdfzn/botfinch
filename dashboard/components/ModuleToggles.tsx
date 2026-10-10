@@ -54,7 +54,10 @@ export default function ModuleToggles({
         </p>
       )}
       <ul className="grid gap-3">
-        {modules.map((m) => {
+        {/* Seksi noToggle (channel per-server dkk.) dilewati: tidak ada key
+            toggle yang dibaca bot, jadi switch di sini akan jadi switch mati.
+            Konfigurasinya tetap ada di halaman Pengaturan. */}
+        {modules.filter((m) => !m.noToggle).map((m) => {
           const on = values[m.key] ?? false;
           const t = (dict.settings.modules as Record<string, { title?: string; desc?: string }>)[m.key.replace(/_enabled$/, "")];
           const title = t?.title ?? m.title;

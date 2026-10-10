@@ -10,6 +10,12 @@ export interface FieldDef {
   hint?: string;
   /** Nilai yang diizinkan untuk kind "select". Label tiap nilai diambil dari kamus. */
   options?: string[];
+  /**
+   * Untuk kind "channel": tipe channel Discord yang boleh dipilih
+   * (0 = teks, 2 = voice, 4 = kategori, 5 = pengumuman).
+   * Default [0, 5] bila tidak diisi.
+   */
+  channelTypes?: number[];
 }
 
 export interface ModuleDef {
@@ -17,6 +23,13 @@ export interface ModuleDef {
   title: string;
   description: string;
   fields: FieldDef[];
+  /**
+   * true = seksi tanpa switch master (murni kumpulan field konfigurasi,
+   * mis. channel per-server). Switch master tidak dirender di halaman
+   * pengaturan, dan seksi dilewati di halaman modul agar tidak ada
+   * switch mati.
+   */
+  noToggle?: boolean;
 }
 
 type Rule =
@@ -70,6 +83,15 @@ export const SETTING_DEFAULTS: Record<string, boolean | string | number> = {
   slowmode_enabled: true,
   msglog_enabled: true,
   autopublish_enabled: true,
+  // channel/kategori per-server ("" = ikut config global .env di sisi bot)
+  verify_channel_id: "",
+  ticket_category_id: "",
+  saran_channel_id: "",
+  counting_channel_id: "",
+  tempvc_lobby_id: "",
+  tempvc_category_id: "",
+  confess_channel_id: "",
+  dailyq_channel_id: "",
 };
 
 export const SETTING_RULES: Record<string, Rule> = {
@@ -109,6 +131,14 @@ export const SETTING_RULES: Record<string, Rule> = {
   slowmode_enabled: { kind: "bool" },
   msglog_enabled: { kind: "bool" },
   autopublish_enabled: { kind: "bool" },
+  verify_channel_id: { kind: "str", max: 32 },
+  ticket_category_id: { kind: "str", max: 32 },
+  saran_channel_id: { kind: "str", max: 32 },
+  counting_channel_id: { kind: "str", max: 32 },
+  tempvc_lobby_id: { kind: "str", max: 32 },
+  tempvc_category_id: { kind: "str", max: 32 },
+  confess_channel_id: { kind: "str", max: 32 },
+  dailyq_channel_id: { kind: "str", max: 32 },
 };
 
 export const MODULES: ModuleDef[] = [
@@ -215,6 +245,91 @@ export const MODULES: ModuleDef[] = [
       { key: "starboard_threshold", label: "Minimal bintang", kind: "number", min: 1, max: 25 },
     ],
   },
+  // --- Seksi tanpa switch master: konfigurasi channel/kategori per-server.
+  // Kosongkan = bot memakai nilai global dari .env (perilaku lama).
+  {
+    key: "verifikasi",
+    title: "Verifikasi",
+    description: "Channel tempat panel tombol verifikasi dipasang via /verifikasi.",
+    noToggle: true,
+    fields: [
+      {
+        key: "verify_channel_id",
+        label: "Channel verifikasi",
+        kind: "channel",
+        hint: "Kosongkan untuk memakai VERIFY_CHANNEL_ID dari .env.",
+      },
+    ],
+  },
+  {
+    key: "tiket",
+    title: "Tiket Support",
+    description: "Kategori tempat channel tiket baru dibuat.",
+    noToggle: true,
+    fields: [
+      {
+        key: "ticket_category_id",
+        label: "Kategori tiket",
+        kind: "channel",
+        channelTypes: [4],
+        hint: "Kosongkan untuk memakai TICKET_CATEGORY_ID dari .env.",
+      },
+    ],
+  },
+  {
+    key: "komunitas",
+    title: "Komunitas",
+    description: "Channel untuk fitur komunitas: saran, counting, confess, dan pertanyaan harian.",
+    noToggle: true,
+    fields: [
+      {
+        key: "saran_channel_id",
+        label: "Channel saran",
+        kind: "channel",
+        hint: "Tempat saran dari /saran dikirim. Kosongkan = SARAN_CHANNEL_ID (.env).",
+      },
+      {
+        key: "counting_channel_id",
+        label: "Channel counting",
+        kind: "channel",
+        hint: "Permainan berhitung. Kosongkan = COUNTING_CHANNEL_ID (.env).",
+      },
+      {
+        key: "confess_channel_id",
+        label: "Channel confess",
+        kind: "channel",
+        hint: "Tempat pesan anonim /confess dikirim. Kosongkan = CONFESS_CHANNEL_ID (.env).",
+      },
+      {
+        key: "dailyq_channel_id",
+        label: "Channel pertanyaan harian",
+        kind: "channel",
+        hint: "Pertanyaan harian otomatis. Kosongkan = DAILYQ_CHANNEL_ID (.env).",
+      },
+    ],
+  },
+  {
+    key: "tempvc",
+    title: "Temp Voice",
+    description: "Voice channel sementara: member join lobby lalu dapat room pribadi.",
+    noToggle: true,
+    fields: [
+      {
+        key: "tempvc_lobby_id",
+        label: "Voice lobby",
+        kind: "channel",
+        channelTypes: [2],
+        hint: "Voice channel pemicu. Kosongkan = TEMPVC_LOBBY_ID (.env).",
+      },
+      {
+        key: "tempvc_category_id",
+        label: "Kategori room",
+        kind: "channel",
+        channelTypes: [4],
+        hint: "Kategori tempat room dibuat. Kosongkan = TEMPVC_CATEGORY_ID (.env).",
+      },
+    ],
+  },
 ];
 
 /** Validasi satu nilai sesuai rule. Kembalikan nilai bersih atau undefined (tolak). */
@@ -235,8 +350,15 @@ export function cleanValue(key: string, v: unknown): boolean | string | number |
       !/^(\d{5,25})(,\s*\d{5,25})*$/.test(v)
     )
       return undefined;
-    // ID channel: hanya digit (atau kosong = otomatis)
-    if (key.endsWith("_channel_id") && v !== "" && !/^\d{1,25}$/.test(v)) return undefined;
+    // ID channel/kategori/lobby: hanya digit (atau kosong = ikut config global bot)
+    if (
+      (key.endsWith("_channel_id") ||
+        key.endsWith("_category_id") ||
+        key.endsWith("_lobby_id")) &&
+      v !== "" &&
+      !/^\d{1,25}$/.test(v)
+    )
+      return undefined;
     return v.slice(0, rule.max);
   }
   if (typeof v !== "number" || !Number.isFinite(v)) return undefined;

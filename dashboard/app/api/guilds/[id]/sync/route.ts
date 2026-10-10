@@ -5,8 +5,7 @@ import {
   getSelfRoles,
   getStoredSettings,
   listAnnouncements,
-  type GiveawayRequest,
-} from "@/lib/db";
+  type GiveawayRequest, withDbError } from "@/lib/db";
 import { sql } from "@vercel/postgres";
 import { botAuthorized } from "@/lib/access";
 
@@ -15,7 +14,7 @@ import { botAuthorized } from "@/lib/access";
  * Satu endpoint tarik untuk bot: pengaturan + self-roles + auto-responder
  * + permintaan giveaway yang pending, untuk satu guild.
  */
-export async function GET(
+async function getImpl(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -56,3 +55,5 @@ export async function GET(
     announcements,
   });
 }
+
+export const GET = withDbError(getImpl);

@@ -137,7 +137,12 @@ class Verification(commands.Cog):
     @commands.has_permissions(manage_guild=True)
     async def verifikasi(self, ctx: commands.Context):
         """Pasang panel verifikasi: !verifikasi / /verifikasi (khusus moderator)."""
-        channel_id = config.settings.verify_channel_id
+        # Channel bisa diatur per-server via dashboard (verify_channel_id);
+        # fallback ke VERIFY_CHANNEL_ID global bila belum diatur.
+        from src.cogs.dashboard_sync import channel_setting
+
+        gid = ctx.guild.id if ctx.guild else 0
+        channel_id = channel_setting(gid, "verify_channel_id", config.settings.verify_channel_id)
         channel = self.bot.get_channel(channel_id) if channel_id else None
         if channel is None:
             channel = ctx.channel  # fallback: pasang di channel ini

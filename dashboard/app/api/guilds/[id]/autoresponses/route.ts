@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { addAutoResponse, deleteAutoResponse, deleteAutoResponseByTrigger, getAutoResponses } from "@/lib/db";
+import { addAutoResponse, deleteAutoResponse, deleteAutoResponseByTrigger, getAutoResponses, withDbError } from "@/lib/db";
 import { botAuthorized, requireManager } from "@/lib/access";
 import { parseJsonBody, str } from "@/lib/validate";
 
 
-export async function GET(
+async function getImpl(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -16,7 +16,7 @@ export async function GET(
   return NextResponse.json({ guild_id: id, autoresponses: await getAutoResponses(id) });
 }
 
-export async function POST(
+async function postImpl(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -34,7 +34,7 @@ export async function POST(
   return NextResponse.json({ ok: true });
 }
 
-export async function DELETE(
+async function deleteImpl(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -54,3 +54,7 @@ export async function DELETE(
   }
   return NextResponse.json({ error: "invalid_input" }, { status: 400 });
 }
+
+export const GET = withDbError(getImpl);
+export const POST = withDbError(postImpl);
+export const DELETE = withDbError(deleteImpl);

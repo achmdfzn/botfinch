@@ -12,9 +12,8 @@ import { fetchUserGuilds } from "@/lib/access";
 import {
   createAnnouncement,
   dbConfigured,
-  getStoredSettings,
   latestSnapshot,
-  putStoredSettings,
+  mergeStoredSettings,
 } from "@/lib/db";
 import { requireManager } from "@/lib/access";
 import { cleanValue } from "@/lib/settings";
@@ -54,8 +53,9 @@ async function applyTemplate(formData: FormData) {
   if (await requireManager(guildId)) redirect(`${back}&status=error`);
   const clean = cleanValue(key, formData.get("text"));
   if (clean === undefined) redirect(`${back}&status=error`);
-  const stored = await getStoredSettings(guildId);
-  await putStoredSettings(guildId, { ...stored, [key]: clean });
+  // Merge atomik (jsonb ||) — bukan read-modify-write: bila user menerapkan
+  // template sementara toggle diubah di tab lain, kedua tulisan tetap bertahan.
+  await mergeStoredSettings(guildId, { [key]: clean });
   redirect(`${back}&status=ok`);
 }
 

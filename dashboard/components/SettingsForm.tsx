@@ -115,7 +115,12 @@ function FieldInput({
   }
 
   if (field.kind === "channel") {
-    const textChannels = channels.filter((c) => c.type === 0 || c.type === 5);
+    // Tipe channel yang boleh dipilih bisa dibatasi per field
+    // (default: teks + pengumuman). Bot mengirim voice & kategori juga
+    // di snapshot agar field seperti lobby tempvc bisa dipilih.
+    const allowed = field.channelTypes ?? [0, 5];
+    const daftar = channels.filter((c) => allowed.includes(c.type));
+    const prefix: Record<number, string> = { 0: "# ", 2: "🔊 ", 4: "📁 ", 5: "# " };
     return (
       <select
         id={`f-${field.key}`}
@@ -124,9 +129,10 @@ function FieldInput({
         className={inputCls}
       >
         <option value="">{s.channelAuto}</option>
-        {textChannels.map((c) => (
+        {daftar.map((c) => (
           <option key={c.id} value={c.id}>
-            # {c.name}
+            {prefix[c.type] ?? "# "}
+            {c.name}
           </option>
         ))}
       </select>
@@ -310,13 +316,18 @@ export default function SettingsForm({ guildId, guildName, modules, initial, cha
                   <h2 className="text-sm font-semibold text-fg">{title}</h2>
                   <p className="mt-1 text-sm text-muted">{desc}</p>
                 </div>
-                <Toggle
-                  checked={Boolean(values[m.key])}
-                  onChange={(v) => setValue(m.key, v)}
-                  label={fmt(dict.guild.modul[values[m.key] ? "toggleOn" : "toggleOff"], { title })}
-                />
+                {/* Seksi noToggle (mis. channel per-server): tanpa switch master,
+                    field selalu tampil — switch di sini akan jadi switch mati
+                    karena tidak ada key toggle yang dibaca bot. */}
+                {!m.noToggle && (
+                  <Toggle
+                    checked={Boolean(values[m.key])}
+                    onChange={(v) => setValue(m.key, v)}
+                    label={fmt(dict.guild.modul[values[m.key] ? "toggleOn" : "toggleOff"], { title })}
+                  />
+                )}
               </div>
-              {Boolean(values[m.key]) && m.fields.length > 0 && (
+              {(m.noToggle || Boolean(values[m.key])) && m.fields.length > 0 && (
                 <div className="mt-4 space-y-4 border-t border-edge pt-4">
                   {m.fields.map((f) => {
                     const texts = fieldsTexts[f.key];

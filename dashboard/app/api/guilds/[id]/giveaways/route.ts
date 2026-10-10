@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { addGiveawayRequest, getGiveawayRequests, latestSnapshot } from "@/lib/db";
+import { addGiveawayRequest, getGiveawayRequests, latestSnapshot, withDbError } from "@/lib/db";
 import { requireManager } from "@/lib/access";
 import { discordId, parseJsonBody, str } from "@/lib/validate";
 
 
-export async function GET(
+async function getImpl(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -21,7 +21,7 @@ export async function GET(
   });
 }
 
-export async function POST(
+async function postImpl(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -51,3 +51,6 @@ export async function POST(
   await addGiveawayRequest(id, channelId, prize, winners, duration);
   return NextResponse.json({ ok: true, note: "Bot akan membuat giveaway dalam beberapa menit." });
 }
+
+export const GET = withDbError(getImpl);
+export const POST = withDbError(postImpl);

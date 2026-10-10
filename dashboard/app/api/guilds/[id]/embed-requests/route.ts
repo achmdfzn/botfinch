@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { createEmbedRequest, listEmbedRequests } from "@/lib/db";
+import { createEmbedRequest, listEmbedRequests, withDbError } from "@/lib/db";
 import { requireManager } from "@/lib/access";
 import { discordId, embedFields, hexColor, httpUrl, optStr, parseJsonBody } from "@/lib/validate";
 
 
 /** Daftar permintaan embed terbaru (manager). */
-export async function GET(
+async function getImpl(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -20,7 +20,7 @@ export async function GET(
 }
 
 /** Buat permintaan embed baru (status pending, dieksekusi bot). */
-export async function POST(
+async function postImpl(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -71,3 +71,6 @@ export async function POST(
     note: "Bot akan mengirim embed dalam beberapa menit.",
   });
 }
+
+export const GET = withDbError(getImpl);
+export const POST = withDbError(postImpl);

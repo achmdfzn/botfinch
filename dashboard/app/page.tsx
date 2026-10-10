@@ -20,7 +20,7 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-const FEATURE_KEYS = ["welcome", "leveling", "selfroles", "automod", "economy", "giveaway"] as const;
+const FEATURE_KEYS = ["welcome", "leveling", "selfroles", "automod", "economy", "giveaway", "customcmd"] as const;
 type FeatureKey = (typeof FEATURE_KEYS)[number];
 
 // Ikon SVG orisinal (geometris, stroke) untuk tiap fitur — digambar sendiri,
@@ -83,6 +83,15 @@ function FeatureIcon({ name }: { name: FeatureKey }) {
         <svg {...common}>
           <rect x="10" y="16" width="28" height="22" rx="2" />
           <path d="M8 24h32M24 16v22M24 16c-6 0-9-2.5-9-6 0-2.5 2-4 4-4 3 0 4 6 5 10zm0 0c6 0 9-2.5 9-6 0-2.5-2-4-4-4-3 0-4 6-5 10z" />
+        </svg>
+      );
+    case "customcmd":
+      // Keyboard: perintah kustom buatan member.
+      return (
+        <svg {...common}>
+          <rect x="6" y="14" width="36" height="20" rx="4" />
+          <path d="M12 22h4M20 22h4M28 22h8" />
+          <path d="M14 29h20" />
         </svg>
       );
     default:

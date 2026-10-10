@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { latestSnapshot } from "@/lib/db";
+import { latestSnapshot, withDbError } from "@/lib/db";
 import { requireManager } from "@/lib/access";
 
 
-export async function GET(
+async function getImpl(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -13,7 +13,9 @@ export async function GET(
   const snap = await latestSnapshot();
   const guild = snap?.guilds.find((g) => g.id === id);
   if (!guild) {
-    return NextResponse.json({ error: "no_data", hint: "Bot belum mengirim snapshot untuk server ini." }, { status: 404 });
+    // Kode mesin saja (tanpa teks bahasa): frontend menerjemahkannya
+    // sendiri via kamus i18n; API tidak boleh me-hardcode bahasa.
+    return NextResponse.json({ error: "no_data" }, { status: 404 });
   }
   return NextResponse.json({
     guild_id: id,
@@ -23,3 +25,5 @@ export async function GET(
     updated_at: snap!.pushed_at,
   });
 }
+
+export const GET = withDbError(getImpl);

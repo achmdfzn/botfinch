@@ -93,11 +93,16 @@ class TempVC(commands.Cog):
     async def on_voice_state_update(
         self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState
     ):
-        lobby_id = config.settings.tempvc_lobby_id
-        if not lobby_id:
-            return
+        # Lobby & kategori tempvc bisa diatur per-server via dashboard;
+        # fallback ke TEMPVC_LOBBY_ID / TEMPVC_CATEGORY_ID global.
+        from src.cogs.dashboard_sync import channel_setting
 
         guild = member.guild
+        lobby_id = channel_setting(
+            guild.id, "tempvc_lobby_id", config.settings.tempvc_lobby_id
+        )
+        if not lobby_id:
+            return
 
         # 1. Join lobby -> Buat room baru
         if after.channel and after.channel.id == lobby_id:
@@ -122,7 +127,9 @@ class TempVC(commands.Cog):
                     conn.commit()
             
             category = None
-            cat_id = config.settings.tempvc_category_id
+            cat_id = channel_setting(
+                guild.id, "tempvc_category_id", config.settings.tempvc_category_id
+            )
             if cat_id:
                 ch = guild.get_channel(cat_id)
                 if isinstance(ch, discord.CategoryChannel):

@@ -415,6 +415,21 @@ class Settings:
             masalah.append("DAILYQ_REWARD/DAILYQ_MAKS tidak valid.")
         if not 1 <= self.dashboard_port <= 65535:
             masalah.append("DASHBOARD_PORT harus 1–65535.")
+        # Dashboard web dipakai untuk push snapshot + pull settings; token
+        # DASHBOARD_SECRET lewat header Authorization, jadi http:// ke host
+        # publik = secret + data server bocor di jaringan.
+        if self.dashboard_url:
+            rendah = self.dashboard_url.strip().lower()
+            if rendah.startswith("http://"):
+                # urlparse menangani host bracket IPv6 ([::1]) dengan benar.
+                from urllib.parse import urlparse
+
+                host = (urlparse(rendah).hostname or "").lower()
+                if host not in ("localhost", "127.0.0.1", "::1"):
+                    masalah.append(
+                        "DASHBOARD_URL memakai http:// ke host non-lokal — "
+                        "tolak demi keamanan. Pakai https:// (kecuali localhost)."
+                    )
         if self.tiket_sla_jam < 1:
             masalah.append("TIKET_SLA_JAM harus >= 1.")
         return masalah

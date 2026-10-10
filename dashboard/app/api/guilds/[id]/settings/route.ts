@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { dbConfigured, getStoredSettings, mergeStoredSettings } from "@/lib/db";
+import { dbConfigured, getStoredSettings, mergeStoredSettings, withDbError } from "@/lib/db";
 import { botAuthorized, requireManager } from "@/lib/access";
 import { SETTING_DEFAULTS, cleanValue } from "@/lib/settings";
 import { parseJsonBody } from "@/lib/validate";
 
-export async function GET(
+async function getImpl(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -20,7 +20,7 @@ export async function GET(
   return NextResponse.json({ guild_id: id, settings: stored });
 }
 
-export async function PUT(
+async function putImpl(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -41,3 +41,6 @@ export async function PUT(
   await mergeStoredSettings(id, clean);
   return NextResponse.json({ ok: true });
 }
+
+export const GET = withDbError(getImpl);
+export const PUT = withDbError(putImpl);

@@ -35,17 +35,8 @@ export default function GuildHero({
   return (
     <section
       aria-label={guildName}
-      className="relative mb-6 overflow-hidden rounded-2xl border border-edge bg-gradient-to-br from-brand/15 via-panel to-panel p-5 sm:p-7"
+      className="relative mb-6 overflow-hidden rounded-2xl border border-edge bg-panel p-5 sm:p-7"
     >
-      {/* Dekorasi orisinal: lingkaran blur brand */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-brand/20 blur-3xl"
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -bottom-20 -left-10 h-48 w-48 rounded-full bg-brand/10 blur-3xl"
-      />
       <div className="relative flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-4">
           {guildIconUrl ? (

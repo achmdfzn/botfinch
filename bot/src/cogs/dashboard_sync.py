@@ -54,6 +54,20 @@ CREATE TABLE IF NOT EXISTS dashboard_selfroles (
 )
 """
 
+# Registri baris self-role "yatim": pesannya tidak ditemukan di semua channel
+# saat seed reaksi. Dipisah dari dashboard_selfroles karena _simpan_selfroles
+# me-mirror ulang (DELETE + INSERT) tiap pull — flag di tabel utama akan
+# terhapus, sementara tabel ini persisten antar-restart. Dibersihkan saat
+# barisnya sudah tidak dikirim dashboard lagi (panel dihapus/diubah).
+TABEL_SELFROLE_ORPHAN = """
+CREATE TABLE IF NOT EXISTS selfrole_orphan (
+    guild_id INTEGER NOT NULL,
+    message_id INTEGER NOT NULL,
+    emoji TEXT NOT NULL,
+    PRIMARY KEY (guild_id, message_id, emoji)
+)
+"""
+
 TABEL_ANNOUNCEMENTS = """
 CREATE TABLE IF NOT EXISTS dashboard_announcements (
     id INTEGER PRIMARY KEY,
@@ -121,6 +135,16 @@ def modul_aktif(guild_id: int, key: str) -> bool:
     return get_guild_setting(guild_id, key, "1") == "1"
 
 
+def channel_setting(guild_id: int, key: str, fallback: int) -> int:
+    """ID channel/kategori per-server dari dashboard; fallback ke config global.
+
+    Dipakai fitur yang dulunya hanya baca ID global dari .env (verifikasi,
+    tiket, saran, counting, tempvc, confess, dailyq). Return 0 bila keduanya
+    kosong = fitur belum dikonfigurasi di server ini.
+    """
+    return get_guild_setting_int(guild_id, key, 0) or int(fallback or 0)
+
+
 def parse_id_list(teks: str | None) -> list[int]:
     """'123, 456' -> [123, 456]. Entri bukan angka dilewati diam-diam."""
     hasil: list[int] = []
@@ -148,6 +172,7 @@ class DashboardSync(commands.Cog):
             conn.execute(TABEL_SETTINGS)
             conn.execute(TABEL_SELFROLES)
             conn.execute(TABEL_ANNOUNCEMENTS)
+            conn.execute(TABEL_SELFROLE_ORPHAN)
             conn.commit()
         self._jalan = bool(config.settings.dashboard_url and config.settings.dashboard_secret)
         # (message_id, emoji) yang sudah diberi reaksi seed agar tak diulang tiap loop
@@ -199,9 +224,19 @@ class DashboardSync(commands.Cog):
             "name": g.name,
             "icon": str(g.icon.key) if g.icon else None,
             "member_count": g.member_count or 0,
+            # text + voice + kategori: dropdown channel di dashboard
+            # butuh semuanya (mis. lobby tempvc = voice, tiket = kategori).
             "channels": [
                 {"id": str(c.id), "name": c.name, "type": int(c.type.value)}
                 for c in g.text_channels
+            ]
+            + [
+                {"id": str(c.id), "name": c.name, "type": int(c.type.value)}
+                for c in g.voice_channels
+            ]
+            + [
+                {"id": str(c.id), "name": c.name, "type": int(c.type.value)}
+                for c in g.categories
             ],
             "roles": [
                 {"id": str(r.id), "name": r.name}
@@ -362,15 +397,34 @@ class DashboardSync(commands.Cog):
     def _simpan_selfroles(self, guild_id: int, rows: list) -> None:
         with get_connection() as conn:
             conn.execute("DELETE FROM dashboard_selfroles WHERE guild_id = ?", (guild_id,))
+            segar: set[int] = set()
             for r in rows:
                 try:
+                    mid = int(r["message_id"])
                     conn.execute(
                         "INSERT INTO dashboard_selfroles (guild_id, message_id, emoji, role_id)"
                         " VALUES (?, ?, ?, ?)",
-                        (guild_id, int(r["message_id"]), str(r["emoji"])[:64], int(r["role_id"])),
+                        (guild_id, mid, str(r["emoji"])[:64], int(r["role_id"])),
                     )
+                    segar.add(mid)
                 except (KeyError, ValueError, TypeError):
                     continue
+            # Bersihkan flag yatim untuk pesan yang sudah tidak dikirim
+            # dashboard lagi (panel dihapus/diubah) agar registri tak tumbuh.
+            # SQL statis per-baris (tanpa f-string): tabel yatim kecil.
+            yatim_lama = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT message_id FROM selfrole_orphan WHERE guild_id = ?",
+                    (guild_id,),
+                ).fetchall()
+            ]
+            for mid in yatim_lama:
+                if mid not in segar:
+                    conn.execute(
+                        "DELETE FROM selfrole_orphan WHERE guild_id = ? AND message_id = ?",
+                        (guild_id, mid),
+                    )
             conn.commit()
 
     def _simpan_responder(self, guild_id: int, rows: list) -> None:
@@ -629,14 +683,28 @@ class DashboardSync(commands.Cog):
         await self.bot.wait_until_ready()
 
     async def _seed_reaksi(self, guild: discord.Guild) -> None:
-        """Pastikan pesan self-role sudah punya reaksi emojinya (sekali per restart)."""
+        """Pastikan pesan self-role sudah punya reaksi emojinya (sekali per restart).
+
+        Baris "yatim" (pesan tak ditemukan di semua channel) ditandai di tabel
+        selfrole_orphan agar pemindaian mahal semua-channel tidak diulang
+        tiap loop/restart. Flag dibersihkan saat dashboard berhenti mengirim
+        baris tersebut; panel yang dibuat ulang (message_id baru) otomatis
+        di-seed lagi karena flag terikat message_id.
+        """
         with get_connection() as conn:
             rows = conn.execute(
                 "SELECT message_id, emoji FROM dashboard_selfroles WHERE guild_id = ?",
                 (guild.id,),
             ).fetchall()
+            yatim = {
+                (mid, emo)
+                for mid, emo in conn.execute(
+                    "SELECT message_id, emoji FROM selfrole_orphan WHERE guild_id = ?",
+                    (guild.id,),
+                ).fetchall()
+            }
         for message_id, emoji_txt in rows:
-            if (message_id, emoji_txt) in self._seeded:
+            if (message_id, emoji_txt) in self._seeded or (message_id, emoji_txt) in yatim:
                 continue
             emoji = _parse_emoji(emoji_txt)
             if emoji is None:
@@ -651,6 +719,20 @@ class DashboardSync(commands.Cog):
                     except (discord.NotFound, discord.Forbidden):
                         continue
                 if msg is None:
+                    # Yatim: tandai persisten, jangan pindai ulang tiap loop.
+                    with get_connection() as conn:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO selfrole_orphan (guild_id, message_id, emoji)"
+                            " VALUES (?, ?, ?)",
+                            (guild.id, message_id, emoji_txt),
+                        )
+                        conn.commit()
+                    log.warning(
+                        "dashboard: pesan self-role %s tak ditemukan di semua channel "
+                        "(guild %s) — ditandai yatim, lewati seed berikutnya.",
+                        message_id, guild.id,
+                    )
+                    yatim.add((message_id, emoji_txt))
                     continue
                 await msg.add_reaction(emoji)
             except (discord.Forbidden, discord.HTTPException):

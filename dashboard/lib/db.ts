@@ -1,7 +1,44 @@
+import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 
 export function dbConfigured(): boolean {
   return Boolean(process.env.POSTGRES_URL);
+}
+
+const RELATION_MISSING_RE = /relation .* does not exist/i;
+
+/** true bila error = tabel belum dibuat (dashboard/schema.sql belum dijalankan). */
+export function isSchemaMissingError(e: unknown): boolean {
+  return e instanceof Error && RELATION_MISSING_RE.test(e.message);
+}
+
+/**
+ * Bungkus handler route API agar query ke tabel yang belum ada
+ * (schema.sql belum dijalankan di Postgres) dijawab 503 terstruktur
+ * { error: "schema_not_ready", hint } — bukan 500 mentah.
+ * Error lain dilempar ulang seperti semula (perilaku tak berubah).
+ *
+ * Pakai: `export const GET = withDbError(async function GET(...) {...})`.
+ */
+export function withDbError<T extends (...args: never[]) => Promise<NextResponse>>(
+  handler: T,
+): T {
+  return (async (...args: Parameters<T>): Promise<NextResponse> => {
+    try {
+      return await handler(...args);
+    } catch (e) {
+      if (isSchemaMissingError(e)) {
+        return NextResponse.json(
+          {
+            error: "schema_not_ready",
+            hint: "Tabel database belum ada — jalankan dashboard/schema.sql sekali di database Postgres.",
+          },
+          { status: 503 },
+        );
+      }
+      throw e;
+    }
+  }) as T;
 }
 
 export async function latestSnapshot(): Promise<SnapshotPayload | null> {

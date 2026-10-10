@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import {
   deleteAnnouncement,
   updateAnnouncement,
-  type AnnouncementPatch,
-} from "@/lib/db";
+  type AnnouncementPatch, withDbError } from "@/lib/db";
 import { requireManager } from "@/lib/access";
 import { discordId, intervalMinutes, isoDateTime, parseJsonBody, str } from "@/lib/validate";
 
@@ -14,7 +13,7 @@ function invalidId(reqId: string): boolean {
 }
 
 /** Ubah sebagian field pengumuman (manager). */
-export async function PUT(
+async function putImpl(
   req: Request,
   { params }: { params: Promise<{ id: string; annId: string }> },
 ) {
@@ -70,7 +69,7 @@ export async function PUT(
 }
 
 /** Hapus pengumuman (manager). */
-export async function DELETE(
+async function deleteImpl(
   _req: Request,
   { params }: { params: Promise<{ id: string; annId: string }> },
 ) {
@@ -83,3 +82,6 @@ export async function DELETE(
   await deleteAnnouncement(Number(annId), id);
   return NextResponse.json({ ok: true });
 }
+
+export const PUT = withDbError(putImpl);
+export const DELETE = withDbError(deleteImpl);

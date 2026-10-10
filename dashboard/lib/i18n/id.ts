@@ -10,6 +10,7 @@ export const id = {
     signInShort: "Masuk",
     logoAlt: "Logo Finch",
     back: "Kembali ke daftar server",
+    features: "Fitur",
   },
   auth: {
     signIn: "Masuk dengan Discord",
@@ -89,7 +90,7 @@ export const id = {
         desc: "Jaga server tetap nyaman dengan anti-spam, filter invite link, mute otomatis, dan slowmode. Setiap tindakan tercatat di log moderasi yang bisa kamu baca dari web.",
         points: [
           "Anti-spam & filter invite",
-          "Mute & slowmode otomatis",
+          "Mute otomatis & slowmode manual",
           "Log moderasi di dashboard",
         ],
       },
@@ -104,11 +105,20 @@ export const id = {
       },
       giveaway: {
         title: "Giveaway",
-        desc: "Adakan giveaway langsung dari dashboard: tentukan hadiah dan durasinya, lalu bot yang memposting, mengingatkan, dan mengundi pemenang dengan adil.",
+        desc: "Adakan giveaway langsung dari dashboard: tentukan hadiah dan durasinya, lalu bot memposting giveaway-nya dan mengundi pemenang dengan adil. Pemenang bisa diundi ulang kapan saja.",
         points: [
           "Dibuat & dikelola dari web",
           "Undian pemenang otomatis",
-          "Pengumuman terjadwal",
+          "Syarat ikut & tombol undi ulang",
+        ],
+      },
+      customcmd: {
+        title: "Perintah Kustom",
+        desc: "Buat perintah teks sendiri seperti !promo yang dijawab bot secara otomatis saat ada yang mengetiknya. Balasannya bisa memakai variabel agar terasa personal.",
+        points: [
+          "Trigger kustom seperti !nama",
+          "Variabel {user}, {server}, {channel}",
+          "Dikelola via perintah /cc",
         ],
       },
     },
@@ -493,7 +503,7 @@ export const id = {
           welcome_message: {
             label: "Pesan custom",
             placeholder: "Selamat datang {user} di {server}!",
-            hint: "Bisa pakai {user} dan {server}. Kosongkan untuk kartu default.",
+            hint: "Bisa pakai {user}, {server}, {member_count}, dan {channel}. Kosongkan untuk kartu default.",
           },
           welcome_role_ids: {
             label: "Role otomatis (ID, pisah koma)",
@@ -510,7 +520,7 @@ export const id = {
           goodbye_message: {
             label: "Pesan custom",
             placeholder: "Sampai jumpa {user}, terima kasih sudah mampir di {server}!",
-            hint: "Bisa pakai {user} dan {server}. Kosongkan untuk pesan default.",
+            hint: "Bisa pakai {user}, {server}, {member_count}, dan {channel}. Kosongkan untuk pesan default.",
           },
         },
       },

@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { ackEmbedRequest, dbConfigured } from "@/lib/db";
+import { ackEmbedRequest, dbConfigured, withDbError } from "@/lib/db";
 import { botAuthorized } from "@/lib/access";
 import { optStr, parseJsonBody } from "@/lib/validate";
 
 
 /** Bot menandai permintaan embed sudah diproses (done) atau gagal (failed). */
-export async function POST(
+async function postImpl(
   req: Request,
   { params }: { params: Promise<{ id: string; reqId: string }> },
 ) {
@@ -32,3 +32,5 @@ export async function POST(
   await ackEmbedRequest(rid, id, status, note);
   return NextResponse.json({ ok: true });
 }
+
+export const POST = withDbError(postImpl);

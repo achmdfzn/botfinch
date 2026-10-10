@@ -11,8 +11,6 @@ import { fetchUserGuilds } from "@/lib/access";
 import { latestSnapshot } from "@/lib/db";
 import { getDict, getLang } from "@/lib/i18n";
 
-export const instant = false;
-
 export async function generateMetadata(): Promise<Metadata> {
   const dict = getDict(await getLang());
   return { title: `${dict.dashboard.metaTitle} | Finch Dashboard` };
@@ -35,33 +33,43 @@ export default async function Dashboard() {
     );
   }
 
+  const retryCls =
+    "inline-flex min-h-[44px] items-center justify-center rounded-lg bg-brand px-5 text-sm font-semibold text-ink hover:bg-brand-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand";
+  const loadError = (
+    <div>
+      <SiteHeader />
+      <main className="mx-auto max-w-3xl px-4 py-16">
+        <EmptyState
+          title={d.loadTitle}
+          body={d.loadBody}
+          action={
+            <Link href="/dashboard" className={retryCls}>
+              {d.retry}
+            </Link>
+          }
+        />
+      </main>
+    </div>
+  );
+
   let manageable;
   try {
     const guilds = await fetchUserGuilds(session.accessToken);
     manageable = guilds.filter(canManage);
   } catch {
-    return (
-      <div>
-        <SiteHeader />
-        <main className="mx-auto max-w-3xl px-4 py-16">
-          <EmptyState
-            title={d.loadTitle}
-            body={d.loadBody}
-            action={
-              <Link
-                href="/dashboard"
-                className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-brand px-5 text-sm font-semibold text-ink hover:bg-brand-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
-              >
-                {d.retry}
-              </Link>
-            }
-          />
-        </main>
-      </div>
-    );
+    return loadError;
   }
 
-  const snap = await latestSnapshot();
+  // Snapshot DB bisa gagal walau DB terkonfigurasi (query error). Tanpa
+  // snapshot, pengelompokan "bot terpasang vs belum" tidak bisa ditentukan
+  // secara jujur — tampilkan state error dengan tombol coba lagi,
+  // jangan biarkan halaman crash atau menebak status server.
+  let snap;
+  try {
+    snap = await latestSnapshot();
+  } catch {
+    return loadError;
+  }
   const botGuilds = new Map((snap?.guilds ?? []).map((g) => [g.id, g]));
   const inBot: GuildLite[] = [];
   const notInBot: GuildLite[] = [];
