@@ -385,24 +385,34 @@ export async function updateAnnouncement(
   id: number,
   guildId: string,
   patch: AnnouncementPatch,
-): Promise<void> {
+): Promise<boolean> {
+  // true bila baris (id + guild_id) benar-benar ada & ter-update; route
+  // memakai ini untuk menjawab 404, bukan 200 semu, saat id/guild tak cocok.
+  let ditemukan = false;
   if (patch.message !== undefined) {
-    await sql`UPDATE announcements SET message = ${patch.message} WHERE id = ${id} AND guild_id = ${guildId}`;
+    const { rows } = await sql`UPDATE announcements SET message = ${patch.message} WHERE id = ${id} AND guild_id = ${guildId} RETURNING id`;
+    ditemukan ||= rows.length > 0;
   }
   if (patch.channelId !== undefined) {
-    await sql`UPDATE announcements SET channel_id = ${patch.channelId} WHERE id = ${id} AND guild_id = ${guildId}`;
+    const { rows } = await sql`UPDATE announcements SET channel_id = ${patch.channelId} WHERE id = ${id} AND guild_id = ${guildId} RETURNING id`;
+    ditemukan ||= rows.length > 0;
   }
   if (patch.runAt !== undefined) {
-    await sql`UPDATE announcements SET run_at = ${patch.runAt} WHERE id = ${id} AND guild_id = ${guildId}`;
+    const { rows } = await sql`UPDATE announcements SET run_at = ${patch.runAt} WHERE id = ${id} AND guild_id = ${guildId} RETURNING id`;
+    ditemukan ||= rows.length > 0;
   }
   if (patch.intervalMinutes !== undefined) {
-    await sql`UPDATE announcements SET interval_minutes = ${patch.intervalMinutes} WHERE id = ${id} AND guild_id = ${guildId}`;
+    const { rows } = await sql`UPDATE announcements SET interval_minutes = ${patch.intervalMinutes} WHERE id = ${id} AND guild_id = ${guildId} RETURNING id`;
+    ditemukan ||= rows.length > 0;
   }
   if (patch.enabled !== undefined) {
-    await sql`UPDATE announcements SET enabled = ${patch.enabled} WHERE id = ${id} AND guild_id = ${guildId}`;
+    const { rows } = await sql`UPDATE announcements SET enabled = ${patch.enabled} WHERE id = ${id} AND guild_id = ${guildId} RETURNING id`;
+    ditemukan ||= rows.length > 0;
   }
+  return ditemukan;
 }
 
-export async function deleteAnnouncement(id: number, guildId: string): Promise<void> {
-  await sql`DELETE FROM announcements WHERE id = ${id} AND guild_id = ${guildId}`;
+export async function deleteAnnouncement(id: number, guildId: string): Promise<boolean> {
+  const { rows } = await sql`DELETE FROM announcements WHERE id = ${id} AND guild_id = ${guildId} RETURNING id`;
+  return rows.length > 0;
 }

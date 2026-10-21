@@ -6,12 +6,12 @@ from src.cogs import dashboard_sync as ds
 
 
 def test_channel_milik_guild_menerima_guild_yang_sama():
-    channel = SimpleNamespace(guild=SimpleNamespace(id=12345))
+    channel = SimpleNamespace(guild=SimpleNamespace(id=12345), type=0)
     assert ds._channel_milik_guild(channel, 12345)
 
 
 def test_channel_milik_guild_menolak_guild_lain_dan_dm():
-    channel_lain = SimpleNamespace(guild=SimpleNamespace(id=54321))
+    channel_lain = SimpleNamespace(guild=SimpleNamespace(id=54321), type=0)
     channel_dm = SimpleNamespace()
     assert not ds._channel_milik_guild(channel_lain, 12345)
     assert not ds._channel_milik_guild(channel_dm, 12345)
