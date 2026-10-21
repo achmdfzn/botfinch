@@ -2,6 +2,7 @@
 
 Semua data bot (Level, riwayat moderasi, dsb) disimpan di data/finch.db.
 """
+from contextlib import contextmanager
 import logging
 import re
 import sqlite3
@@ -19,13 +20,18 @@ _IDENT_AMAN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _DEFINISI_AMAN = re.compile(r"^[A-Za-z0-9_(),\s']+$")  # kutip tunggal diizinkan untuk DEFAULT '...'
 
 
+@contextmanager
 def get_connection():
     conn = sqlite3.connect(str(DB_PATH), timeout=10, check_same_thread=False)
     try:
         conn.execute("PRAGMA journal_mode=WAL;")
     except Exception:
         pass
-    return conn
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def init_db():

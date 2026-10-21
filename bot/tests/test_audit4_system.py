@@ -42,7 +42,7 @@ SRC = Path(__file__).resolve().parent.parent / "src"
 @pytest.fixture()
 def db_tmp(monkeypatch):
     """DB SQLite sementara untuk semua test yang menyentuh store."""
-    tmp = tempfile.TemporaryDirectory()
+    tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
     monkeypatch.setattr(store, "DB_PATH", Path(tmp.name) / "finch.db")
     store.init_db()
     # Tabel milik dashboard_sync (dibuat di __init__ cog aslinya)
@@ -483,7 +483,7 @@ def test_cog_ke_kategori_mencakup_semua_cog():
     for f in sorted(SRC.glob("cogs/*.py")):
         if f.name == "__init__.py":
             continue
-        tree = ast.parse(f.read_text())
+        tree = ast.parse(f.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.ClassDef):
                 if any("Cog" in ast.unparse(b) for b in node.bases):

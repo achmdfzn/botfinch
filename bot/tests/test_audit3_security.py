@@ -260,7 +260,8 @@ def _execute_tak_aman(modul_rel: str):
             if isinstance(f, ast.Attribute) and f.attr in ("execute", "executescript"):
                 if node.args and _arg_sql_dinamis(node.args[0]):
                     fungsi = self._fungsi[-1] if self._fungsi else "<module>"
-                    if (modul_rel, fungsi) not in _FSTRING_SQL_AMAN:
+                    norm_modul = modul_rel.replace("\\", "/")
+                    if (norm_modul, fungsi) not in _FSTRING_SQL_AMAN:
                         temuan.append((node.lineno, fungsi))
             self.generic_visit(node)
 

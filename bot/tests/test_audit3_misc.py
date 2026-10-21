@@ -309,6 +309,7 @@ def test_pengumuman_terkirim_menandai_last_sent(db_tmp):
     guild.member_count = 42
     channel = AsyncMock()
     channel.send = AsyncMock()
+    channel.guild.id = 111  # ownership guard: channel milik guild yang sama
     guild.get_channel.return_value = channel
     cog.bot.get_guild.return_value = guild
     with patch("src.cogs.dashboard_sync.modul_aktif", return_value=True):

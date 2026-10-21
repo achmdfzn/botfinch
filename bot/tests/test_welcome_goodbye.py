@@ -65,6 +65,7 @@ def _member():
 def _channel():
     ch = MagicMock()
     ch.send = AsyncMock()
+    ch.guild.id = GID  # ownership guard: channel harus milik guild yang sama
     return ch
 
 
