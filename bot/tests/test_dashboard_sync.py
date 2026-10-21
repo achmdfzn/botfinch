@@ -59,12 +59,17 @@ def test_env_example_tidak_bocor():
 
 def _cog_mati():
     """DashboardSync dengan integrasi mati (env kosong di test)."""
+    from dataclasses import replace
+    from unittest.mock import patch
     import discord
     from discord.ext import commands
+    from src import config
     from src.cogs.dashboard_sync import DashboardSync
 
     bot = commands.Bot(command_prefix="!", intents=discord.Intents.default())
-    cog = DashboardSync(bot)
+    dummy_settings = replace(config.settings, dashboard_url="", dashboard_secret="")
+    with patch.object(config, "settings", dummy_settings):
+        cog = DashboardSync(bot)
     assert cog._jalan is False
     return cog
 

@@ -50,11 +50,19 @@ class TestSettings(unittest.TestCase):
             del os.environ["ANTI_INVITE"]
 
     def test_default_tiket_dan_self_roles(self):
-        from src.config import Settings
+        old_sr = os.environ.pop("SELF_ROLES", None)
+        old_tc = os.environ.pop("TICKET_CATEGORY_ID", None)
+        try:
+            from src.config import Settings
 
-        s = Settings()
-        self.assertEqual(s.ticket_category_id, 0)
-        self.assertEqual(s.self_roles_list(), [])
+            s = Settings()
+            self.assertEqual(s.ticket_category_id, 0)
+            self.assertEqual(s.self_roles_list(), [])
+        finally:
+            if old_sr is not None:
+                os.environ["SELF_ROLES"] = old_sr
+            if old_tc is not None:
+                os.environ["TICKET_CATEGORY_ID"] = old_tc
 
     def test_self_roles_list_parsing(self):
         os.environ["SELF_ROLES"] = "Pioneer, Notifikasi Event,,Mabar "

@@ -212,6 +212,8 @@ def test_proses_embed_mati_ack_failed():
 def _guild_announce_mock():
     ch = MagicMock()
     ch.send = AsyncMock()
+    ch.guild.id = GID  # ownership guard: channel harus milik guild yang sama
+    ch.type = 0  # channel teks — guard juga menolak tipe non-teks (voice/kategori)
     g = MagicMock()
     g.id = GID
     g.name = "Server Tes"

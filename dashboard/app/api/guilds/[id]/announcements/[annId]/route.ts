@@ -73,7 +73,8 @@ async function putImpl(
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
-  await updateAnnouncement(aid, id, patch);
+  const updated = await updateAnnouncement(aid, id, patch);
+  if (!updated) return NextResponse.json({ error: "announcement_not_found" }, { status: 404 });
   return NextResponse.json({ ok: true });
 }
 
@@ -88,7 +89,8 @@ async function deleteImpl(
   if (invalidId(annId)) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
-  await deleteAnnouncement(Number(annId), id);
+  const deleted = await deleteAnnouncement(Number(annId), id);
+  if (!deleted) return NextResponse.json({ error: "announcement_not_found" }, { status: 404 });
   return NextResponse.json({ ok: true });
 }
 

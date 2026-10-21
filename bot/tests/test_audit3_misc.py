@@ -86,18 +86,24 @@ def test_events_cek_event_rsvp_error_tidak_bunuh_loop(db_tmp):
     asli = ev_mod.get_connection
 
     def get_conn_rusak():
-        # SELECT events OK, SELECT event_rsvp lempar
+        # SELECT events OK lewat koneksi asli (dibuka & ditahan selama mock
+        # hidup), SELECT event_rsvp lempar. get_connection() kini
+        # @contextmanager — wajib di-enter, tidak bisa langsung .execute().
+        cm = asli()
+        conn_asli = cm.__enter__()
+
         class _Conn:
             def __enter__(self):
                 return self
 
             def __exit__(self, *a):
+                cm.__exit__(*a)
                 return False
 
             def execute(self, sql, params=()):
                 if "event_rsvp" in sql:
                     raise sqlite3.OperationalError("rusak")
-                return asli().execute(sql, params)
+                return conn_asli.execute(sql, params)
 
         return _Conn()
 
@@ -309,6 +315,8 @@ def test_pengumuman_terkirim_menandai_last_sent(db_tmp):
     guild.member_count = 42
     channel = AsyncMock()
     channel.send = AsyncMock()
+    channel.guild.id = 111  # ownership guard: channel milik guild yang sama
+    channel.type = 0  # channel teks — guard juga menolak tipe non-teks
     guild.get_channel.return_value = channel
     cog.bot.get_guild.return_value = guild
     with patch("src.cogs.dashboard_sync.modul_aktif", return_value=True):

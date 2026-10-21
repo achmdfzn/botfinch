@@ -107,7 +107,11 @@ class TestParitasKeyToggle(unittest.TestCase):
         self.assertEqual(self._key_terpakai_bot(), self.KEY_BOT)
 
     def test_semua_key_dikenal_dashboard(self):
-        dash = os.path.expanduser("~/workspace/finch/dashboard")
+        cand_dash = [
+            os.path.join(os.path.dirname(REPO), "dashboard"),
+            os.path.expanduser("~/workspace/finch/dashboard"),
+        ]
+        dash = next((d for d in cand_dash if os.path.isdir(d)), cand_dash[0])
         teks = ""
         for rel in ("lib/settings.ts", "lib/plugins.ts"):
             p = os.path.join(dash, rel)

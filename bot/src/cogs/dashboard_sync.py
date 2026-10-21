@@ -108,10 +108,37 @@ def _int_aman(nilai, default: int = 0) -> int:
         return default
 
 
+# Tipe channel Discord yang bisa menerima pesan: teks (0), news/announcement
+# (5), dan thread (10/11/12). Kategori (4), voice (2), stage (13), dan forum
+# (15) TIDAK bisa dikirimi pesan langsung oleh bot.
+TIPE_CHANNEL_TEKS = frozenset({0, 5, 10, 11, 12})
+
+
+def _tipe_channel_numerik(channel) -> int | None:
+    """Kode tipe numerik channel; None bila tidak dapat ditentukan.
+
+    Objek channel discord.py selalu punya `.type` berupa enum ChannelType
+    (punya `.value` int). Nilai mentah int (test double) juga diterima.
+    """
+    tipe = getattr(channel, "type", None)
+    mentah = getattr(tipe, "value", tipe)
+    if isinstance(mentah, bool) or not isinstance(mentah, int):
+        return None
+    return mentah
+
+
 def _channel_milik_guild(channel, guild_id: int) -> bool:
-    """Fail-closed: channel tujuan harus benar-benar milik guild yang diproses."""
+    """Fail-closed: channel tujuan harus benar-benar milik guild yang diproses
+    DAN bertipe yang bisa menerima pesan (teks/news/thread).
+
+    Cek guild saja tidak cukup: channel voice/kategori di guild yang sama
+    tetap tidak bisa dikirimi pesan, jadi ditolak di sini sebelum ada side
+    effect apa pun. Tipe yang tidak dapat ditentukan juga ditolak.
+    """
     guild = getattr(channel, "guild", None)
-    return guild is not None and getattr(guild, "id", None) == guild_id
+    if guild is None or getattr(guild, "id", None) != guild_id:
+        return False
+    return _tipe_channel_numerik(channel) in TIPE_CHANNEL_TEKS
 
 
 def get_guild_setting(guild_id: int, key: str, default: str = "1") -> str:

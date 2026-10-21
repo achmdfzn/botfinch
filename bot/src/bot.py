@@ -176,7 +176,11 @@ class FinchBot(commands.Bot):
         `goodbye_channel_id` (fallback: system channel), `goodbye_message`
         (variabel: {user} {server} {member_count} {channel}).
         """
-        from src.cogs.dashboard_sync import get_guild_setting, get_guild_setting_int
+        from src.cogs.dashboard_sync import (
+            _channel_milik_guild,
+            get_guild_setting,
+            get_guild_setting_int,
+        )
 
         await modlog.log_event(
             self,
@@ -188,9 +192,9 @@ class FinchBot(commands.Bot):
             return
         channel_id = get_guild_setting_int(member.guild.id, "goodbye_channel_id", 0)
         channel = self.get_channel(channel_id) if channel_id else None
-        if channel is not None and getattr(getattr(channel, "guild", None), "id", None) != member.guild.id:
+        if channel is not None and not _channel_milik_guild(channel, member.guild.id):
             log.warning(
-                "Goodbye channel %s bukan milik guild %s; memakai system channel jika tersedia.",
+                "Goodbye channel %s tidak valid untuk guild %s (bukan miliknya / bukan channel teks); memakai system channel jika tersedia.",
                 channel_id, member.guild.id,
             )
             channel = None
@@ -232,7 +236,12 @@ class FinchBot(commands.Bot):
         Termasuk auto-role: `welcome_role_ids` (dashboard, daftar ID dipisah koma)
         diberikan otomatis ke member baru. Ikut toggle `welcome_enabled`.
         """
-        from src.cogs.dashboard_sync import get_guild_setting, get_guild_setting_int, parse_id_list
+        from src.cogs.dashboard_sync import (
+            _channel_milik_guild,
+            get_guild_setting,
+            get_guild_setting_int,
+            parse_id_list,
+        )
         from src.utils.variabel import substitusi_variabel
 
         gid = member.guild.id
@@ -252,9 +261,9 @@ class FinchBot(commands.Bot):
             or config.settings.welcome_channel_id
         )
         channel = self.get_channel(channel_id) if channel_id else None
-        if channel is not None and getattr(getattr(channel, "guild", None), "id", None) != gid:
+        if channel is not None and not _channel_milik_guild(channel, gid):
             log.warning(
-                "Welcome channel %s bukan milik guild %s; memakai system channel jika tersedia.",
+                "Welcome channel %s tidak valid untuk guild %s (bukan miliknya / bukan channel teks); memakai system channel jika tersedia.",
                 channel_id, gid,
             )
             channel = None
