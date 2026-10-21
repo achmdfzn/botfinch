@@ -188,6 +188,12 @@ class FinchBot(commands.Bot):
             return
         channel_id = get_guild_setting_int(member.guild.id, "goodbye_channel_id", 0)
         channel = self.get_channel(channel_id) if channel_id else None
+        if channel is not None and getattr(getattr(channel, "guild", None), "id", None) != member.guild.id:
+            log.warning(
+                "Goodbye channel %s bukan milik guild %s; memakai system channel jika tersedia.",
+                channel_id, member.guild.id,
+            )
+            channel = None
         if channel is None:
             # fallback: pakai system channel server
             channel = member.guild.system_channel
@@ -246,6 +252,12 @@ class FinchBot(commands.Bot):
             or config.settings.welcome_channel_id
         )
         channel = self.get_channel(channel_id) if channel_id else None
+        if channel is not None and getattr(getattr(channel, "guild", None), "id", None) != gid:
+            log.warning(
+                "Welcome channel %s bukan milik guild %s; memakai system channel jika tersedia.",
+                channel_id, gid,
+            )
+            channel = None
         if channel is None:
             # fallback: pakai system channel server
             channel = member.guild.system_channel

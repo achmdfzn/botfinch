@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createEmbedRequest, listEmbedRequests, withDbError } from "@/lib/db";
+import { createEmbedRequest, getSnapshotChannel, listEmbedRequests, withDbError } from "@/lib/db";
 import { requireManager } from "@/lib/access";
 import { discordId, embedFields, hexColor, httpUrl, optStr, parseJsonBody } from "@/lib/validate";
 
@@ -33,6 +33,10 @@ async function postImpl(
   const title = optStr(body.title, 256);
   const description = optStr(body.description, 4000);
   const color = hexColor(body.color, "2EC4B6");
+  const target = await getSnapshotChannel(id, channelId ?? "");
+  if (channelId === undefined || !target || (target.type !== 0 && target.type !== 5)) {
+    return NextResponse.json({ error: "channel_not_in_guild_or_not_text" }, { status: 400 });
+  }
   const fields = embedFields(body.fields);
   const footer = optStr(body.footer, 2048);
   const imageUrl = httpUrl(body.image_url);

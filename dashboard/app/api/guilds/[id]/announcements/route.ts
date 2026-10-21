@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createAnnouncement, listAnnouncements, withDbError } from "@/lib/db";
+import { createAnnouncement, getSnapshotChannel, listAnnouncements, withDbError } from "@/lib/db";
 import { requireManager } from "@/lib/access";
 import { discordId, intervalMinutes, isoDateTime, parseJsonBody, str } from "@/lib/validate";
 
@@ -40,6 +40,10 @@ async function postImpl(
     interval === undefined
   ) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
+  }
+  const target = await getSnapshotChannel(id, channelId);
+  if (!target || (target.type !== 0 && target.type !== 5)) {
+    return NextResponse.json({ error: "channel_not_in_guild_or_not_text" }, { status: 400 });
   }
   const annId = await createAnnouncement({
     guildId: id,

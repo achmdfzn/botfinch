@@ -47,6 +47,16 @@ export async function latestSnapshot(): Promise<SnapshotPayload | null> {
   return (rows[0]?.payload as SnapshotPayload) ?? null;
 }
 
+/** Cari channel pada snapshot terbaru dan batasi pencarian ke guild yang diminta. */
+export async function getSnapshotChannel(
+  guildId: string,
+  channelId: string,
+): Promise<SnapshotChannel | null> {
+  const snapshot = await latestSnapshot();
+  const guild = snapshot?.guilds.find((item) => item.id === guildId);
+  return guild?.channels.find((channel) => channel.id === channelId) ?? null;
+}
+
 export async function saveSnapshot(payload: SnapshotPayload): Promise<void> {
   await sql`INSERT INTO snapshots (payload) VALUES (${JSON.stringify(payload)}::jsonb)`;
   await sql`DELETE FROM snapshots WHERE id NOT IN (SELECT id FROM snapshots ORDER BY id DESC LIMIT 24)`;
@@ -351,6 +361,24 @@ export async function listAnnouncements(guildId: string): Promise<Announcement[]
     last_sent_at: toIso(r.last_sent_at),
     created_at: toIso(r.created_at) ?? "",
   }));
+}
+
+/** Catat waktu pengiriman dari bot hanya untuk pengumuman milik guild yang sama. */
+export async function markAnnouncementSent(
+  id: number,
+  guildId: string,
+  lastSentAt: string,
+): Promise<boolean> {
+  const { rows } = await sql`
+    UPDATE announcements
+    SET last_sent_at = GREATEST(
+      COALESCE(last_sent_at, ${lastSentAt}::timestamptz),
+      ${lastSentAt}::timestamptz
+    )
+    WHERE id = ${id} AND guild_id = ${guildId}
+    RETURNING id
+  `;
+  return rows.length > 0;
 }
 
 export async function updateAnnouncement(

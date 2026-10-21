@@ -108,6 +108,12 @@ def _int_aman(nilai, default: int = 0) -> int:
         return default
 
 
+def _channel_milik_guild(channel, guild_id: int) -> bool:
+    """Fail-closed: channel tujuan harus benar-benar milik guild yang diproses."""
+    guild = getattr(channel, "guild", None)
+    return guild is not None and getattr(guild, "id", None) == guild_id
+
+
 def get_guild_setting(guild_id: int, key: str, default: str = "1") -> str:
     """Baca pengaturan per-server dari cache lokal (disimpan oleh pull loop)."""
     with get_connection() as conn:
@@ -180,9 +186,14 @@ class DashboardSync(commands.Cog):
         # on_ready bisa tembak berkali-kali saat reconnect; push awal hanya sekali
         self._push_awal_done = False
         if self._jalan:
-            self.push_snapshot.start()
-            self.pull_settings.start()
-            self.kirim_pengumuman.start()
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                pass
+            else:
+                self.push_snapshot.start()
+                self.pull_settings.start()
+                self.kirim_pengumuman.start()
 
     def cog_unload(self):
         for loop in (self.push_snapshot, self.pull_settings, self.kirim_pengumuman):
@@ -373,7 +384,9 @@ class DashboardSync(commands.Cog):
                 self._simpan_settings(g.id, data.get("settings") or {})
                 self._simpan_selfroles(g.id, data.get("selfroles") or [])
                 self._simpan_responder(g.id, data.get("autoresponses") or [])
-                self._simpan_pengumuman(g.id, data.get("announcements") or [])
+                pengumuman = data.get("announcements") or []
+                await self._rekonsiliasi_pengumuman(g.id, pengumuman)
+                self._simpan_pengumuman(g.id, pengumuman)
                 await self._proses_giveaway(g, data.get("giveaway_requests") or [])
                 await self._proses_embed(g, data.get("embed_requests") or [])
                 await self._seed_reaksi(g)
@@ -447,13 +460,19 @@ class DashboardSync(commands.Cog):
             conn.commit()
 
     def _simpan_pengumuman(self, guild_id: int, rows: list) -> None:
-        """Mirror pengumuman dashboard -> tabel lokal (maks 50 dari kontrak).
+        """Mirror pengumuman dashboard tanpa menimpa timestamp lokal yang lebih baru.
 
-        Dashboard = sumber utama; ganti total agar hapus via web ikut berlaku.
-        run_at/last_sent_at dinormalisasi ke ISO (parse via parse_iso); yang
-        rusak disimpan None agar tak pernah salah tembak.
+        Dashboard adalah sumber konfigurasi. Timestamp lokal yang lebih baru
+        dipertahankan sampai acknowledgment sukses diselaraskan kembali.
         """
         with get_connection() as conn:
+            status_lokal = {
+                int(r[0]): r[1]
+                for r in conn.execute(
+                    "SELECT id, last_sent_at FROM dashboard_announcements WHERE guild_id = ?",
+                    (str(guild_id),),
+                ).fetchall()
+            }
             conn.execute("DELETE FROM dashboard_announcements WHERE guild_id = ?", (str(guild_id),))
             for r in (rows or [])[:50]:
                 try:
@@ -461,7 +480,13 @@ class DashboardSync(commands.Cog):
                     if not pesan:
                         continue
                     run_at = parse_iso(str(r.get("run_at") or "") or None)
-                    terakhir = parse_iso(str(r.get("last_sent_at") or "") or None)
+                    terakhir_remote = parse_iso(str(r.get("last_sent_at") or "") or None)
+                    terakhir_lokal = parse_iso(status_lokal.get(_int_aman(r.get("id"))))
+                    terakhir = terakhir_remote
+                    if terakhir_lokal is not None and (
+                        terakhir_remote is None or terakhir_lokal > terakhir_remote
+                    ):
+                        terakhir = terakhir_lokal
                     interval = r.get("interval_minutes")
                     interval = _int_aman(interval) if interval is not None else None
                     conn.execute(
@@ -482,6 +507,49 @@ class DashboardSync(commands.Cog):
                 except (KeyError, TypeError):
                     continue
             conn.commit()
+
+    async def _ack_announcement(
+        self, guild_id: int, ann_id: int, last_sent_at: str
+    ) -> bool:
+        """Simpan waktu kirim di dashboard; False berarti perlu direkonsiliasi lagi."""
+        try:
+            async with aiohttp.ClientSession() as sesi:
+                async with sesi.post(
+                    f"{config.settings.dashboard_url}/api/guilds/{guild_id}/announcements/{ann_id}",
+                    json={"last_sent_at": last_sent_at},
+                    headers=self._headers(),
+                    timeout=aiohttp.ClientTimeout(total=20),
+                ) as resp:
+                    if resp.status == 200:
+                        return True
+                    log.warning(
+                        "dashboard: acknowledgment pengumuman %s ditolak (HTTP %d)",
+                        ann_id, resp.status,
+                    )
+        except Exception:
+            log.warning(
+                "dashboard: gagal ack pengumuman %s", ann_id, exc_info=True
+            )
+        return False
+
+    async def _rekonsiliasi_pengumuman(self, guild_id: int, rows: list) -> None:
+        """Kirim ulang acknowledgment lokal yang lebih baru daripada snapshot server."""
+        with get_connection() as conn:
+            lokal = {
+                int(r[0]): r[1]
+                for r in conn.execute(
+                    "SELECT id, last_sent_at FROM dashboard_announcements WHERE guild_id = ?",
+                    (str(guild_id),),
+                ).fetchall()
+            }
+        for row in (rows or [])[:50]:
+            ann_id = _int_aman(row.get("id"))
+            waktu_lokal = parse_iso(lokal.get(ann_id))
+            waktu_remote = parse_iso(str(row.get("last_sent_at") or "") or None)
+            if waktu_lokal is not None and (
+                waktu_remote is None or waktu_lokal > waktu_remote
+            ):
+                await self._ack_announcement(guild_id, ann_id, waktu_lokal.isoformat())
 
     async def _proses_giveaway(self, guild: discord.Guild, requests: list) -> None:
         if not requests:
@@ -506,6 +574,11 @@ class DashboardSync(commands.Cog):
             req_id = r.get("id")
             try:
                 channel = guild.get_channel(int(r["channel_id"])) or await self.bot.fetch_channel(int(r["channel_id"]))
+                if not _channel_milik_guild(channel, guild.id):
+                    await self._ack_giveaway(
+                        guild.id, req_id, "failed", "channel bukan milik server ini"
+                    )
+                    continue
                 detik = max(60, int(r["duration_minutes"]) * 60)
                 msg_id = await cog.posting_giveaway(
                     channel,
@@ -564,6 +637,11 @@ class DashboardSync(commands.Cog):
                     channel = None
             if channel is None:
                 await self._ack_embed(guild.id, req_id, "failed", "channel tidak ditemukan")
+                continue
+            if not _channel_milik_guild(channel, guild.id):
+                await self._ack_embed(
+                    guild.id, req_id, "failed", "channel bukan milik server ini"
+                )
                 continue
             try:
                 embed = _bangun_embed(r)
@@ -659,6 +737,12 @@ class DashboardSync(commands.Cog):
                 channel = await self.bot.fetch_channel(_int_aman(ch_s))
             except Exception:
                 return
+        if not _channel_milik_guild(channel, guild.id):
+            log.warning(
+                "dashboard: pengumuman %s ditolak karena channel bukan milik guild %s",
+                ann_id, guild.id,
+            )
+            return
         try:
             # Substitusi placeholder {server} / {date} / {member_count}
             teks = substitusi_pengumuman(
@@ -668,15 +752,17 @@ class DashboardSync(commands.Cog):
             await channel.send(teks, allowed_mentions=MENTIONS_PENGUMUMAN)
         except Exception:
             return  # gagal -> lewati diam-diam
+        waktu_kirim = discord.utils.utcnow().isoformat()
         try:
             with get_connection() as conn:
                 conn.execute(
                     "UPDATE dashboard_announcements SET last_sent_at = ? WHERE id = ?",
-                    (now.isoformat(), ann_id),
+                    (waktu_kirim, ann_id),
                 )
                 conn.commit()
         except Exception:
             log.warning("dashboard: gagal update last_sent_at pengumuman %s", ann_id, exc_info=True)
+        await self._ack_announcement(_int_aman(gid_s), ann_id, waktu_kirim)
 
     @kirim_pengumuman.before_loop
     async def _before_kirim(self):

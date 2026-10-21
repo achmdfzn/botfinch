@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { dbConfigured, getStoredSettings, mergeStoredSettings, withDbError } from "@/lib/db";
+import { dbConfigured, getStoredSettings, latestSnapshot, mergeStoredSettings, withDbError } from "@/lib/db";
 import { botAuthorized, requireManager } from "@/lib/access";
 import { SETTING_DEFAULTS, cleanValue, mergeSettings } from "@/lib/settings";
 import { parseJsonBody } from "@/lib/validate";
@@ -35,6 +35,68 @@ async function putImpl(
   for (const key of Object.keys(SETTING_DEFAULTS)) {
     const v = cleanValue(key, body[key]);
     if (v !== undefined) clean[key] = v;
+  }
+  // Validasi konfigurasi channel dan role terhadap snapshot guild tujuan.
+  // Bot tetap memeriksa kepemilikan guild aktual sebelum menjalankan aksi.
+  const snapshot = await latestSnapshot();
+  const guildSnapshot = snapshot?.guilds.find((guild) => guild.id === id);
+  const channelTypes = new Map(
+    (guildSnapshot?.channels ?? []).map((channel) => [channel.id, channel.type] as const),
+  );
+  const roleIds = new Set((guildSnapshot?.roles ?? []).map((role) => role.id));
+  for (const [key, value] of Object.entries(clean)) {
+    if (typeof value !== "string" || value === "") continue;
+    if (
+      key.endsWith("_channel_id") ||
+      key.endsWith("_category_id") ||
+      key.endsWith("_lobby_id")
+    ) {
+      const type = channelTypes.get(value);
+      const allowed = key.endsWith("_category_id")
+        ? type === 4
+        : key.endsWith("_lobby_id")
+          ? type === 2
+          : type === 0 || type === 5;
+      if (!allowed) {
+        return NextResponse.json(
+          { error: "invalid_channel_setting", field: key },
+          { status: 400 },
+        );
+      }
+    }
+    if (key === "welcome_role_ids") {
+      const ids = value.split(",").map((item) => item.trim()).filter(Boolean);
+      if (ids.some((roleId) => !roleIds.has(roleId))) {
+        return NextResponse.json(
+          { error: "invalid_role_setting", field: key },
+          { status: 400 },
+        );
+      }
+    }
+    if (key === "leveling_roles") {
+      let roles: unknown;
+      try {
+        roles = JSON.parse(value);
+      } catch {
+        return NextResponse.json(
+          { error: "invalid_role_setting", field: key },
+          { status: 400 },
+        );
+      }
+      if (
+        !Array.isArray(roles) ||
+        roles.some((role) => {
+          if (!role || typeof role !== "object" || Array.isArray(role)) return true;
+          const roleId = (role as Record<string, unknown>).role_id;
+          return typeof roleId !== "string" || !roleIds.has(roleId);
+        })
+      ) {
+        return NextResponse.json(
+          { error: "invalid_role_setting", field: key },
+          { status: 400 },
+        );
+      }
+    }
   }
   // Validasi lintas-key (D-003): /kerja minimal tidak boleh melebihi
   // maksimalnya. Dicek terhadap gabungan nilai tersimpan + request ini,

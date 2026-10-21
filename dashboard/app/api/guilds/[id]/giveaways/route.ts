@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { addGiveawayRequest, getGiveawayRequests, latestSnapshot, withDbError } from "@/lib/db";
+import { addGiveawayRequest, getGiveawayRequests, getSnapshotChannel, latestSnapshot, withDbError } from "@/lib/db";
 import { requireManager } from "@/lib/access";
 import { discordId, parseJsonBody, str } from "@/lib/validate";
 
@@ -34,8 +34,11 @@ async function postImpl(
   const prize = str(body.prize, 100, true);
   const winners = body.winners;
   const duration = body.duration_minutes;
+  const target = await getSnapshotChannel(id, channelId ?? "");
+  if (channelId === undefined || !target || (target.type !== 0 && target.type !== 5)) {
+    return NextResponse.json({ error: "channel_not_in_guild_or_not_text" }, { status: 400 });
+  }
   if (
-    channelId === undefined ||
     prize === undefined ||
     typeof winners !== "number" ||
     !Number.isInteger(winners) ||

@@ -308,6 +308,7 @@ class Moderation(commands.Cog):
             return
         if delay >= 10:
             return
+        delay_sebelumnya = delay
         try:
             await ch.edit(slowmode_delay=10, reason="Slowmode otomatis: chat terlalu ramai")
         except (discord.Forbidden, discord.HTTPException):
@@ -320,7 +321,14 @@ class Moderation(commands.Cog):
         async def _kembalikan():
             await asyncio.sleep(300)
             try:
-                await ch.edit(slowmode_delay=0, reason="Slowmode otomatis selesai")
+                # Jangan menimpa perubahan admin selama masa auto-slowmode.
+                # Pulihkan nilai sebelumnya hanya jika nilai masih 10 detik
+                # yang dipasang oleh task ini.
+                if (ch.slowmode_delay or 0) == 10:
+                    await ch.edit(
+                        slowmode_delay=delay_sebelumnya,
+                        reason="Slowmode otomatis selesai",
+                    )
             except (discord.Forbidden, discord.HTTPException):
                 pass
             except Exception:

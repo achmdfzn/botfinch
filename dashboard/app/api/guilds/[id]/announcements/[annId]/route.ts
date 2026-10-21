@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 import {
+  dbConfigured,
   deleteAnnouncement,
+  getSnapshotChannel,
+  markAnnouncementSent,
   updateAnnouncement,
-  type AnnouncementPatch, withDbError } from "@/lib/db";
-import { requireManager } from "@/lib/access";
+  type AnnouncementPatch,
+  withDbError,
+} from "@/lib/db";
+import { botAuthorized, requireManager } from "@/lib/access";
 import { discordId, intervalMinutes, isoDateTime, parseJsonBody, str } from "@/lib/validate";
 
 
@@ -45,6 +50,10 @@ async function putImpl(
     if (channelId === undefined) {
       return NextResponse.json({ error: "invalid_input" }, { status: 400 });
     }
+    const target = await getSnapshotChannel(id, channelId);
+    if (!target || (target.type !== 0 && target.type !== 5)) {
+      return NextResponse.json({ error: "channel_not_in_guild_or_not_text" }, { status: 400 });
+    }
     patch.channelId = channelId;
   }
   if ("run_at" in body) {
@@ -83,5 +92,32 @@ async function deleteImpl(
   return NextResponse.json({ ok: true });
 }
 
+/** Bot menandai jadwal terkirim menggunakan shared DASHBOARD_SECRET. */
+async function postAckImpl(
+  req: Request,
+  { params }: { params: Promise<{ id: string; annId: string }> },
+) {
+  const { id, annId } = await params;
+  if (!botAuthorized(req)) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  if (!dbConfigured()) {
+    return NextResponse.json({ error: "database_not_configured" }, { status: 503 });
+  }
+  if (invalidId(annId)) {
+    return NextResponse.json({ error: "invalid_input" }, { status: 400 });
+  }
+  const body = await parseJsonBody(req);
+  if (!body) return NextResponse.json({ error: "invalid_json" }, { status: 400 });
+  const lastSentAt = isoDateTime(body.last_sent_at);
+  if (typeof lastSentAt !== "string") {
+    return NextResponse.json({ error: "invalid_input" }, { status: 400 });
+  }
+  const updated = await markAnnouncementSent(Number(annId), id, lastSentAt);
+  if (!updated) return NextResponse.json({ error: "announcement_not_found" }, { status: 404 });
+  return NextResponse.json({ ok: true });
+}
+
 export const PUT = withDbError(putImpl);
 export const DELETE = withDbError(deleteImpl);
+export const POST = withDbError(postAckImpl);
