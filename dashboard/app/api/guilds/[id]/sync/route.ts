@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import {
   dbConfigured,
+  ensureEntitlement,
   getAutoResponses,
+  getEntitlement,
   getSelfRoles,
   getStoredSettings,
   listAnnouncements,
@@ -41,6 +43,28 @@ async function getImpl(
     enabled: a.enabled,
     last_sent_at: a.last_sent_at,
   }));
+  // Entitlement tier guild: guild yang belum punya baris didaftarkan malas
+  // (lazy) sebagai free lewat ensureEntitlement. Bila baris tetap null
+  // (kegagalan parsial DB), kirim default free agar bot tetap jalan.
+  let entitlementRow = await getEntitlement(id);
+  if (!entitlementRow) entitlementRow = await ensureEntitlement(id);
+  const entitlement = entitlementRow
+    ? {
+        tier: entitlementRow.tier,
+        status: entitlementRow.status,
+        starts_at: entitlementRow.starts_at,
+        expires_at: entitlementRow.expires_at,
+        source: entitlementRow.source,
+        updated_at: entitlementRow.updated_at,
+      }
+    : {
+        tier: "free",
+        status: "active",
+        starts_at: null,
+        expires_at: null,
+        source: "default",
+        updated_at: null,
+      };
   // NOTE: kirim mentah (tanpa merge default) — default ditentukan di code bot
   // via get_guild_setting(key, default), agar key yang belum disimpan user
   // tidak menimpa perilaku lama.
@@ -53,6 +77,7 @@ async function getImpl(
     giveaway_requests: rows as GiveawayRequest[],
     embed_requests: pendingEmbeds,
     announcements,
+    entitlement,
   });
 }
 

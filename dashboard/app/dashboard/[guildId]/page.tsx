@@ -6,6 +6,7 @@ import EmptyState from "@/components/EmptyState";
 import GuildErrorState from "@/components/GuildErrorState";
 import ReloadButton from "@/components/ReloadButton";
 import GuildHero from "@/components/GuildHero";
+import PremiumStatus from "@/components/PremiumStatus";
 import PluginCards, { type PluginCardData } from "@/components/PluginCards";
 import { getSessionSafe } from "@/lib/access";
 import { canManage, iconUrl } from "@/lib/discord";
@@ -117,6 +118,7 @@ export default async function GuildPluginsHome({
         statCommands={pl.heroStatCommands}
         statCogs={pl.heroStatCogs}
       />
+      <PremiumStatus guildId={guildId} />
       <PluginCards
         guildId={guildId}
         plugins={pluginCards}

@@ -172,9 +172,10 @@ def _semua_class_cog():
     return hasil
 
 
-def test_semua_41_cog_terpetakan(data_nyata):
+def test_semua_cog_terpetakan(data_nyata):
     semua = _semua_class_cog()
-    assert len(semua) == 44, f"jumlah cog berubah: {sorted(semua)}"
+    # 45 cog: termasuk Premium (Free/VIP) yang ditambahkan bersama sistem tier.
+    assert len(semua) == 45, f"jumlah cog berubah: {sorted(semua)}"
     hilang = semua - set(COG_KE_KATEGORI)
     assert not hilang, f"cog belum terpetakan: {sorted(hilang)}"
 

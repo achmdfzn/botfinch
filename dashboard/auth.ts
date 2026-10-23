@@ -4,6 +4,7 @@ import Discord from "next-auth/providers/discord";
 declare module "next-auth" {
   interface Session {
     accessToken?: string;
+    discordId?: string;
   }
 }
 
@@ -26,10 +27,12 @@ export const { handlers, auth } = NextAuth({
   callbacks: {
     async jwt({ token, account }) {
       if (account?.access_token) token.accessToken = account.access_token;
+      if (account?.providerAccountId) token.discordId = account.providerAccountId;
       return token;
     },
     async session({ session, token }) {
       session.accessToken = token.accessToken as string | undefined;
+      session.discordId = token.discordId as string | undefined;
       return session;
     },
   },

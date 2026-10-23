@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { dbConfigured, saveSnapshot, type SnapshotGuild, type SnapshotPayload, withDbError } from "@/lib/db";
+import { dbConfigured, registerGuildsSeen, saveSnapshot, type SnapshotGuild, type SnapshotPayload, withDbError } from "@/lib/db";
 import { botAuthorized } from "@/lib/access";
 import { DISCORD_ID_RE } from "@/lib/validate";
 
@@ -140,6 +140,18 @@ async function postImpl(req: Request) {
     guilds,
     pushed_at: new Date().toISOString(),
   });
+  // Registrasi entitlement (guild baru -> free) bersifat best-effort:
+  // kegagalannya tidak boleh menggagalkan ingest snapshot. Statement
+  // registerGuildsSeen memang tidak menyentuh tier/status, jadi registrasi
+  // tidak pernah bisa menurunkan tier guild.
+  try {
+    await registerGuildsSeen(guilds.map((g) => ({ id: g.id, name: g.name })));
+  } catch (e) {
+    console.warn(
+      "[ingest] registrasi entitlement gagal (diabaikan):",
+      e instanceof Error ? e.message : e,
+    );
+  }
   return NextResponse.json({ ok: true, guilds: guilds.length });
 }
 

@@ -30,6 +30,7 @@ from discord.ext import commands, tasks
 from src import config
 from src.bot import MENTIONS_PENGUMUMAN
 from src.store import get_connection
+from src.utils import premium
 from src.utils.embeds import BRAND
 from src.utils.waktu import parse_iso
 
@@ -409,6 +410,7 @@ class DashboardSync(commands.Cog):
                             continue
                         data = await resp.json()
                 self._simpan_settings(g.id, data.get("settings") or {})
+                self._simpan_entitlement(g.id, data)
                 self._simpan_selfroles(g.id, data.get("selfroles") or [])
                 self._simpan_responder(g.id, data.get("autoresponses") or [])
                 pengumuman = data.get("announcements") or []
@@ -433,6 +435,19 @@ class DashboardSync(commands.Cog):
                     (guild_id, str(k), _nilai(v)),
                 )
             conn.commit()
+
+    def _simpan_entitlement(self, guild_id: int, data: dict) -> None:
+        """Simpan entitlement VIP dari payload sync ke cache lokal.
+
+        Dashboard lama tidak mengirim `entitlement` (None) -> helper
+        `simpan_entitlement_cache` no-op, cache lama dipertahankan.
+        """
+        try:
+            premium.simpan_entitlement_cache(guild_id, (data or {}).get("entitlement"))
+        except Exception:
+            log.warning(
+                "dashboard: gagal simpan entitlement guild %s", guild_id, exc_info=True
+            )
 
     def _simpan_selfroles(self, guild_id: int, rows: list) -> None:
         with get_connection() as conn:
@@ -597,8 +612,29 @@ class DashboardSync(commands.Cog):
             for r in requests:
                 await self._ack_giveaway(guild.id, r.get("id"), "failed", "cog giveaway tidak aktif")
             return
+        # Kuota premium: giveaway aktif (ended=0) guild ini tidak boleh
+        # melewati limit tier-nya. Dihitung sekali, lalu dinaikkan lokal
+        # tiap posting sukses agar request berikutnya dalam batch yang
+        # sama ikut terhitung.
+        with get_connection() as conn:
+            _row = conn.execute(
+                "SELECT COUNT(*) FROM giveaways WHERE guild_id = ? AND ended = 0",
+                (guild.id,),
+            ).fetchone()
+        count_aktif = _row[0] if _row else 0
         for r in requests:
             req_id = r.get("id")
+            if not premium.check_resource_quota(guild.id, "giveaways_active", count_aktif):
+                await self._ack_giveaway(
+                    guild.id,
+                    req_id,
+                    "failed",
+                    premium.pesan_kuota_penuh(
+                        "giveaways_active",
+                        premium.get_feature_limit(guild.id, "giveaways_active"),
+                    ),
+                )
+                continue
             try:
                 channel = guild.get_channel(int(r["channel_id"])) or await self.bot.fetch_channel(int(r["channel_id"]))
                 if not _channel_milik_guild(channel, guild.id):
@@ -615,6 +651,8 @@ class DashboardSync(commands.Cog):
                     max(1, int(r.get("winners", 1))),
                     str(r.get("prize", ""))[:100],
                 )
+                if msg_id:
+                    count_aktif += 1
                 await self._ack_giveaway(guild.id, req_id, "done" if msg_id else "failed",
                                          "" if msg_id else "gagal posting ke channel")
             except Exception as e:

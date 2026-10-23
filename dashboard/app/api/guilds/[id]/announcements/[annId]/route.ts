@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import {
+  countActiveAnnouncements,
   dbConfigured,
   deleteAnnouncement,
+  getEntitlement,
   getSnapshotChannel,
   markAnnouncementSent,
   updateAnnouncement,
@@ -10,6 +12,7 @@ import {
 } from "@/lib/db";
 import { botAuthorized, requireManager } from "@/lib/access";
 import { discordId, intervalMinutes, isoDateTime, parseJsonBody, str } from "@/lib/validate";
+import { FEATURE_LIMITS, getEffectiveTierFromRow } from "@/lib/premium";
 
 
 function invalidId(reqId: string): boolean {
@@ -72,6 +75,23 @@ async function putImpl(
   }
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
+  }
+  if (patch.enabled === true) {
+    // Mengaktifkan pengumuman tunduk pada kuota aktif tier. Ini jalur
+    // check-then-update (bukan atomik seperti POST yang memakai
+    // createAnnouncementWithQuota): disederhanakan — jumlah aktif saat ini
+    // dibandingkan langsung ke limit, termasuk pengumuman yang sedang
+    // diedit bila ia sudah enabled (bisa menolak re-enable yang sebenarnya
+    // tidak menambah jumlah; arah aman/fail-closed untuk kuota).
+    const tier = getEffectiveTierFromRow(await getEntitlement(id));
+    const limit = FEATURE_LIMITS.announcements_active[tier];
+    const aktif = await countActiveAnnouncements(id);
+    if (aktif >= limit) {
+      return NextResponse.json(
+        { error: "announcement_quota_exceeded", limit },
+        { status: 409 },
+      );
+    }
   }
   const updated = await updateAnnouncement(aid, id, patch);
   if (!updated) return NextResponse.json({ error: "announcement_not_found" }, { status: 404 });

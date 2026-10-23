@@ -16,6 +16,7 @@ from discord.ext import commands
 from src import config
 from src.bot import MENTIONS_PENGUMUMAN
 from src.store import get_connection
+from src.utils import premium
 from src.utils.embeds import base_embed
 
 log = logging.getLogger("finch")
@@ -92,6 +93,31 @@ class Responder(commands.Cog):
             await ctx.send("❌ Respons kepanjangan (maks 1500 karakter).", ephemeral=True)
             return
         with get_connection() as conn:
+            # Pola sama seperti customcmd: kunci tulis duluan, lalu gate
+            # kuota premium HANYA untuk trigger baru (update trigger lama
+            # tidak digate). Kuota penuh -> batal tanpa insert & tanpa
+            # mirror dashboard.
+            conn.execute("BEGIN IMMEDIATE")
+            sudah_ada = conn.execute(
+                "SELECT 1 FROM autoresponder WHERE guild_id = ? AND trigger = ?",
+                (ctx.guild.id, trigger),
+            ).fetchone()
+            if not sudah_ada:
+                jumlah = conn.execute(
+                    "SELECT COUNT(*) FROM autoresponder WHERE guild_id = ?",
+                    (ctx.guild.id,),
+                ).fetchone()[0]
+                if not premium.check_resource_quota(
+                    ctx.guild.id, "autoresponders", jumlah, actor_id=ctx.author.id
+                ):
+                    limit = premium.get_feature_limit(
+                        ctx.guild.id, "autoresponders", actor_id=ctx.author.id
+                    )
+                    await ctx.send(
+                        premium.pesan_kuota_penuh("autoresponders", limit),
+                        ephemeral=True,
+                    )
+                    return
             conn.execute(
                 "INSERT INTO autoresponder (guild_id, trigger, respons) VALUES (?, ?, ?) "
                 "ON CONFLICT(guild_id, trigger) DO UPDATE SET respons = excluded.respons",

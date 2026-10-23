@@ -91,6 +91,7 @@ COG_KE_KATEGORI = {
     "DashboardSync": "server",
     "ServerStats": "server",
     "CustomCmd": "server",
+    "Premium": "server",
 }
 
 _BATAS_FIELD = 950  # jaga-jaga di bawah limit Discord 1024 char/field

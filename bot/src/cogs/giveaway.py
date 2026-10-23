@@ -17,6 +17,7 @@ from discord.ext import commands, tasks
 from src.bot import MENTIONS_PENGUMUMAN
 from src.store import get_connection
 from src.utils import economy as eko
+from src.utils import premium
 from src.utils.toggle import cek_toggle
 from src.utils.embeds import base_embed
 from src.utils.filters import parse_durasi  # re-export: dipakai polls/reminders & test
@@ -299,6 +300,29 @@ class Giveaway(commands.Cog):
     @cek_giveaway.before_loop
     async def _before(self):
         await self.bot.wait_until_ready()
+
+    def _kuota_giveaway_penuh(self, guild_id: int, actor_id: int | None = None) -> bool:
+        """True bila giveaway aktif (ended=0) guild sudah mencapai limit tier.
+
+        Dipakai jalur command lokal (giveaway/g-koin/g-role). Jalur dashboard
+        digate di dashboard_sync; jalur rutin terjadwal sengaja TIDAK digate
+        di sini (rutin dibuat sekali oleh mod, postingnya otomatis berkala).
+        """
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM giveaways WHERE guild_id = ? AND ended = 0",
+                (guild_id,),
+            ).fetchone()
+        jumlah = row[0] if row else 0
+        return not premium.check_resource_quota(
+            guild_id, "giveaways_active", jumlah, actor_id=actor_id
+        )
+
+    def _pesan_kuota_giveaway(self, guild_id: int, actor_id: int | None = None) -> str:
+        limit = premium.get_feature_limit(
+            guild_id, "giveaways_active", actor_id=actor_id
+        )
+        return premium.pesan_kuota_penuh("giveaways_active", limit)
 
     def _tandai_selesai(self, message_id: int) -> None:
         with get_connection() as conn:
@@ -586,6 +610,12 @@ class Giveaway(commands.Cog):
         if len(hadiah.strip()) > 500:
             await ctx.send("❌ Teks hadiah kepanjangan (maks 500 karakter).", ephemeral=True)
             return
+        if self._kuota_giveaway_penuh(ctx.guild.id, actor_id=ctx.author.id):
+            await ctx.send(
+                self._pesan_kuota_giveaway(ctx.guild.id, actor_id=ctx.author.id),
+                ephemeral=True,
+            )
+            return
 
         # Ack interaksi slash biar tidak "not respond" (posting via channel biasa)
         await ctx.defer()
@@ -649,6 +679,14 @@ class Giveaway(commands.Cog):
         pemenang = max(1, min(pemenang, 20))
         min_level = max(0, min_level)
         min_koin = max(0, min_koin)
+        # Kuota dicek SEBELUM escrow dipotong — giveaway yang ditolak
+        # kuota tidak boleh memotong koin host sama sekali.
+        if self._kuota_giveaway_penuh(ctx.guild.id, actor_id=ctx.author.id):
+            await ctx.send(
+                self._pesan_kuota_giveaway(ctx.guild.id, actor_id=ctx.author.id),
+                ephemeral=True,
+            )
+            return
         total = jumlah * pemenang
         # Escrow: koin host dipotong di awal (tetap di command)
         with get_connection() as conn:
@@ -724,6 +762,12 @@ class Giveaway(commands.Cog):
             await ctx.send("❌ Durasi maksimal 30 hari.", ephemeral=True)
             return
         pemenang = max(1, min(pemenang, 20))
+        if self._kuota_giveaway_penuh(ctx.guild.id, actor_id=ctx.author.id):
+            await ctx.send(
+                self._pesan_kuota_giveaway(ctx.guild.id, actor_id=ctx.author.id),
+                ephemeral=True,
+            )
+            return
         hadiah_teks = f"🎖️ Role {role.name}"
         await ctx.defer()
         message_id = await self._posting_giveaway(

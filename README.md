@@ -46,10 +46,19 @@ DASHBOARD_SECRET=<sama dengan yang di Vercel>
 
 Restart bot. Dalam 5 menit, landing page dashboard menampilkan angka server.
 
+### 4. Premium (Free/VIP)
+
+Tiap server punya paket Free atau VIP; bedanya hanya batas jumlah resource
+(perintah kustom, autoresponder, giveaway aktif, panel self-role, pengumuman
+aktif). Aktivasi VIP dilakukan manual oleh owner bot lewat perintah `/vip`
+di Discord atau panel `/dashboard/admin/premium`. Detail desain, cara
+grant/extend/revoke, dan env `BOT_OWNER_IDS`: lihat `PREMIUM.md`.
+
 ## Dokumen penting
 
 - `bot/README.md` — panduan bot
 - `bot/CHANGELOG.md` — riwayat perubahan bot
+- `PREMIUM.md` — sistem paket Free/VIP (desain, batas fitur, cara owner grant)
 - `dashboard/README.md` — panduan deploy dashboard (langkah + cek berhasil)
 - `dashboard/DESIGN.md` — arah visual (Anti-Slop)
 - `dashboard/DELIVERY_GATE.md` — laporan kepatuhan Anti-Slop

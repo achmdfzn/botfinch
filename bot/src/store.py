@@ -326,6 +326,20 @@ def init_db():
         # (dashboard_sync juga membuatnya defensif di __init__; IF NOT EXISTS aman dua kali)
         conn.execute("CREATE TABLE IF NOT EXISTS dashboard_announcements (id INTEGER PRIMARY KEY, guild_id TEXT NOT NULL, channel_id TEXT NOT NULL, message TEXT NOT NULL, run_at TEXT, interval_minutes INTEGER, enabled INTEGER NOT NULL DEFAULT 1, last_sent_at TEXT)")
         conn.execute("CREATE TABLE IF NOT EXISTS mod_actions (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT NOT NULL, user_id TEXT NOT NULL, mod_id TEXT NOT NULL, aksi TEXT NOT NULL, alasan TEXT NOT NULL DEFAULT '', waktu TEXT NOT NULL)")
+        # ===== Premium (Free/VIP): cache entitlement per-guild =====
+        # Diisi dari dashboard (sumber kebenaran); dibaca src/utils/premium.py.
+        # fetched_at menentukan kesegaran cache (fail-closed ke free bila basi).
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS guild_entitlement_cache (
+                guild_id TEXT PRIMARY KEY,
+                tier TEXT NOT NULL DEFAULT 'free',
+                status TEXT NOT NULL DEFAULT 'active',
+                starts_at TEXT,
+                expires_at TEXT,
+                source TEXT,
+                fetched_at TEXT NOT NULL
+            )
+        """)
         conn.commit()
         _tambah_kolom("economy", "rep", "INTEGER DEFAULT 0")
         _tambah_kolom("economy", "last_rep", "TEXT")

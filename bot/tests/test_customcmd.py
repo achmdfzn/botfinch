@@ -1,5 +1,5 @@
 """Tes custom commands (src/cogs/customcmd.py): validasi, sanitasi,
-substitusi variabel, toggle, dan batas 50/guild. Mock, tanpa Discord.
+substitusi variabel, toggle, dan batas kuota premium/guild. Mock, tanpa Discord.
 
 Jalanin:  python -m pytest tests/test_customcmd.py -q
 """
@@ -220,15 +220,17 @@ def test_cc_tambah_tabrakan_ditolak():
     assert "menabrak" in ctx.send.call_args.args[0]
 
 
-def test_cc_tambah_batas_50():
+def test_cc_tambah_batas_free_10():
+    """Kuota Free custom_commands = 10 (katalog premium): trigger ke-11 ditolak."""
     _bersih()
-    for i in range(50):
+    for i in range(10):
         _simpan(f"cmd{i:02d}", "Halo!")
     cog = CustomCmd(_bot_palsu(commands_prefix=(), commands_slash=()))
     ctx = _ctx()
     asyncio.run(cog.cc_tambah.callback(cog, ctx, "baru", respons="Halo!"))
     ctx.send.assert_called_once()
-    assert "Batas 50" in ctx.send.call_args.args[0]
+    pesan = ctx.send.call_args.args[0]
+    assert "Batas" in pesan and "(10" in pesan
 
 
 def test_cc_tambah_update_lolos_walau_penuh():

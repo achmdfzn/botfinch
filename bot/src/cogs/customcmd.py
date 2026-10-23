@@ -3,7 +3,9 @@
 `/cc-tambah <trigger> <respons>` (Manage Guild) → user mengetik
 `!<trigger>` dan bot membalas respons yang tersimpan.
 
-- Trigger: huruf kecil/angka/`-`/`_`, 2–32 karakter, maks 50 per server.
+- Trigger: huruf kecil/angka/`-`/`_`, 2–32 karakter. Batas jumlah per
+  server mengikuti tier premium (`premium.get_feature_limit` untuk
+  `custom_commands`: Free 10 / VIP 100); hanya trigger BARU yang digate.
 - Respons mendukung variabel: {user} {server} {member_count} {channel}.
 - @everyone/@here di respons disanitasi (zero-width space) + mention
   dibatasi eksplisit saat kirim — anti mass-ping.
@@ -16,10 +18,14 @@ from discord.ext import commands
 
 from src import config
 from src.store import get_connection
+from src.utils import premium
 from src.utils.toggle import cek_toggle
 
 POLA_TRIGGER = re.compile(r"^[a-z0-9_-]{2,32}$")
 RESPON_MAKS = 1000
+# Batas historis (pra-premium). Batas AKTIF kini dinamis dari
+# premium.get_feature_limit(guild, "custom_commands") — konstanta ini
+# dipertahankan hanya untuk kompatibilitas impor lama.
 JUMLAH_MAKS = 50
 ZWSP = "\u200b"  # zero-width space untuk memutus mention @everyone/@here
 TEAL = 0x2EC4B6
@@ -168,7 +174,7 @@ class CustomCmd(commands.Cog):
         with get_connection() as conn:
             # Kunci tulis duluan (IMMEDIATE): cegah dua /cc-tambah paralel
             # sama-sama lolos SELECT COUNT lalu dua-duanya INSERT sehingga
-            # batas 50 terlampaui (check-then-act race).
+            # batas premium terlampaui (check-then-act race).
             conn.execute("BEGIN IMMEDIATE")
             sudah_ada = conn.execute(
                 "SELECT 1 FROM custom_commands WHERE guild_id = ? AND trigger = ?",
@@ -179,10 +185,12 @@ class CustomCmd(commands.Cog):
                     "SELECT COUNT(*) FROM custom_commands WHERE guild_id = ?",
                     (gid,),
                 ).fetchone()[0]
-                if jumlah >= JUMLAH_MAKS:
+                limit = premium.get_feature_limit(
+                    gid, "custom_commands", actor_id=ctx.author.id
+                )
+                if jumlah >= limit:
                     await ctx.send(
-                        f"❌ Batas {JUMLAH_MAKS} custom command per server tercapai. "
-                        "Hapus yang lama dulu dengan `/cc-hapus`.",
+                        premium.pesan_kuota_penuh("custom_commands", limit),
                         ephemeral=True,
                     )
                     return
@@ -249,8 +257,11 @@ class CustomCmd(commands.Cog):
             )
             return
         daftar = "\n".join(f"• `!{r[0]}`" for r in rows)
+        limit = premium.get_feature_limit(
+            ctx.guild.id, "custom_commands", actor_id=ctx.author.id
+        )
         embed = discord.Embed(
-            title=f"📝 Custom command ({len(rows)}/{JUMLAH_MAKS})",
+            title=f"📝 Custom command ({len(rows)}/{limit})",
             description=daftar,
             color=TEAL,
         )

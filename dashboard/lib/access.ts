@@ -93,6 +93,46 @@ export function botAuthorized(req: Request): boolean {
 }
 
 /**
+ * ID Discord owner bot dari env BOT_OWNER_IDS (dipisah koma).
+ * Server-side saja — JANGAN pernah pakai prefix NEXT_PUBLIC_ untuk ini.
+ * Entri yang bukan snowflake Discord valid dibuang (fail-closed).
+ */
+export function botOwnerIds(): string[] {
+  const raw = process.env.BOT_OWNER_IDS ?? "";
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => DISCORD_ID_RE.test(s));
+}
+
+/** Discord ID user yang sedang login (dari sesi), atau null. */
+export async function getSessionDiscordId(): Promise<string | null> {
+  const session = await getSessionSafe();
+  return session?.discordId ?? null;
+}
+
+/**
+ * Pastikan user login dan termasuk owner bot (BOT_OWNER_IDS).
+ * Kembalikan null bila lolos, atau NextResponse error bila tidak.
+ * Fail-closed: daftar owner kosong = semua ditolak 403.
+ * Urutan sama seperti requireManager: autentikasi (401) dulu,
+ * baru ketersediaan DB (503), baru otorisasi (403).
+ */
+export async function requireBotOwner(): Promise<NextResponse | null> {
+  const discordId = await getSessionDiscordId();
+  if (!discordId) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  if (!dbConfigured()) {
+    return NextResponse.json({ error: "database_not_configured" }, { status: 503 });
+  }
+  if (!botOwnerIds().includes(discordId)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+  return null;
+}
+
+/**
  * Pastikan user login dan punya izin Kelola Server di guild.
  * Kembalikan null bila lolos, atau NextResponse error bila tidak.
  */
