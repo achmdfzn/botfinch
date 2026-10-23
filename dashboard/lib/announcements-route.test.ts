@@ -16,6 +16,12 @@ vi.mock("@/lib/db", () => ({
   markAnnouncementSent: vi.fn(async () => true),
   updateAnnouncement: vi.fn(async () => true),
   createAnnouncement: vi.fn(async () => 42),
+  createAnnouncementWithQuota: vi.fn(async () => 42),
+  getEntitlement: vi.fn(async () => null),
+  countActiveAnnouncements: vi.fn(async () => 0),
+  countEnabledAnnouncements: vi.fn(async () => 0),
+  getAnnouncementEnabled: vi.fn(async () => false),
+  enableAnnouncementWithQuota: vi.fn(async () => true),
   listAnnouncements: vi.fn(async () => []),
   withDbError: (fn: unknown) => fn,
 }));
@@ -37,6 +43,12 @@ const markAnnouncementSent = vi.mocked(db.markAnnouncementSent);
 const updateAnnouncement = vi.mocked(db.updateAnnouncement);
 const deleteAnnouncement = vi.mocked(db.deleteAnnouncement);
 const createAnnouncement = vi.mocked(db.createAnnouncement);
+const createAnnouncementWithQuota = vi.mocked(db.createAnnouncementWithQuota);
+const getEntitlement = vi.mocked(db.getEntitlement);
+const countActiveAnnouncements = vi.mocked(db.countActiveAnnouncements);
+const countEnabledAnnouncements = vi.mocked(db.countEnabledAnnouncements);
+const getAnnouncementEnabled = vi.mocked(db.getAnnouncementEnabled);
+const enableAnnouncementWithQuota = vi.mocked(db.enableAnnouncementWithQuota);
 
 const GUILD = "111111111111111111";
 const CHANNEL_TEKS = "222222222222222222";
@@ -61,6 +73,12 @@ beforeEach(() => {
   markAnnouncementSent.mockResolvedValue(true);
   updateAnnouncement.mockResolvedValue(true);
   deleteAnnouncement.mockResolvedValue(true);
+  createAnnouncementWithQuota.mockResolvedValue(42);
+  getEntitlement.mockResolvedValue(null);
+  countActiveAnnouncements.mockResolvedValue(0);
+  countEnabledAnnouncements.mockResolvedValue(0);
+  getAnnouncementEnabled.mockResolvedValue(false);
+  enableAnnouncementWithQuota.mockResolvedValue(true);
 });
 
 describe("POST ack bot (last_sent_at)", () => {
@@ -162,6 +180,7 @@ describe("POST buat pengumuman (manager)", () => {
     const res = await createPost(reqJson(bodyValid), ctxGuild);
     expect(res.status).toBe(400);
     expect(createAnnouncement).not.toHaveBeenCalled();
+    expect(createAnnouncementWithQuota).not.toHaveBeenCalled();
   });
 
   it("menolak channel tipe voice (400)", async () => {
@@ -171,6 +190,7 @@ describe("POST buat pengumuman (manager)", () => {
     const res = await createPost(reqJson(bodyValid), ctxGuild);
     expect(res.status).toBe(400);
     expect(createAnnouncement).not.toHaveBeenCalled();
+    expect(createAnnouncementWithQuota).not.toHaveBeenCalled();
   });
 
   it("menerima channel news (tipe 5) milik guild", async () => {
@@ -179,6 +199,120 @@ describe("POST buat pengumuman (manager)", () => {
     });
     const res = await createPost(reqJson(bodyValid), ctxGuild);
     expect(res.status).toBe(200);
-    expect(createAnnouncement).toHaveBeenCalledTimes(1);
+    expect(createAnnouncementWithQuota).toHaveBeenCalledTimes(1);
+    // Guild tanpa baris entitlement = free -> limit 3 diteruskan.
+    expect(createAnnouncementWithQuota.mock.calls[0][1]).toBe(3);
+  });
+
+  it("kuota free penuh (createAnnouncementWithQuota -> null) -> 409 tanpa create lama", async () => {
+    getSnapshotChannel.mockResolvedValue({
+      id: CHANNEL_TEKS, name: "umum", type: 0,
+    });
+    createAnnouncementWithQuota.mockResolvedValue(null);
+    countEnabledAnnouncements.mockResolvedValue(3);
+    const res = await createPost(reqJson(bodyValid), ctxGuild);
+    expect(res.status).toBe(409);
+    const json = await res.json();
+    expect(json).toEqual({
+      error: "quota_exceeded",
+      feature: "announcements_active",
+      used: 3,
+      limit: 3,
+      vip_limit: 25,
+      tier: "free",
+    });
+    expect(createAnnouncement).not.toHaveBeenCalled();
+  });
+
+  it("guild VIP -> limit 25 diteruskan ke createAnnouncementWithQuota", async () => {
+    getSnapshotChannel.mockResolvedValue({
+      id: CHANNEL_TEKS, name: "umum", type: 0,
+    });
+    getEntitlement.mockResolvedValue({
+      guild_id: GUILD,
+      tier: "vip",
+      status: "active",
+      source: "owner_grant",
+      starts_at: "2026-10-01T00:00:00.000Z",
+      expires_at: null,
+      granted_by: "999999999999999999",
+      note: null,
+      bot_present: true,
+      first_seen_at: "2026-10-01T00:00:00.000Z",
+      last_seen_at: "2026-10-22T00:00:00.000Z",
+      created_at: "2026-10-01T00:00:00.000Z",
+      updated_at: "2026-10-22T00:00:00.000Z",
+      provider_entitlement_id: null,
+      provider_subscription_id: null,
+    });
+    const res = await createPost(reqJson(bodyValid), ctxGuild);
+    expect(res.status).toBe(200);
+    expect(createAnnouncementWithQuota).toHaveBeenCalledTimes(1);
+    expect(createAnnouncementWithQuota.mock.calls[0][1]).toBe(25);
+    expect(createAnnouncementWithQuota.mock.calls[0][0]).toMatchObject({
+      guildId: GUILD,
+      channelId: CHANNEL_TEKS,
+      message: "Halo server",
+    });
+  });
+});
+
+describe("PUT pengumuman — kuota saat mengaktifkan", () => {
+  it("target disabled saat kuota free penuh -> gate atomik menolak, 409 sebelum update field lain", async () => {
+    getAnnouncementEnabled.mockResolvedValue(false);
+    enableAnnouncementWithQuota.mockResolvedValue(false);
+    countEnabledAnnouncements.mockResolvedValue(3);
+    const res = await PUT(reqJson({ enabled: true, message: "tidak boleh tertulis" }), ctxAnn);
+    expect(res.status).toBe(409);
+    const json = await res.json();
+    expect(json).toEqual({
+      error: "quota_exceeded",
+      feature: "announcements_active",
+      used: 3,
+      limit: 3,
+      vip_limit: 25,
+      tier: "free",
+    });
+    expect(enableAnnouncementWithQuota).toHaveBeenCalledWith(5, GUILD, 3);
+    expect(updateAnnouncement).not.toHaveBeenCalled();
+  });
+
+  it("target disabled di bawah kuota -> gate mengaktifkan, field lain menyusul (200)", async () => {
+    getAnnouncementEnabled.mockResolvedValue(false);
+    enableAnnouncementWithQuota.mockResolvedValue(true);
+    const res = await PUT(reqJson({ enabled: true, message: "revisi" }), ctxAnn);
+    expect(res.status).toBe(200);
+    expect(enableAnnouncementWithQuota).toHaveBeenCalledWith(5, GUILD, 3);
+    expect(updateAnnouncement).toHaveBeenCalledWith(
+      5, GUILD, expect.objectContaining({ message: "revisi" }),
+    );
+    expect(updateAnnouncement.mock.calls[0][2]).not.toHaveProperty("enabled");
+  });
+
+  it("target SUDAH enabled saat kuota penuh -> re-enable idempoten tetap 200 (bukan penambahan)", async () => {
+    getAnnouncementEnabled.mockResolvedValue(true);
+    countEnabledAnnouncements.mockResolvedValue(3);
+    const res = await PUT(reqJson({ enabled: true, message: "revisi" }), ctxAnn);
+    expect(res.status).toBe(200);
+    expect(enableAnnouncementWithQuota).not.toHaveBeenCalled();
+    expect(updateAnnouncement).toHaveBeenCalledWith(
+      5, GUILD, expect.objectContaining({ enabled: true, message: "revisi" }),
+    );
+  });
+
+  it("target tidak ditemukan -> 404 sebelum gate/update", async () => {
+    getAnnouncementEnabled.mockResolvedValue(null);
+    const res = await PUT(reqJson({ enabled: true }), ctxAnn);
+    expect(res.status).toBe(404);
+    expect(enableAnnouncementWithQuota).not.toHaveBeenCalled();
+    expect(updateAnnouncement).not.toHaveBeenCalled();
+  });
+
+  it("enabled=false tidak dicek kuota", async () => {
+    countEnabledAnnouncements.mockResolvedValue(99);
+    const res = await PUT(reqJson({ enabled: false }), ctxAnn);
+    expect(res.status).toBe(200);
+    expect(getAnnouncementEnabled).not.toHaveBeenCalled();
+    expect(enableAnnouncementWithQuota).not.toHaveBeenCalled();
   });
 });

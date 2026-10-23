@@ -10,7 +10,8 @@ import GiveawayManager from "@/components/GiveawayManager";
 import { getSessionSafe } from "@/lib/access";
 import { canManage } from "@/lib/discord";
 import { fetchUserGuilds } from "@/lib/access";
-import { getGiveawayRequests, latestSnapshot } from "@/lib/db";
+import { getEntitlement, getGiveawayRequests, latestSnapshot } from "@/lib/db";
+import { FEATURE_LIMITS, getEffectiveTierFromRow } from "@/lib/premium";
 import { getDict, getLang } from "@/lib/i18n";
 
 export const instant = false;
@@ -61,9 +62,10 @@ export default async function GuildGiveaway({ params }: { params: Promise<{ guil
   const snap = await latestSnapshot();
   const snapGuild = snap?.guilds.find((g) => g.id === guildId);
   const reqs = await getGiveawayRequests(guildId);
+  const tier = getEffectiveTierFromRow(await getEntitlement(guildId));
 
   return (
-    <div className="w-full max-w-4xl">
+    <div className="w-full">
       <PageHeader
         title={guildName}
         description={g.subtitle}
@@ -76,7 +78,15 @@ export default async function GuildGiveaway({ params }: { params: Promise<{ guil
           </Link>
         }
       />
-      <GiveawayManager guildId={guildId} channels={snapGuild?.channels ?? []} initialActive={snapGuild?.giveaways ?? []} initialRequests={reqs} />
+      <GiveawayManager
+        guildId={guildId}
+        channels={snapGuild?.channels ?? []}
+        initialActive={snapGuild?.giveaways ?? []}
+        initialRequests={reqs}
+        tier={tier}
+        limit={FEATURE_LIMITS.giveaways_active[tier]}
+        vipLimit={FEATURE_LIMITS.giveaways_active.vip}
+      />
     </div>
   );
 }

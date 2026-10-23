@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { createAnnouncement, getSnapshotChannel, listAnnouncements, withDbError } from "@/lib/db";
+import { countEnabledAnnouncements, createAnnouncementWithQuota, getEntitlement, getSnapshotChannel, listAnnouncements, withDbError } from "@/lib/db";
 import { requireManager } from "@/lib/access";
 import { discordId, intervalMinutes, isoDateTime, parseJsonBody, str } from "@/lib/validate";
+import { FEATURE_LIMITS, getEffectiveTierFromRow } from "@/lib/premium";
 
 
 /** Daftar pengumuman terjadwal/berulang (manager). */
@@ -45,13 +46,34 @@ async function postImpl(
   if (!target || (target.type !== 0 && target.type !== 5)) {
     return NextResponse.json({ error: "channel_not_in_guild_or_not_text" }, { status: 400 });
   }
-  const annId = await createAnnouncement({
-    guildId: id,
-    channelId,
-    message,
-    runAt,
-    intervalMinutes: interval,
-  });
+  // Kuota pengumuman aktif per tier efektif guild. Pembuatan memakai
+  // createAnnouncementWithQuota (satu statement atomik) agar balapan
+  // antar request tidak bisa menembus batas.
+  const tier = getEffectiveTierFromRow(await getEntitlement(id));
+  const limit = FEATURE_LIMITS.announcements_active[tier];
+  const annId = await createAnnouncementWithQuota(
+    {
+      guildId: id,
+      channelId,
+      message,
+      runAt,
+      intervalMinutes: interval,
+    },
+    limit,
+  );
+  if (annId === null) {
+    return NextResponse.json(
+      {
+        error: "quota_exceeded",
+        feature: "announcements_active",
+        used: await countEnabledAnnouncements(id),
+        limit,
+        vip_limit: FEATURE_LIMITS.announcements_active.vip,
+        tier,
+      },
+      { status: 409 },
+    );
+  }
   return NextResponse.json({ ok: true, id: annId });
 }
 

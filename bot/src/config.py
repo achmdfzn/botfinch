@@ -315,6 +315,33 @@ class Settings:
     susunkata_reward: int = field(default_factory=lambda: _getenv_int("SUSUNKATA_REWARD", 150))
     susunkata_cooldown: int = field(default_factory=lambda: _getenv_int("SUSUNKATA_COOLDOWN", 600))
 
+    # --- premium (Free/VIP) ---
+    # ID Discord owner bot, dipisah koma. Ini ID publik (bukan secret):
+    # owner selalu diperlakukan VIP di semua server (bypass personal).
+    bot_owner_ids_env: str = field(
+        default_factory=lambda: os.getenv("BOT_OWNER_IDS", "")
+    )
+    # Umur maksimal cache entitlement per-guild (detik) sebelum dianggap
+    # basi dan tier jatuh kembali ke free (fail-closed).
+    entitlement_cache_max_age_seconds: int = field(
+        default_factory=lambda: _getenv_int("ENTITLEMENT_CACHE_MAX_AGE_SECONDS", 3600)
+    )
+
+    def bot_owner_ids(self) -> frozenset[int]:
+        """Parse BOT_OWNER_IDS jadi frozenset[int] ID snowflake yang valid.
+
+        Entri valid = string digit sepanjang 5–25 karakter. Entri kosong
+        atau rusak dilewati (bukan error fatal); hasil didedupe.
+        """
+        hasil: set[int] = set()
+        for entri in (self.bot_owner_ids_env or "").split(","):
+            entri = entri.strip()
+            if not entri:
+                continue
+            if entri.isdigit() and 5 <= len(entri) <= 25:
+                hasil.add(int(entri))
+        return frozenset(hasil)
+
     # --- twitch ---
     twitch_client_id: str = field(default_factory=lambda: os.getenv("TWITCH_CLIENT_ID", ""))
     twitch_client_secret: str = field(default_factory=lambda: os.getenv("TWITCH_CLIENT_SECRET", ""))
@@ -432,6 +459,18 @@ class Settings:
                     )
         if self.tiket_sla_jam < 1:
             masalah.append("TIKET_SLA_JAM harus >= 1.")
+        # --- premium (Free/VIP) ---
+        # BOT_OWNER_IDS terisi tapi tidak ada satu pun entri yang valid =
+        # tidak ada owner sama sekali (fail-closed). Laporkan agar salah
+        # ketik di .env tidak diam-diam mengunci semua bypass owner.
+        if (self.bot_owner_ids_env or "").strip() and not self.bot_owner_ids():
+            masalah.append(
+                "BOT_OWNER_IDS terisi tapi tidak ada ID yang valid "
+                "(harus ID Discord numerik 5–25 digit, dipisah koma) — "
+                "tidak ada owner bot yang diakui."
+            )
+        if self.entitlement_cache_max_age_seconds < 0:
+            masalah.append("ENTITLEMENT_CACHE_MAX_AGE_SECONDS tidak boleh negatif.")
         return masalah
 
 

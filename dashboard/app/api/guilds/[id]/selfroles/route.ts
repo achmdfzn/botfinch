@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { addSelfRole, deleteSelfRole, getSelfRoles, withDbError } from "@/lib/db";
+import { addSelfRoleWithQuota, countSelfRolePanels, deleteSelfRole, getEntitlement, getSelfRoles, withDbError } from "@/lib/db";
 import { botAuthorized, requireManager } from "@/lib/access";
 import { discordId, parseJsonBody, str } from "@/lib/validate";
+import { FEATURE_LIMITS, getEffectiveTierFromRow } from "@/lib/premium";
 
 
 async function getImpl(
@@ -32,7 +33,27 @@ async function postImpl(
   if (messageId === undefined || roleId === undefined || emoji === undefined) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
-  await addSelfRole(id, messageId, emoji, roleId);
+  // Kuota dihitung per PANEL (message_id berbeda), bukan per baris.
+  // addSelfRoleWithQuota membedakan di dalam satu statement atomik:
+  // message_id yang sudah punya baris = panel lama (selalu boleh,
+  // termasuk emoji baru), message_id baru hanya tertulis bila jumlah
+  // panel masih di bawah limit tier efektif (tanpa entitlement = free).
+  const tier = getEffectiveTierFromRow(await getEntitlement(id));
+  const limit = FEATURE_LIMITS.selfrole_panels[tier];
+  const written = await addSelfRoleWithQuota(id, messageId, emoji, roleId, limit);
+  if (!written) {
+    return NextResponse.json(
+      {
+        error: "quota_exceeded",
+        feature: "selfrole_panels",
+        used: await countSelfRolePanels(id),
+        limit,
+        vip_limit: FEATURE_LIMITS.selfrole_panels.vip,
+        tier,
+      },
+      { status: 409 },
+    );
+  }
   return NextResponse.json({ ok: true });
 }
 

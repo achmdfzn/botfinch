@@ -16,7 +16,6 @@ from discord.ext import commands
 
 from src.cogs.autopublish import AutoPublish
 from src.cogs.customcmd import (
-    JUMLAH_MAKS,
     CustomCmd,
     _mention_aman,
     sanitasi_mention,
@@ -24,6 +23,10 @@ from src.cogs.customcmd import (
 from src.cogs.dashboard_sync import TABEL_SETTINGS, modul_aktif
 from src.cogs.slowmode import SLOWMODE_MAX, SLOWMODE_MIN, Slowmode
 from src.store import get_connection, init_db
+from src.utils.premium import FEATURE_LIMITS
+
+# Batas custom commands untuk guild Free menurut katalog premium.
+BATAS_FREE_CC = FEATURE_LIMITS["custom_commands"]["free"]
 
 init_db()
 with get_connection() as _c:
@@ -196,19 +199,19 @@ def _tambah_di_thread(cog, trigger, hasil, idx):
     hasil[idx] = ctx.send.await_args.args[0]
 
 
-def test_batas_50_tahan_dua_tambah_paralel():
-    """Isi 49, lalu dua /cc-tambah paralel: total tidak boleh > 50,
-    satu harus ditolak dengan pesan batas."""
+def test_batas_free_tahan_dua_tambah_paralel():
+    """Isi sampai batas Free - 1, lalu dua /cc-tambah paralel: total tidak
+    boleh melewati batas Free katalog premium, satu harus ditolak."""
     _bersih()
     try:
         with get_connection() as conn:
             conn.executemany(
                 "INSERT INTO custom_commands (guild_id, trigger, response, author_id)"
                 " VALUES (?, ?, ?, ?)",
-                [(GID, f"cmd{i:02d}", "x", 7) for i in range(JUMLAH_MAKS - 1)],
+                [(GID, f"cmd{i:02d}", "x", 7) for i in range(BATAS_FREE_CC - 1)],
             )
             conn.commit()
-        assert _jumlah() == JUMLAH_MAKS - 1
+        assert _jumlah() == BATAS_FREE_CC - 1
 
         cog = CustomCmd(_bot_palsu())
         hasil = [None, None]
@@ -224,7 +227,7 @@ def test_batas_50_tahan_dua_tambah_paralel():
             t.join(timeout=30)
         assert all(h is not None for h in hasil), f"thread gagal: {hasil}"
 
-        assert _jumlah() <= JUMLAH_MAKS, "batas 50 terlampaui (race!)"
+        assert _jumlah() <= BATAS_FREE_CC, "batas Free terlampaui (race!)"
         assert sum("ditambahkan" in h for h in hasil) == 1, hasil
         assert sum("Batas" in h for h in hasil) == 1, hasil
     finally:

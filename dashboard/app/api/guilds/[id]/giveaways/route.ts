@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { addGiveawayRequest, getGiveawayRequests, getSnapshotChannel, latestSnapshot, withDbError } from "@/lib/db";
+import { addGiveawayRequest, countGiveawayRequestsPending, getEntitlement, getGiveawayRequests, getSnapshotChannel, latestSnapshot, withDbError } from "@/lib/db";
 import { requireManager } from "@/lib/access";
 import { discordId, parseJsonBody, str } from "@/lib/validate";
+import { FEATURE_LIMITS, getEffectiveTierFromRow } from "@/lib/premium";
 
 
 async function getImpl(
@@ -50,6 +51,28 @@ async function postImpl(
     duration > 10080
   ) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
+  }
+  // Pre-check kuota dua lapis: cek dashboard ini lapisan pertama
+  // (pending + aktif dari snapshot), bot tetap penegak akhir saat
+  // mengeksekusi request. used = request 'pending' guild + giveaway
+  // aktif di snapshot terbaru (snapshot null -> aktif dihitung 0).
+  const tier = getEffectiveTierFromRow(await getEntitlement(id));
+  const limit = FEATURE_LIMITS.giveaways_active[tier];
+  const snap = await latestSnapshot();
+  const aktif = snap?.guilds.find((g) => g.id === id)?.giveaways.length ?? 0;
+  const used = (await countGiveawayRequestsPending(id)) + aktif;
+  if (used >= limit) {
+    return NextResponse.json(
+      {
+        error: "quota_exceeded",
+        feature: "giveaways_active",
+        used,
+        limit,
+        vip_limit: FEATURE_LIMITS.giveaways_active.vip,
+        tier,
+      },
+      { status: 409 },
+    );
   }
   await addGiveawayRequest(id, channelId, prize, winners, duration);
   return NextResponse.json({ ok: true, note: "Bot akan membuat giveaway dalam beberapa menit." });

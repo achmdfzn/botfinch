@@ -16,6 +16,7 @@ from discord.ext import commands
 
 from src import config
 from src.store import get_connection
+from src.utils import premium
 from src.utils.embeds import base_embed
 
 SELFROLES_ID = "finch:selfroles-select"
@@ -191,6 +192,31 @@ class SelfRoles(commands.Cog):
         if not ada:
             await ctx.send(
                 "❌ Tidak ada satupun role dari `SELF_ROLES` yang cocok di server ini.",
+                ephemeral=True,
+            )
+            return
+        # Gate kuota premium `selfrole_panels`. Panel lokal (/panel-role)
+        # tidak persisten, jadi satu-satunya hitungan panel per guild yang
+        # bisa dihitung adalah panel dashboard: COUNT(DISTINCT message_id)
+        # di dashboard_selfroles.
+        try:
+            with get_connection() as conn:
+                _row = conn.execute(
+                    "SELECT COUNT(DISTINCT message_id) FROM dashboard_selfroles"
+                    " WHERE guild_id = ?",
+                    (ctx.guild.id,),
+                ).fetchone()
+            jumlah_panel = _row[0] if _row else 0
+        except Exception:
+            jumlah_panel = 0
+        if not premium.check_resource_quota(
+            ctx.guild.id, "selfrole_panels", jumlah_panel, actor_id=ctx.author.id
+        ):
+            limit = premium.get_feature_limit(
+                ctx.guild.id, "selfrole_panels", actor_id=ctx.author.id
+            )
+            await ctx.send(
+                premium.pesan_kuota_penuh("selfrole_panels", limit),
                 ephemeral=True,
             )
             return

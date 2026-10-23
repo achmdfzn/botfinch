@@ -72,6 +72,9 @@ export default async function GuildSettingsPage({ params }: { params: Promise<{ 
   const settings = mergeSettings(stored);
 
   return (
+    // Formulir pengaturan: max-w-4xl RATA KIRI dipertahankan demi
+    // keterbacaan field (pengecualian full-width yang didokumentasikan);
+    // tidak ada mx-auto, konten menempel ke tepi kiri area shell.
     <div className="w-full max-w-4xl">
       <PageHeader title={sub.settings} description={ov.settingsDesc} />
       {!snapGuild && (

@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import {
+  countEnabledAnnouncements,
   dbConfigured,
   deleteAnnouncement,
+  enableAnnouncementWithQuota,
+  getAnnouncementEnabled,
+  getEntitlement,
   getSnapshotChannel,
   markAnnouncementSent,
   updateAnnouncement,
@@ -10,6 +14,7 @@ import {
 } from "@/lib/db";
 import { botAuthorized, requireManager } from "@/lib/access";
 import { discordId, intervalMinutes, isoDateTime, parseJsonBody, str } from "@/lib/validate";
+import { FEATURE_LIMITS, getEffectiveTierFromRow } from "@/lib/premium";
 
 
 function invalidId(reqId: string): boolean {
@@ -73,7 +78,47 @@ async function putImpl(
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: "invalid_input" }, { status: 400 });
   }
-  const updated = await updateAnnouncement(aid, id, patch);
+  let updated: boolean;
+  if (patch.enabled === true) {
+    // Mengaktifkan pengumuman tunduk pada kuota aktif tier.
+    // - Target yang SUDAH enabled bukan penambahan kuota: update
+    //   idempoten/full patch tetap diizinkan walau kuota penuh.
+    // - Target yang masih disabled diaktifkan lewat satu statement
+    //   bergate (enableAnnouncementWithQuota); bila gate menolak, field
+    //   lain dalam patch yang sama TIDAK ikut tertulis.
+    const tier = getEffectiveTierFromRow(await getEntitlement(id));
+    const limit = FEATURE_LIMITS.announcements_active[tier];
+    const currentEnabled = await getAnnouncementEnabled(aid, id);
+    if (currentEnabled === null) {
+      return NextResponse.json({ error: "announcement_not_found" }, { status: 404 });
+    }
+    if (currentEnabled) {
+      updated = await updateAnnouncement(aid, id, patch);
+    } else {
+      const enabledNow = await enableAnnouncementWithQuota(aid, id, limit);
+      if (!enabledNow) {
+        return NextResponse.json(
+          {
+            error: "quota_exceeded",
+            feature: "announcements_active",
+            used: await countEnabledAnnouncements(id),
+            limit,
+            vip_limit: FEATURE_LIMITS.announcements_active.vip,
+            tier,
+          },
+          { status: 409 },
+        );
+      }
+      const restPatch: AnnouncementPatch = { ...patch };
+      delete restPatch.enabled;
+      updated =
+        Object.keys(restPatch).length === 0
+          ? true
+          : await updateAnnouncement(aid, id, restPatch);
+    }
+  } else {
+    updated = await updateAnnouncement(aid, id, patch);
+  }
   if (!updated) return NextResponse.json({ error: "announcement_not_found" }, { status: 404 });
   return NextResponse.json({ ok: true });
 }

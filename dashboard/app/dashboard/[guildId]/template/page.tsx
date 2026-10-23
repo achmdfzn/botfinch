@@ -11,11 +11,14 @@ import { getSessionSafe } from "@/lib/access";
 import { canManage } from "@/lib/discord";
 import { fetchUserGuilds } from "@/lib/access";
 import {
-  createAnnouncement,
+  createAnnouncementWithQuota,
   dbConfigured,
+  getEntitlement,
+  getSnapshotChannel,
   latestSnapshot,
   mergeStoredSettings,
 } from "@/lib/db";
+import { FEATURE_LIMITS, getEffectiveTierFromRow } from "@/lib/premium";
 import { requireManager } from "@/lib/access";
 import { cleanValue } from "@/lib/settings";
 import { discordId, str } from "@/lib/validate";
@@ -60,7 +63,14 @@ async function applyTemplate(formData: FormData) {
   redirect(`${back}&status=ok`);
 }
 
-/** Buat pengumuman sekali-kirim dari template (efek sama seperti POST /api/guilds/[id]/announcements). */
+/**
+ * Buat pengumuman sekali-kirim dari template (efek sama seperti
+ * POST /api/guilds/[id]/announcements, termasuk validasi + kuotanya):
+ * channel wajib ada di snapshot guild ini dan bertipe teks/news (0/5),
+ * lalu pembuatan lewat createAnnouncementWithQuota (atomik) dengan limit
+ * announcements_active per tier efektif. Kuota penuh (null) = error,
+ * sama seperti channel tidak valid.
+ */
 async function createAnnouncementFromTemplate(formData: FormData) {
   "use server";
   const guildId = String(formData.get("guild_id") ?? "");
@@ -69,13 +79,23 @@ async function createAnnouncementFromTemplate(formData: FormData) {
   const channelId = discordId(formData.get("channel_id"));
   const message = str(formData.get("text"), 2000, true);
   if (!channelId || !message) redirect(`${back}&status=error`);
-  await createAnnouncement({
-    guildId,
-    channelId,
-    message,
-    runAt: new Date().toISOString(),
-    intervalMinutes: null,
-  });
+  const target = await getSnapshotChannel(guildId, channelId);
+  if (!target || (target.type !== 0 && target.type !== 5)) {
+    redirect(`${back}&status=error`);
+  }
+  const tier = getEffectiveTierFromRow(await getEntitlement(guildId));
+  const limit = FEATURE_LIMITS.announcements_active[tier];
+  const annId = await createAnnouncementWithQuota(
+    {
+      guildId,
+      channelId,
+      message,
+      runAt: new Date().toISOString(),
+      intervalMinutes: null,
+    },
+    limit,
+  );
+  if (annId === null) redirect(`${back}&status=error`);
   redirect(`${back}&status=ok`);
 }
 
@@ -154,7 +174,9 @@ export default async function GuildTemplate({
       : t.applyError;
 
   return (
-    <div className="w-full max-w-4xl">
+    // Full-width mengikuti shell: galeri kartu template memakai seluruh
+    // lebar konten (grid melebar ke 3 kolom di xl), bukan kolom sempit.
+    <div className="w-full">
       <Link
         href="/dashboard"
         className="inline-flex min-h-[44px] items-center text-sm text-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-brand"
@@ -197,7 +219,7 @@ export default async function GuildTemplate({
         })}
       </nav>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {shown.map((tpl) => {
           const text = tpl.text[lang];
           const preview =
