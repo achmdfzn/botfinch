@@ -1,6 +1,7 @@
 /**
  * Unit billing & payments:
- * - parser harga env ketat (digit murni > 0) & state machine order.
+ * - harga: env absen/kosong = default katalog 65000, env digit murni > 0
+ *   = override, env invalid = null fail-closed; & state machine order.
  * - mapping status Midtrans (capture challenge = pending, BUKAN paid;
  *   partial_refund = unknown) & Xendit (PAID/SETTLED/EXPIRED).
  * - service processProviderStatus: klaim atomik menentukan idempotensi —
@@ -31,7 +32,7 @@ import {
   canTransitionOrder,
   getActiveProviderId,
   getPlan,
-  getVip30dPriceIdr,
+  getVipPriceIdr,
   isBillingConfigured,
   transitionSources,
 } from "@/lib/billing";
@@ -49,7 +50,7 @@ const getOrder = vi.mocked(db.getBillingOrderByRef);
 const getEnt = vi.mocked(db.getEntitlement);
 
 const ENV_KEYS = [
-  "BILLING_VIP_30D_PRICE_IDR",
+  "BILLING_VIP_PRICE_IDR",
   "PAYMENT_PROVIDER",
   "MIDTRANS_SERVER_KEY",
   "MIDTRANS_CLIENT_KEY",
@@ -65,7 +66,7 @@ function orderFixture(overrides: Partial<BillingOrder> = {}): BillingOrder {
     order_ref: "FINCH-111-M3ABCDEF-ABCD1234",
     buyer_user_id: "333333333333333333",
     guild_id: "111111111111111111",
-    plan_id: "vip_30d",
+    plan_id: "vip_monthly",
     amount_idr: 50000,
     currency: "IDR",
     duration_days: 30,
@@ -101,24 +102,36 @@ afterEach(() => {
   }
 });
 
-describe("getVip30dPriceIdr — parser harga ketat", () => {
-  it("digit murni > 0 diterima", () => {
-    process.env.BILLING_VIP_30D_PRICE_IDR = "50000";
-    expect(getVip30dPriceIdr()).toBe(50000);
+describe("getVipPriceIdr — default katalog, override env, fail-closed", () => {
+  it("env absen / string kosong -> harga default katalog 65000", () => {
+    delete process.env.BILLING_VIP_PRICE_IDR;
+    expect(getVipPriceIdr()).toBe(65000);
+    process.env.BILLING_VIP_PRICE_IDR = "";
+    expect(getVipPriceIdr()).toBe(65000);
   });
-  it("selain digit murni ditolak (null)", () => {
-    for (const bad of ["", "0", "-5", "50.000", "50000.00", "abc", " 50000", "50000 ", "5e4"]) {
-      process.env.BILLING_VIP_30D_PRICE_IDR = bad;
-      expect(getVip30dPriceIdr()).toBeNull();
+  it("env digit murni > 0 diterima sebagai override", () => {
+    process.env.BILLING_VIP_PRICE_IDR = "50000";
+    expect(getVipPriceIdr()).toBe(50000);
+  });
+  it("env terisi tapi invalid ditolak (null) + console.error menyebut nama env", () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      for (const bad of ["0", "-5", "65.000", "50.000", "50000.00", "abc", " 50000", "50000 ", "5e4"]) {
+        process.env.BILLING_VIP_PRICE_IDR = bad;
+        expect(getVipPriceIdr()).toBeNull();
+      }
+      expect(errSpy).toHaveBeenCalled();
+      expect(String(errSpy.mock.calls[0][0])).toContain("BILLING_VIP_PRICE_IDR");
+    } finally {
+      errSpy.mockRestore();
     }
-    delete process.env.BILLING_VIP_30D_PRICE_IDR;
-    expect(getVip30dPriceIdr()).toBeNull();
   });
 });
 
 describe("getPlan / getActiveProviderId / isBillingConfigured", () => {
-  it("plan hanya vip_30d", () => {
-    expect(getPlan("vip_30d")).toEqual({ id: "vip_30d", durationDays: 30, currency: "IDR" });
+  it("plan hanya vip_monthly (id lama vip_30d tidak lagi dijual)", () => {
+    expect(getPlan("vip_monthly")).toEqual({ id: "vip_monthly", durationDays: 30, currency: "IDR" });
+    expect(getPlan("vip_30d")).toBeNull();
     expect(getPlan("vip_365d")).toBeNull();
     expect(getPlan(undefined)).toBeNull();
   });
@@ -131,7 +144,7 @@ describe("getPlan / getActiveProviderId / isBillingConfigured", () => {
     expect(getActiveProviderId()).toBeNull();
   });
   it("konfigurasi lengkap midtrans / xendit", () => {
-    process.env.BILLING_VIP_30D_PRICE_IDR = "50000";
+    process.env.BILLING_VIP_PRICE_IDR = "50000";
     process.env.PAYMENT_PROVIDER = "midtrans";
     expect(isBillingConfigured()).toBe(false);
     process.env.MIDTRANS_SERVER_KEY = "sk-test";
@@ -142,6 +155,19 @@ describe("getPlan / getActiveProviderId / isBillingConfigured", () => {
     expect(isBillingConfigured()).toBe(false); // callback token belum ada
     process.env.XENDIT_CALLBACK_TOKEN = "tok-test";
     expect(isBillingConfigured()).toBe(true);
+  });
+  it("harga env absen -> tetap terkonfigurasi (default 65000); harga env invalid -> nonaktif", () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      delete process.env.BILLING_VIP_PRICE_IDR;
+      process.env.PAYMENT_PROVIDER = "midtrans";
+      process.env.MIDTRANS_SERVER_KEY = "sk-test";
+      expect(isBillingConfigured()).toBe(true);
+      process.env.BILLING_VIP_PRICE_IDR = "abc";
+      expect(isBillingConfigured()).toBe(false);
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 });
 

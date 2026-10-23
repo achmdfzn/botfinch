@@ -63,7 +63,7 @@ function orderFixture(overrides: Partial<BillingOrder> = {}): BillingOrder {
     order_ref: REF,
     buyer_user_id: "333333333333333333",
     guild_id: GUILD,
-    plan_id: "vip_30d",
+    plan_id: "vip_monthly",
     amount_idr: 50000,
     currency: "IDR",
     duration_days: 30,
@@ -110,6 +110,27 @@ describe("GET billing/orders (list)", () => {
     expect(json.orders[0]).not.toHaveProperty("buyer_user_id");
     expect(json.orders[0]).not.toHaveProperty("provider_txn_id");
     expect(listOrders).toHaveBeenCalledWith(GUILD, 20);
+  });
+
+  it("(d) order lama plan_id vip_30d tetap terbaca apa adanya di list", async () => {
+    listOrders.mockResolvedValue([orderFixture({ status: "paid", plan_id: "vip_30d" })]);
+    const res = await listGet(req(), listCtx);
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { orders: Record<string, unknown>[] };
+    expect(json.orders).toHaveLength(1);
+    expect(json.orders[0].plan_id).toBe("vip_30d");
+    expect(json.orders[0].status).toBe("paid");
+  });
+
+  it("(d2) detail order lama plan_id vip_30d tetap terbaca (bukan 404)", async () => {
+    getOrder.mockResolvedValue(
+      orderFixture({ status: "paid", plan_id: "vip_30d", entitlement_applied_at: stale(3500) }),
+    );
+    const res = await detailGet(req(), detailCtx);
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { order: { plan_id: string; status: string } };
+    expect(json.order.plan_id).toBe("vip_30d");
+    expect(json.order.status).toBe("paid");
   });
 });
 

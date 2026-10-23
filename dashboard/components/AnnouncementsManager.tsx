@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import type { SnapshotChannel } from "@/lib/db";
 import Toggle from "./Toggle";
 import { useI18n } from "@/components/I18nProvider";
@@ -8,6 +9,34 @@ import { fmt } from "@/lib/i18n/client";
 
 const inputCls =
   "rounded-lg border border-edge bg-ink px-3 py-2 text-sm text-fg focus-visible:outline-2 focus-visible:outline-brand min-h-[44px]";
+
+interface QuotaInfo {
+  feature: string;
+  used: number;
+  limit: number;
+  vipLimit: number;
+  tier: string;
+}
+
+/** Parse badan 409 { error: "quota_exceeded", feature, used, limit, vip_limit, tier }. */
+function parseQuotaPayload(data: unknown): QuotaInfo | null {
+  if (!data || typeof data !== "object") return null;
+  const d = data as Record<string, unknown>;
+  if (d.error !== "quota_exceeded") return null;
+  const used = Number(d.used);
+  const limit = Number(d.limit);
+  const vipLimit = Number(d.vip_limit);
+  if (!Number.isFinite(used) || !Number.isFinite(limit) || !Number.isFinite(vipLimit)) {
+    return null;
+  }
+  return {
+    feature: typeof d.feature === "string" ? d.feature : "announcements_active",
+    used,
+    limit,
+    vipLimit,
+    tier: typeof d.tier === "string" ? d.tier : "free",
+  };
+}
 
 interface Announcement {
   id: number;
@@ -22,12 +51,19 @@ interface Announcement {
 export default function AnnouncementsManager({
   guildId,
   channels,
+  tier,
+  limit,
+  vipLimit,
 }: {
   guildId: string;
   channels: SnapshotChannel[];
+  tier: "free" | "vip";
+  limit: number;
+  vipLimit: number;
 }) {
   const { lang, dict } = useI18n();
   const g = dict.guild.pengumuman;
+  const q = dict.guild.common.quota;
   const locale = lang === "en" ? "en-US" : "id-ID";
 
   const [rows, setRows] = useState<Announcement[]>([]);
@@ -45,6 +81,54 @@ export default function AnnouncementsManager({
   const [status, setStatus] = useState<"idle" | "ok" | "error">("idle");
   // Guard klik ganda per baris saat toggle enabled.
   const [busyRows, setBusyRows] = useState<ReadonlySet<number>>(new Set());
+  // Kuota otoritatif dari respons 409 terakhir (POST tambah / PUT toggle).
+  const [serverQuota, setServerQuota] = useState<QuotaInfo | null>(null);
+
+  // Kuota pengumuman dihitung dari yang enabled saja (sama seperti route).
+  const used = rows.filter((r) => r.enabled).length;
+  const displayQuota: QuotaInfo | null =
+    serverQuota ??
+    (used >= limit
+      ? { feature: "announcements_active", used, limit, vipLimit, tier }
+      : null);
+  const quotaReached = displayQuota !== null;
+
+  const tierLabel = (t: string) =>
+    t === "vip" ? dict.billing.tierVip : dict.billing.tierFree;
+  const featureLabel = (code: string) =>
+    (dict.billing.features as Record<string, string>)[code] ??
+    dict.billing.features.announcements_active;
+
+  function renderQuotaBox(info: QuotaInfo) {
+    return (
+      <div
+        role="alert"
+        className="mb-4 rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-4"
+      >
+        <p className="text-sm font-semibold text-fg">{q.title}</p>
+        <p className="mt-1 text-sm text-muted">
+          {fmt(q.body, {
+            feature: featureLabel(info.feature),
+            used: info.used,
+            limit: info.limit,
+            tier: tierLabel(info.tier),
+          })}
+        </p>
+        <p className="mt-1 text-sm text-muted">
+          {fmt(q.vipHint, { vipLimit: info.vipLimit })}
+        </p>
+        {info.used > info.limit && (
+          <p className="mt-1 text-sm text-muted">{q.downgradeNote}</p>
+        )}
+        <Link
+          href={`/dashboard/${guildId}/billing`}
+          className="mt-3 inline-flex min-h-[44px] items-center rounded-lg bg-brand px-4 text-sm font-semibold text-ink hover:bg-brand-deep focus-visible:outline-2 focus-visible:outline-brand"
+        >
+          {q.upgradeCta}
+        </Link>
+      </div>
+    );
+  }
 
   // Refresh list TANPA mengganti dengan teks "loading": list lama tetap
   // tampil (tidak berkedip); bila refresh gagal setelah mutasi sukses,
@@ -56,6 +140,7 @@ export default function AnnouncementsManager({
       if (!res.ok) throw new Error("http");
       const data = await res.json();
       setRows(data.announcements ?? []);
+      setServerQuota(null);
     } catch {
       setRefreshError(true);
     }
@@ -94,6 +179,7 @@ export default function AnnouncementsManager({
     channelId &&
     message.trim().length > 0 &&
     !saving &&
+    !quotaReached &&
     (mode === "berulang"
       ? Number.isInteger(intervalNum) && intervalNum >= 5 && intervalNum <= 43200
       : runAt.length > 0);
@@ -139,6 +225,14 @@ export default function AnnouncementsManager({
         setIntervalMin("60");
         setStatus("ok");
         reload();
+      } else if (res.status === 409) {
+        const quota = parseQuotaPayload(await res.json().catch(() => null));
+        if (quota) {
+          setServerQuota(quota);
+          setStatus("idle");
+        } else {
+          setStatus("error");
+        }
       } else {
         setStatus("error");
       }
@@ -158,10 +252,22 @@ export default function AnnouncementsManager({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled: !a.enabled }),
       });
+      // Bentuk error kuota seragam (409 quota_exceeded): tampilkan kotak
+      // kuota dengan angka DARI RESPONS, bukan pesan error generik.
+      const quota =
+        res.status === 409
+          ? parseQuotaPayload(await res.json().catch(() => null))
+          : null;
       // Selalu sinkron ulang ke kebenaran server — juga saat gagal,
-      // agar toggle tak macet di posisi yang salah.
-      reload();
-      if (!res.ok) setStatus("error");
+      // agar toggle tak macet di posisi yang salah. reload() membersihkan
+      // serverQuota, jadi kuota respons dipasang SETELAH reload selesai.
+      await reload();
+      if (quota) {
+        setServerQuota(quota);
+        setStatus("idle");
+      } else if (!res.ok) {
+        setStatus("error");
+      }
     } catch {
       setStatus("error");
       reload();
@@ -188,7 +294,11 @@ export default function AnnouncementsManager({
 
   return (
     <div>
-      <div className="rounded-xl border border-edge bg-panel p-5">
+      {displayQuota && renderQuotaBox(displayQuota)}
+      <div
+        className={`rounded-xl border border-edge bg-panel p-5 ${quotaReached ? "opacity-60" : ""}`}
+        aria-disabled={quotaReached || undefined}
+      >
         <h2 className="text-sm font-semibold text-fg">{g.formTitle}</h2>
 
         <div className="mt-3">
@@ -197,7 +307,8 @@ export default function AnnouncementsManager({
             id="an-channel"
             value={channelId}
             onChange={(e) => setChannelId(e.target.value)}
-            className={`${inputCls} mt-1 w-full`}
+            disabled={quotaReached}
+            className={`${inputCls} mt-1 w-full disabled:opacity-60`}
           >
             <option value="">{g.selectChannel}</option>
             {textChannels.map((c) => (
@@ -219,7 +330,8 @@ export default function AnnouncementsManager({
             onChange={(e) => setMessage(e.target.value)}
             placeholder={g.messagePlaceholder}
             rows={3}
-            className={`${inputCls} mt-1 w-full resize-y`}
+            disabled={quotaReached}
+            className={`${inputCls} mt-1 w-full resize-y disabled:opacity-60`}
           />
         </div>
 
@@ -231,6 +343,7 @@ export default function AnnouncementsManager({
                 key={m}
                 type="button"
                 onClick={() => setMode(m)}
+                disabled={quotaReached}
                 aria-pressed={mode === m}
                 className={`rounded-lg px-4 py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-brand min-h-[44px] ${
                   mode === m
@@ -254,7 +367,8 @@ export default function AnnouncementsManager({
               type="datetime-local"
               value={runAt}
               onChange={(e) => setRunAt(e.target.value)}
-              className={`${inputCls} mt-1 w-full`}
+              disabled={quotaReached}
+              className={`${inputCls} mt-1 w-full disabled:opacity-60`}
             />
           </div>
         ) : (
@@ -269,7 +383,8 @@ export default function AnnouncementsManager({
               max={43200}
               value={intervalMin}
               onChange={(e) => setIntervalMin(e.target.value)}
-              className={`${inputCls} mt-1 w-full`}
+              disabled={quotaReached}
+              className={`${inputCls} mt-1 w-full disabled:opacity-60`}
             />
           </div>
         )}

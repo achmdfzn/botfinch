@@ -17,6 +17,20 @@ export interface BillingOrderSummary {
   expires_at: string | null;
 }
 
+/**
+ * Satu baris pemakaian kuota dari data yang BENAR-BENAR disimpan dashboard
+ * untuk guild ini (dihitung server di halaman billing). Untuk giveaway,
+ * `used` adalah jumlah request berstatus pending (giveaway yang sedang
+ * berjalan adalah data bot dan tidak diklaim di sini); pendingCount
+ * menandainya agar keterangan pendingNote bisa ditampilkan.
+ */
+export interface BillingUsageRow {
+  feature: FeatureCode;
+  used: number;
+  limit: number;
+  pendingCount?: number;
+}
+
 interface BillingPanelProps {
   guildId: string;
   tier: "free" | "vip";
@@ -26,6 +40,7 @@ interface BillingPanelProps {
   priceIdr: number | null;
   providerId: string | null;
   orders: BillingOrderSummary[];
+  usage: BillingUsageRow[];
   dict: Dict;
   lang: Lang;
 }
@@ -73,6 +88,7 @@ export default function BillingPanel({
   priceIdr,
   providerId,
   orders,
+  usage,
   dict: initialDict,
   lang: initialLang,
 }: BillingPanelProps) {
@@ -122,7 +138,7 @@ export default function BillingPanel({
   };
 
   const planText = (planId: string): string =>
-    planId === "vip_30d" ? b.planVip30d : planId;
+    planId === "vip_monthly" || planId === "vip_30d" ? b.planVip30d : planId;
 
   async function startCheckout() {
     if (checkingOut || !billingConfigured) return;
@@ -132,7 +148,7 @@ export default function BillingPanel({
       const res = await fetch(`/api/guilds/${guildId}/billing/checkout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan_id: "vip_30d" }),
+        body: JSON.stringify({ plan_id: "vip_monthly" }),
       });
       const data: unknown = await res.json().catch(() => null);
       const payload =
@@ -321,6 +337,38 @@ export default function BillingPanel({
           </table>
         </div>
       </section>
+
+      {/* Pemakaian kuota dari data dashboard (bukan data bot) */}
+      {usage.length > 0 && (
+        <section aria-label={b.usage.title}>
+          <h2 className="text-base font-semibold text-fg">{b.usage.title}</h2>
+          <p className="mt-1 text-sm text-muted">{b.usage.note}</p>
+          <ul className="mt-3 divide-y divide-edge overflow-hidden rounded-xl border border-edge bg-panel">
+            {usage.map((row) => (
+              <li
+                key={row.feature}
+                className="flex flex-wrap items-start justify-between gap-2 px-4 py-3"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-fg">{b.features[row.feature]}</p>
+                  {row.pendingCount !== undefined && (
+                    <p className="mt-0.5 text-xs text-muted">
+                      {fmt(b.usage.pendingNote, { n: row.pendingCount })}
+                    </p>
+                  )}
+                </div>
+                <p
+                  className={`text-sm ${
+                    row.used >= row.limit ? "font-semibold text-fg" : "text-muted"
+                  }`}
+                >
+                  {fmt(b.usage.usedOf, { used: row.used, limit: row.limit })}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* Riwayat pesanan */}
       <section aria-label={b.ordersTitle}>

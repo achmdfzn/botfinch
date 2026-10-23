@@ -6,15 +6,26 @@ import EmptyState from "@/components/EmptyState";
 import GuildErrorState from "@/components/GuildErrorState";
 import ReloadButton from "@/components/ReloadButton";
 import PageHeader from "@/components/PageHeader";
-import BillingPanel, { type BillingOrderSummary } from "@/components/BillingPanel";
+import BillingPanel, {
+  type BillingOrderSummary,
+  type BillingUsageRow,
+} from "@/components/BillingPanel";
 import { getSessionSafe } from "@/lib/access";
 import { canManage } from "@/lib/discord";
 import { fetchUserGuilds } from "@/lib/access";
-import { dbConfigured, getEntitlement, listBillingOrders } from "@/lib/db";
-import { getEffectiveTierFromRow } from "@/lib/premium";
+import {
+  countAutoResponses,
+  countEnabledAnnouncements,
+  countGiveawayRequestsPending,
+  countSelfRolePanels,
+  dbConfigured,
+  getEntitlement,
+  listBillingOrders,
+} from "@/lib/db";
+import { FEATURE_LIMITS, getEffectiveTierFromRow } from "@/lib/premium";
 import {
   getActiveProviderId,
-  getVip30dPriceIdr,
+  getVipPriceIdr,
   isBillingConfigured,
 } from "@/lib/billing";
 import { getDict, getLang } from "@/lib/i18n";
@@ -94,7 +105,7 @@ export default async function GuildBillingPage({
 
   let priceIdr: number | null = null;
   try {
-    priceIdr = getVip30dPriceIdr();
+    priceIdr = getVipPriceIdr();
   } catch {
     priceIdr = null;
   }
@@ -104,6 +115,50 @@ export default async function GuildBillingPage({
     providerId = getActiveProviderId();
   } catch {
     providerId = null;
+  }
+
+  // Pemakaian kuota: HANYA dari data yang disimpan dashboard untuk guild
+  // ini, dihitung dengan fungsi COUNT yang sama dengan yang dipakai
+  // gate di route API (bukan diturunkan dari daftar ber-LIMIT, agar
+  // angka tampilan tidak bisa lebih kecil dari angka gate).
+  // custom_commands tidak ditampilkan (dashboard tidak punya datanya)
+  // dan giveaway yang sedang berjalan adalah data bot, jadi untuk
+  // giveaway yang dihitung hanya request berstatus pending milik
+  // dashboard.
+  let usage: BillingUsageRow[] = [];
+  try {
+    const [announcementsUsed, selfRolePanelsUsed, autoResponsesUsed, giveawayPending] =
+      await Promise.all([
+        countEnabledAnnouncements(guildId),
+        countSelfRolePanels(guildId),
+        countAutoResponses(guildId),
+        countGiveawayRequestsPending(guildId),
+      ]);
+    usage = [
+      {
+        feature: "autoresponders",
+        used: autoResponsesUsed,
+        limit: FEATURE_LIMITS.autoresponders[tier],
+      },
+      {
+        feature: "giveaways_active",
+        used: giveawayPending,
+        limit: FEATURE_LIMITS.giveaways_active[tier],
+        pendingCount: giveawayPending,
+      },
+      {
+        feature: "selfrole_panels",
+        used: selfRolePanelsUsed,
+        limit: FEATURE_LIMITS.selfrole_panels[tier],
+      },
+      {
+        feature: "announcements_active",
+        used: announcementsUsed,
+        limit: FEATURE_LIMITS.announcements_active[tier],
+      },
+    ];
+  } catch {
+    usage = [];
   }
 
   let orders: BillingOrderSummary[] = [];
@@ -135,6 +190,7 @@ export default async function GuildBillingPage({
         priceIdr={priceIdr}
         providerId={providerId}
         orders={orders}
+        usage={usage}
         dict={dict}
         lang={lang}
       />

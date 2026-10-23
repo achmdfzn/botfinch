@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { countActiveAnnouncements, getEntitlement } from "@/lib/db";
 import { FEATURE_LIMITS, getEffectiveTierFromRow, type FeatureCode } from "@/lib/premium";
 import { fmt, getDict, getLang } from "@/lib/i18n";
@@ -133,6 +134,12 @@ export default async function PremiumStatus({ guildId }: { guildId: string }) {
         <div className="mt-4 border-t border-edge pt-4">
           <p className="text-sm font-semibold text-fg">{p.upgradeTitle}</p>
           <p className="mt-1 text-sm text-muted">{p.upgradeBody}</p>
+          <Link
+            href={`/dashboard/${guildId}/billing`}
+            className="mt-3 inline-flex min-h-[44px] items-center justify-center rounded-lg bg-brand px-5 text-sm font-semibold text-ink hover:bg-brand-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          >
+            {dict.guild.common.quota.upgradeCta}
+          </Link>
         </div>
       )}
     </section>

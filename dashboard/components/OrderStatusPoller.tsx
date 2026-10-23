@@ -176,7 +176,10 @@ export default function OrderStatusPoller({
     return map[s] ?? b.orderStatus.unknown;
   };
 
-  const planText = order.plan_id === "vip_30d" ? b.planVip30d : order.plan_id;
+  const planText =
+    order.plan_id === "vip_monthly" || order.plan_id === "vip_30d"
+      ? b.planVip30d
+      : order.plan_id;
   const ins = od.instructions;
 
   const instruction =

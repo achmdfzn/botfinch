@@ -48,7 +48,7 @@ function orderRow(overrides: Row = {}): Row {
     order_ref: "ord-123",
     buyer_user_id: "user-1",
     guild_id: "guild-1",
-    plan_id: "vip-30d",
+    plan_id: "vip_monthly",
     amount_idr: 25000,
     currency: "IDR",
     duration_days: 30,
@@ -113,7 +113,7 @@ describe("createBillingOrder", () => {
       orderRef: "ord-123",
       buyerUserId: "user-1",
       guildId: "guild-1",
-      planId: "vip-30d",
+      planId: "vip_monthly",
       amountIdr: 25000,
       durationDays: 30,
       provider: "mockpay",
@@ -124,7 +124,7 @@ describe("createBillingOrder", () => {
       order_ref: "ord-123",
       buyer_user_id: "user-1",
       guild_id: "guild-1",
-      plan_id: "vip-30d",
+      plan_id: "vip_monthly",
       amount_idr: 25000,
       currency: "IDR",
       duration_days: 30,
@@ -142,7 +142,7 @@ describe("createBillingOrder", () => {
     expect(text).toContain("INSERT INTO billing_orders");
     expect(text).toContain("'created'");
     expect(text).toContain("RETURNING *");
-    for (const v of ["ord-123", "user-1", "guild-1", "vip-30d", 25000, "IDR", 30, "mockpay"]) {
+    for (const v of ["ord-123", "user-1", "guild-1", "vip_monthly", 25000, "IDR", 30, "mockpay"]) {
       expect(values).toContain(v);
     }
   });
@@ -159,7 +159,7 @@ describe("getBillingOrderByRef / findActiveBillingOrder / listBillingOrders", ()
 
   it("findActiveBillingOrder hanya status created/pending yang belum kedaluwarsa, terbaru", async () => {
     sqlHandler = () => [orderRow({ status: "pending" })];
-    const found = await findActiveBillingOrder("guild-1", "vip-30d");
+    const found = await findActiveBillingOrder("guild-1", "vip_monthly");
     expect(found?.status).toBe("pending");
     const { text, values } = sqlCalls[0];
     expect(text).toContain("status IN ('created', 'pending')");
@@ -167,9 +167,9 @@ describe("getBillingOrderByRef / findActiveBillingOrder / listBillingOrders", ()
     expect(text).toContain("ORDER BY id DESC");
     expect(text).toContain("LIMIT 1");
     expect(values).toContain("guild-1");
-    expect(values).toContain("vip-30d");
+    expect(values).toContain("vip_monthly");
     sqlHandler = () => [];
-    expect(await findActiveBillingOrder("guild-1", "vip-30d")).toBeNull();
+    expect(await findActiveBillingOrder("guild-1", "vip_monthly")).toBeNull();
   });
 
   it("listBillingOrders terbaru dulu dengan limit default 20", async () => {
@@ -302,11 +302,11 @@ describe("markBillingOrderApplied & touch & expireStale", () => {
 
   it("expireStaleBillingOrders: tutup order basi menurut expires_at, kembalikan jumlah", async () => {
     sqlHandler = () => [{ id: 1 }, { id: 2 }];
-    expect(await expireStaleBillingOrders("guild-1", "vip_30d")).toBe(2);
+    expect(await expireStaleBillingOrders("guild-1", "vip_monthly")).toBe(2);
     const { text, values } = sqlCalls[0];
     expect(text).toContain("status = 'expired'");
     expect(text).toContain("expires_at <= NOW()");
-    expect(values).toEqual(["guild-1", "vip_30d"]);
+    expect(values).toEqual(["guild-1", "vip_monthly"]);
   });
 });
 

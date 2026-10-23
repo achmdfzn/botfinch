@@ -10,7 +10,8 @@ import SelfRolesManager from "@/components/SelfRolesManager";
 import { getSessionSafe } from "@/lib/access";
 import { canManage } from "@/lib/discord";
 import { fetchUserGuilds } from "@/lib/access";
-import { getSelfRoles, latestSnapshot } from "@/lib/db";
+import { getEntitlement, getSelfRoles, latestSnapshot } from "@/lib/db";
+import { FEATURE_LIMITS, getEffectiveTierFromRow } from "@/lib/premium";
 import { getDict, getLang } from "@/lib/i18n";
 
 export const instant = false;
@@ -61,9 +62,10 @@ export default async function GuildSelfRoles({ params }: { params: Promise<{ gui
   const snap = await latestSnapshot();
   const snapGuild = snap?.guilds.find((g) => g.id === guildId);
   const awal = await getSelfRoles(guildId);
+  const tier = getEffectiveTierFromRow(await getEntitlement(guildId));
 
   return (
-    <div className="w-full max-w-4xl">
+    <div className="w-full">
       <PageHeader
         title={guildName}
         description={g.subtitle}
@@ -76,7 +78,14 @@ export default async function GuildSelfRoles({ params }: { params: Promise<{ gui
           </Link>
         }
       />
-      <SelfRolesManager guildId={guildId} roles={snapGuild?.roles ?? []} initialRows={awal} />
+      <SelfRolesManager
+        guildId={guildId}
+        roles={snapGuild?.roles ?? []}
+        initialRows={awal}
+        tier={tier}
+        limit={FEATURE_LIMITS.selfrole_panels[tier]}
+        vipLimit={FEATURE_LIMITS.selfrole_panels.vip}
+      />
     </div>
   );
 }

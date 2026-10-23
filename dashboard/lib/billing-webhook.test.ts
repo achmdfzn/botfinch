@@ -62,7 +62,7 @@ function orderFixture(overrides: Partial<BillingOrder> = {}): BillingOrder {
     order_ref: REF,
     buyer_user_id: "333333333333333333",
     guild_id: GUILD,
-    plan_id: "vip_30d",
+    plan_id: "vip_monthly",
     amount_idr: 50000,
     currency: "IDR",
     duration_days: 30,
@@ -191,6 +191,18 @@ describe("Webhook Midtrans — pemrosesan status", () => {
     expect(json).toEqual({ ok: true, outcome: "applied:activated" });
     expect(recordEvent).toHaveBeenCalledTimes(1);
     expect(claim).toHaveBeenCalledTimes(1);
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(apply).toHaveBeenCalledWith(GUILD, 30, "midtrans", REF, undefined);
+  });
+
+  it("order lama plan_id vip_30d tetap settle lewat webhook dari snapshot order", async () => {
+    const order = orderFixture({ plan_id: "vip_30d" });
+    getOrder.mockResolvedValue(order);
+    claim.mockResolvedValue({ order, previousStatus: "pending" });
+    const res = await midtransPost(midtransReq(midtransBody()));
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { ok: boolean; outcome: string };
+    expect(json).toEqual({ ok: true, outcome: "applied:activated" });
     expect(apply).toHaveBeenCalledTimes(1);
     expect(apply).toHaveBeenCalledWith(GUILD, 30, "midtrans", REF, undefined);
   });

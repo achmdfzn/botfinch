@@ -169,7 +169,8 @@ export default async function Landing() {
   await connection(); // halaman dinamis: bahasa dari cookie, jangan di-prerender
   const session = await getSessionSafe();
   const lang = await getLang();
-  const l = getDict(lang).landing;
+  const fullDict = getDict(lang);
+  const l = fullDict.landing;
   const locale = lang === "id" ? "id-ID" : "en-US";
 
   return (
@@ -322,6 +323,12 @@ export default async function Landing() {
               className="inline-flex min-h-[44px] items-center hover:text-fg focus-visible:outline-2 focus-visible:outline-brand"
             >
               {l.footerDashboard}
+            </Link>
+            <Link
+              href="/pricing"
+              className="inline-flex min-h-[44px] items-center hover:text-fg focus-visible:outline-2 focus-visible:outline-brand"
+            >
+              {fullDict.nav.pricing}
             </Link>
             <a
               href={inviteUrl()}

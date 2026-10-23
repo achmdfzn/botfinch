@@ -11,7 +11,8 @@ import AnnouncementsManager from "@/components/AnnouncementsManager";
 import { getSessionSafe } from "@/lib/access";
 import { canManage } from "@/lib/discord";
 import { fetchUserGuilds } from "@/lib/access";
-import { dbConfigured, latestSnapshot } from "@/lib/db";
+import { dbConfigured, getEntitlement, latestSnapshot } from "@/lib/db";
+import { FEATURE_LIMITS, getEffectiveTierFromRow } from "@/lib/premium";
 import { getDict, getLang } from "@/lib/i18n";
 
 export const instant = false;
@@ -65,9 +66,10 @@ export default async function GuildPengumuman({ params }: { params: Promise<{ gu
 
   const snap = await latestSnapshot();
   const snapGuild = snap?.guilds.find((g) => g.id === guildId);
+  const tier = getEffectiveTierFromRow(await getEntitlement(guildId));
 
   return (
-    <div className="w-full max-w-4xl">
+    <div className="w-full">
       <PageHeader
         title={guildName}
         description={g.subtitle}
@@ -80,7 +82,13 @@ export default async function GuildPengumuman({ params }: { params: Promise<{ gu
           </Link>
         }
       />
-      <AnnouncementsManager guildId={guildId} channels={snapGuild?.channels ?? []} />
+      <AnnouncementsManager
+        guildId={guildId}
+        channels={snapGuild?.channels ?? []}
+        tier={tier}
+        limit={FEATURE_LIMITS.announcements_active[tier]}
+        vipLimit={FEATURE_LIMITS.announcements_active.vip}
+      />
     </div>
   );
 }

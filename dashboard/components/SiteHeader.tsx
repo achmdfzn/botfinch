@@ -30,6 +30,12 @@ export default async function SiteHeader() {
           >
             {dict.nav.features}
           </Link>
+          <Link
+            href="/pricing"
+            className="hidden min-h-[44px] items-center rounded-lg px-4 py-2 text-sm font-medium text-muted hover:bg-edge hover:text-fg focus-visible:outline-2 focus-visible:outline-brand sm:inline-flex"
+          >
+            {dict.nav.pricing}
+          </Link>
           {session ? (
             <>
               <Link

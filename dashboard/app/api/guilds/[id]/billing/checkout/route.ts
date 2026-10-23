@@ -12,7 +12,7 @@ import { getSessionDiscordId, requireManager } from "@/lib/access";
 import {
   getActiveProviderId,
   getPlan,
-  getVip30dPriceIdr,
+  getVipPriceIdr,
   isBillingConfigured,
 } from "@/lib/billing";
 import { getActiveProvider } from "@/lib/payments";
@@ -20,7 +20,7 @@ import { parseJsonBody } from "@/lib/validate";
 
 /**
  * Buat order billing + checkout provider (manager guild).
- * Harga SELALU dari env server (getVip30dPriceIdr) — field harga/tier apa
+ * Harga SELALU dari server (getVipPriceIdr) — field harga/tier apa
  * pun di body diabaikan total. Order aktif (created/pending) yang sudah
  * ada dipakai ulang agar dobel-klik tidak membuat dua tagihan.
  */
@@ -47,7 +47,7 @@ async function postImpl(
   if (!plan) {
     return NextResponse.json({ error: "unknown_plan" }, { status: 400 });
   }
-  const priceIdr = getVip30dPriceIdr();
+  const priceIdr = getVipPriceIdr();
   const providerId = getActiveProviderId();
   const provider = getActiveProvider();
   if (priceIdr === null || !providerId || !provider) {

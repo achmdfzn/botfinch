@@ -181,6 +181,41 @@ export async function addSelfRole(guildId: string, messageId: string, emoji: str
     ON CONFLICT (guild_id, message_id, emoji) DO UPDATE SET role_id = EXCLUDED.role_id`;
 }
 
+/** Jumlah panel self-role (message_id berbeda) milik guild — untuk kuota tier. */
+export async function countSelfRolePanels(guildId: string): Promise<number> {
+  if (!dbConfigured()) return 0;
+  const { rows } = await sql`SELECT COUNT(DISTINCT message_id) AS count FROM selfroles WHERE guild_id = ${guildId}`;
+  return Number(rows[0]?.count ?? 0);
+}
+
+/**
+ * Tambah self-role dengan gerbang kuota panel, SATU statement atomik:
+ * WHERE lolos bila message_id SUDAH ada di guild (bukan panel baru —
+ * upsert biasa, termasuk emoji baru di panel lama, selalu boleh) ATAU
+ * jumlah panel (COUNT(DISTINCT message_id)) masih di bawah limit.
+ * Balapan antar request tidak bisa menembus batas karena keberadaan
+ * panel & hitungan panel dievaluasi di dalam statement yang sama
+ * dengan INSERT-nya (pola createAnnouncementWithQuota). Kembalikan
+ * true bila baris tertulis, false bila ditolak kuota (panel baru dan
+ * kuota penuh).
+ */
+export async function addSelfRoleWithQuota(
+  guildId: string,
+  messageId: string,
+  emoji: string,
+  roleId: string,
+  limit: number,
+): Promise<boolean> {
+  const { rows } = await sql`
+    INSERT INTO selfroles (guild_id, message_id, emoji, role_id)
+    SELECT ${guildId}, ${messageId}, ${emoji}, ${roleId}
+    WHERE EXISTS (SELECT 1 FROM selfroles WHERE guild_id = ${guildId} AND message_id = ${messageId})
+       OR (SELECT COUNT(DISTINCT message_id) FROM selfroles WHERE guild_id = ${guildId}) < ${limit}
+    ON CONFLICT (guild_id, message_id, emoji) DO UPDATE SET role_id = EXCLUDED.role_id
+    RETURNING id`;
+  return rows.length > 0;
+}
+
 export async function deleteSelfRole(guildId: string, messageId: string, emoji: string): Promise<void> {
   await sql`DELETE FROM selfroles WHERE guild_id = ${guildId} AND message_id = ${messageId} AND emoji = ${emoji}`;
 }
@@ -195,6 +230,38 @@ export async function addAutoResponse(guildId: string, trigger: string, response
   await sql`INSERT INTO autoresponses (guild_id, trigger, response)
     VALUES (${guildId}, ${trigger}, ${response})
     ON CONFLICT (guild_id, trigger) DO UPDATE SET response = EXCLUDED.response`;
+}
+
+/** Jumlah rule auto-response milik guild — untuk kuota tier. */
+export async function countAutoResponses(guildId: string): Promise<number> {
+  if (!dbConfigured()) return 0;
+  const { rows } = await sql`SELECT COUNT(*) AS count FROM autoresponses WHERE guild_id = ${guildId}`;
+  return Number(rows[0]?.count ?? 0);
+}
+
+/**
+ * Tambah auto-response dengan gerbang kuota, SATU statement atomik:
+ * WHERE lolos bila trigger SUDAH ada di guild (upsert = pembaruan,
+ * selalu boleh) ATAU jumlah rule guild masih di bawah limit. Karena
+ * keberadaan trigger & hitungan dievaluasi di dalam statement yang
+ * sama dengan INSERT-nya (pola createAnnouncementWithQuota), balapan
+ * antar request tidak bisa menembus batas. Kembalikan true bila baris
+ * tertulis, false bila ditolak kuota (trigger baru dan kuota penuh).
+ */
+export async function addAutoResponseWithQuota(
+  guildId: string,
+  trigger: string,
+  response: string,
+  limit: number,
+): Promise<boolean> {
+  const { rows } = await sql`
+    INSERT INTO autoresponses (guild_id, trigger, response)
+    SELECT ${guildId}, ${trigger}, ${response}
+    WHERE EXISTS (SELECT 1 FROM autoresponses WHERE guild_id = ${guildId} AND trigger = ${trigger})
+       OR (SELECT COUNT(*) FROM autoresponses WHERE guild_id = ${guildId}) < ${limit}
+    ON CONFLICT (guild_id, trigger) DO UPDATE SET response = EXCLUDED.response
+    RETURNING id`;
+  return rows.length > 0;
 }
 
 export async function deleteAutoResponse(guildId: string, id: number): Promise<void> {
@@ -220,6 +287,13 @@ export async function addGiveawayRequest(
 ): Promise<void> {
   await sql`INSERT INTO giveaway_requests (guild_id, channel_id, prize, winners, duration_minutes)
     VALUES (${guildId}, ${channelId}, ${prize}, ${winners}, ${durationMinutes})`;
+}
+
+/** Jumlah permintaan giveaway berstatus 'pending' milik guild — untuk kuota tier. */
+export async function countGiveawayRequestsPending(guildId: string): Promise<number> {
+  if (!dbConfigured()) return 0;
+  const { rows } = await sql`SELECT COUNT(*) AS count FROM giveaway_requests WHERE guild_id = ${guildId} AND status = 'pending'`;
+  return Number(rows[0]?.count ?? 0);
 }
 
 export async function ackGiveawayRequest(
@@ -418,10 +492,53 @@ export async function deleteAnnouncement(id: number, guildId: string): Promise<b
 }
 
 /** Jumlah pengumuman aktif (enabled) milik guild — untuk cek kuota tier. */
-export async function countActiveAnnouncements(guildId: string): Promise<number> {
+export async function countEnabledAnnouncements(guildId: string): Promise<number> {
   if (!dbConfigured()) return 0;
   const { rows } = await sql`SELECT COUNT(*) AS count FROM announcements WHERE guild_id = ${guildId} AND enabled = TRUE`;
   return Number(rows[0]?.count ?? 0);
+}
+
+/** Nama lama countEnabledAnnouncements; dipertahankan untuk pemanggil lama. */
+export async function countActiveAnnouncements(guildId: string): Promise<number> {
+  return countEnabledAnnouncements(guildId);
+}
+
+/** Status enabled satu pengumuman; null bila id/guild tidak ditemukan. */
+export async function getAnnouncementEnabled(
+  id: number,
+  guildId: string,
+): Promise<boolean | null> {
+  if (!dbConfigured()) return null;
+  const { rows } = await sql`
+    SELECT enabled FROM announcements
+    WHERE id = ${id} AND guild_id = ${guildId}
+    LIMIT 1`;
+  if (!rows[0]) return null;
+  return Boolean(rows[0].enabled);
+}
+
+/**
+ * Aktifkan SATU pengumuman dengan gerbang kuota dalam satu statement:
+ * UPDATE hanya menyentuh baris yang masih disabled dan hanya bila
+ * jumlah pengumuman enabled guild masih di bawah limit. Berbeda dengan
+ * check-then-update lama, dua PUT bersamaan tidak bisa sama-sama lolos,
+ * dan route dapat membedakan target yang sudah enabled (ditangani
+ * terpisah sebagai update idempoten, bukan penambahan kuota).
+ * Return true bila baris sekarang teraktifkan oleh statement ini.
+ */
+export async function enableAnnouncementWithQuota(
+  id: number,
+  guildId: string,
+  limit: number,
+): Promise<boolean> {
+  const { rows } = await sql`
+    UPDATE announcements
+    SET enabled = TRUE
+    WHERE id = ${id} AND guild_id = ${guildId} AND enabled = FALSE
+      AND (SELECT COUNT(*) FROM announcements
+           WHERE guild_id = ${guildId} AND enabled = TRUE) < ${limit}
+    RETURNING id`;
+  return rows.length > 0;
 }
 
 /**

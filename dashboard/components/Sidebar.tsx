@@ -3,8 +3,16 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { fmt } from "@/lib/i18n/client";
+import {
+  isAriaCurrentEligible,
+  isSidebarLinkActive,
+  type SidebarEntry,
+  type SidebarGroup,
+  type SidebarIconId,
+  type SidebarSection,
+} from "@/lib/sidebar-nav";
 import ThemeToggle from "./ThemeToggle";
 import LangSwitcher from "./LangSwitcher";
 
@@ -13,57 +21,31 @@ export interface SidebarNavItem {
   label: string;
 }
 
-/**
- * ID ikon SVG monochrome (currentColor) per item navigasi.
- * Ikon digambar inline di bawah — tanpa emoji, satu warna brand via token.
- */
-export type SidebarIconId =
-  | "plugins"
-  | "overview"
-  | "leaderboard"
-  | "welcome"
-  | "leveling"
-  | "reactionRoles"
-  | "customCommands"
-  | "economy"
-  | "starboard"
-  | "giveaway"
-  | "announcements"
-  | "automod"
-  | "embedBuilder"
-  | "templates"
-  | "modlog"
-  | "modules"
-  | "settings";
+export type { SidebarEntry, SidebarGroup, SidebarIconId, SidebarSection };
 
-export interface SidebarEntry {
-  href: string;
-  label: string;
-  icon: SidebarIconId;
-}
-
-export interface SidebarSection {
-  id: string;
-  title: string;
-  items: SidebarEntry[];
+interface CollapseToggleProps {
+  collapsed: boolean;
+  onToggle: () => void;
+  collapseLabel: string;
+  expandLabel: string;
 }
 
 interface Props {
   guildName: string;
   guildIconUrl: string | null;
-  /** Item utama di atas seksi: Plugins, Ringkasan, Leaderboard, Templates, Pengaturan. */
-  topItems: SidebarEntry[];
-  /** Seksi grup plugin (Esensial, Engagement & Fun, Moderasi, Utilitas), default expanded. */
-  sections: SidebarSection[];
-  /** Item di bawah divider: Mod Log, Modul. */
-  bottomItems: SidebarEntry[];
+  /** Grup navigasi logis (Ringkasan, Modul & Fitur, Konten, Pengaturan, Billing). */
+  groups: SidebarGroup[];
   backHref: string;
   backLabel: string;
   sectionLabel: string;
   serverMenuLabel: string;
-  /** Template aria-label toggle seksi; boleh mengandung {name}. */
+  /** Template aria-label toggle subseksi plugin; boleh mengandung {name}. */
   expandSectionLabel: string;
   collapseSectionLabel: string;
+  /** Mode ciut desktop (ikon saja). Drawer mobile tidak pernah meneruskannya. */
+  collapsed?: boolean;
+  /** Tombol ciutkan/lebar; hanya dirender bila diteruskan (desktop). */
+  collapseToggle?: CollapseToggleProps;
   /** Dipanggil saat link diklik; dipakai drawer mobile untuk menutup panel. */
   onNavigate?: () => void;
 }
@@ -201,32 +183,12 @@ function SidebarIcon({ id, className }: { id: SidebarIconId; className?: string 
   );
 }
 
-/**
- * Link aktif: cocokkan path (hash diabaikan agar "#welcome" tetap aktif di
- * /settings), lalu cocokkan query tab. Link item seksi plugin memakai
- * "?tab=<grup>" menuju halaman Plugins yang sama — tanpa memeriksa tab,
- * SEMUA item seksi itu akan terlihat aktif sekaligus. Jadi: entry tanpa
- * query tab aktif di path-nya apa pun tab yang terbuka (mis. item
- * "Plugins" tetap aktif saat ?tab=engagement dipilih); entry berquery tab
- * hanya aktif saat tab kategori itu yang terbuka.
- */
-function isActivePath(pathname: string, currentTab: string | null, href: string): boolean {
-  const withoutHash = href.split("#")[0];
-  const qIdx = withoutHash.indexOf("?");
-  const hrefPath = qIdx >= 0 ? withoutHash.slice(0, qIdx) : withoutHash;
-  const pathOk = pathname === hrefPath || pathname === `${hrefPath}/`;
-  if (!pathOk) return false;
-  const hrefTab =
-    qIdx >= 0 ? new URLSearchParams(withoutHash.slice(qIdx + 1)).get("tab") : null;
-  if (hrefTab === null) return true;
-  return (currentTab ?? "all") === hrefTab;
-}
-
 function EntryLink({
   entry,
   pathname,
   currentTab,
   onNavigate,
+  collapsed = false,
   sub = false,
 }: {
   entry: SidebarEntry;
@@ -234,18 +196,20 @@ function EntryLink({
   /** Nilai query ?tab= saat ini; null = tidak ada query. */
   currentTab: string | null;
   onNavigate?: () => void;
-  /** Item di dalam seksi: beri penanda titik kecil agar hierarki terbaca. */
+  collapsed?: boolean;
+  /** Item di dalam subseksi plugin: penanda titik kecil agar hierarki terbaca. */
   sub?: boolean;
 }) {
-  const active = isActivePath(pathname, currentTab, entry.href);
+  const active = isSidebarLinkActive(pathname, currentTab, entry);
   return (
     <Link
       href={entry.href}
-      aria-current={active ? "page" : undefined}
+      aria-current={active && isAriaCurrentEligible(entry) ? "page" : undefined}
+      title={collapsed ? entry.label : undefined}
       onClick={onNavigate}
       className={`relative flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-brand ${
-        active ? "bg-edge text-fg" : "text-muted hover:bg-edge/70 hover:text-fg"
-      }`}
+        collapsed ? "justify-center px-0" : ""
+      } ${active ? "bg-edge text-fg" : "text-muted hover:bg-edge/70 hover:text-fg"}`}
     >
       <span
         aria-hidden="true"
@@ -253,50 +217,71 @@ function EntryLink({
           active ? "opacity-100" : "opacity-0"
         }`}
       />
-      {sub && (
-        <span
-          aria-hidden="true"
-          className="h-1 w-1 shrink-0 rounded-full bg-muted/70"
-        />
+      {sub && !collapsed && (
+        <span aria-hidden="true" className="h-1 w-1 shrink-0 rounded-full bg-muted/70" />
       )}
       <SidebarIcon
         id={entry.icon}
-        className={sub ? "h-[18px] w-[18px] shrink-0" : "h-5 w-5 shrink-0"}
+        className={sub && !collapsed ? "h-[18px] w-[18px] shrink-0" : "h-5 w-5 shrink-0"}
       />
-      <span className="truncate">{entry.label}</span>
+      {collapsed ? (
+        <span className="sr-only">{entry.label}</span>
+      ) : (
+        <span className="truncate">{entry.label}</span>
+      )}
     </Link>
   );
 }
 
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={`h-4 w-4 shrink-0 transition-transform ${open ? "" : "-rotate-90"}`}
+    >
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  );
+}
+
 /**
- * Navigasi modul per-server ala MEE6: header server dengan dropdown,
- * item berikon, lalu divider + item bawah.
- * Link aktif ditandai bg-edge plus indikator brand 3px di kiri,
- * motif "indikator server terpilih" dari DESIGN.md.
+ * Navigasi per-server: header identitas Finch + pemilih server, grup
+ * navigasi logis berlabel, footer tema/bahasa + tombol ciut (desktop).
+ * Link aktif ditandai bg-edge plus indikator brand di kiri dan
+ * aria-current="page" (motif "indikator server terpilih" DESIGN.md).
+ * Mode ciut (desktop, >=lg lewat DashboardShell): ikon saja, label
+ * sr-only + title, heading grup tersembunyi.
  */
 export default function Sidebar({
   guildName,
   guildIconUrl,
-  topItems,
-  sections,
-  bottomItems,
+  groups,
   backHref,
   backLabel,
   sectionLabel,
   serverMenuLabel,
   expandSectionLabel,
   collapseSectionLabel,
+  collapsed = false,
+  collapseToggle,
   onNavigate,
 }: Props) {
+  const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
   const pathname = usePathname();
   // Tab kategori aktif dari URL (?tab=engagement dst.) — dipakai
-  // isActivePath agar item seksi plugin hanya aktif di tabnya sendiri.
+  // isSidebarLinkActive agar item subseksi plugin hanya aktif di tabnya.
   const currentTab = useSearchParams().get("tab");
   const [menuOpen, setMenuOpen] = useState(false);
   const menuWrapRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
-  // Seksi default expanded; true = collapsed.
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  // Subseksi plugin default expanded; true = collapsed.
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
 
   // Dropdown server: Escape menutup + fokus kembali ke tombol; klik di luar menutup.
   useEffect(() => {
@@ -318,34 +303,89 @@ export default function Sidebar({
       document.removeEventListener("keydown", onKey);
       document.removeEventListener("mousedown", onPointer);
     };
-  }, [menuOpen ]);
+  }, [menuOpen]);
 
   const entryKey = (entry: SidebarEntry) => `${entry.href}#${entry.label}`;
 
+  const renderItems = (items: SidebarEntry[], sub = false) => (
+    <ul className="flex flex-col gap-1">
+      {items.map((entry) => (
+        <li key={entryKey(entry)}>
+          <EntryLink
+            entry={entry}
+            pathname={pathname}
+            currentTab={currentTab}
+            onNavigate={onNavigate}
+            collapsed={collapsed}
+            sub={sub}
+          />
+        </li>
+      ))}
+    </ul>
+  );
+
+  const renderSection = (section: SidebarSection) => {
+    const isCollapsed = collapsedSections[section.id] === true;
+    // uid membedakan instans desktop vs drawer (keduanya bisa ada di DOM).
+    const sectionListId = `sidebar-section-${uid}-${section.id}`;
+    // Mode ciut: heading subseksi disembunyikan, item tetap tampil ikon saja.
+    if (collapsed) {
+      return (
+        <div key={section.id} className="mt-2 border-t border-edge pt-2">
+          {renderItems(section.items, true)}
+        </div>
+      );
+    }
+    return (
+      <div key={section.id} className="mt-2">
+        <button
+          type="button"
+          aria-expanded={!isCollapsed}
+          aria-controls={sectionListId}
+          aria-label={fmt(isCollapsed ? expandSectionLabel : collapseSectionLabel, {
+            name: section.title,
+          })}
+          onClick={() =>
+            setCollapsedSections((prev) => ({ ...prev, [section.id]: !isCollapsed }))
+          }
+          className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-wider text-muted hover:bg-edge hover:text-fg focus-visible:outline-2 focus-visible:outline-brand"
+        >
+          <span className="truncate">{section.title}</span>
+          <Chevron open={!isCollapsed} />
+        </button>
+        {!isCollapsed && (
+          <div id={sectionListId}>{renderItems(section.items, true)}</div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="flex h-full flex-col">
-      {/* Header server: kartu ikon + nama + chevron pembuka menu */}
-      <div ref={menuWrapRef} className="relative px-3 pt-3">
-        <div className="flex items-center gap-2 rounded-xl border border-edge bg-ink/50 p-1.5">
-          {guildIconUrl ? (
-            <Image
-              // unoptimized: ikon langsung dari CDN Discord, tanpa lewat
-              // Image Optimization (lihat alasan di GuildCard)
-              src={guildIconUrl}
-              alt=""
-              width={40}
-              height={40}
-              className="h-10 w-10 shrink-0 rounded-full"
-              unoptimized
-            />
-          ) : (
-            <div
-              aria-hidden="true"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-edge text-base font-bold text-fg"
-            >
-              {guildName.slice(0, 1).toUpperCase()}
-            </div>
-          )}
+      {/* Identitas Finch */}
+      <div className={`flex items-center gap-2 px-3 pt-3 ${collapsed ? "justify-center" : ""}`}>
+        <Image
+          src="/finch.png"
+          alt=""
+          width={32}
+          height={32}
+          className="h-8 w-8 shrink-0 rounded-full"
+        />
+        {collapsed ? (
+          <span className="sr-only">Finch</span>
+        ) : (
+          <span className="truncate text-base font-bold tracking-tight text-fg">Finch</span>
+        )}
+      </div>
+
+      {/* Pemilih server: ikon + nama guild + chevron; menu berisi tautan
+          kembali ke daftar server (/dashboard). */}
+      <div ref={menuWrapRef} className="relative px-3 pt-2">
+        <div
+          className={`flex items-center gap-2 rounded-xl border border-edge bg-ink/50 p-1.5 ${
+            collapsed ? "justify-center" : ""
+          }`}
+        >
           <button
             ref={menuButtonRef}
             type="button"
@@ -353,28 +393,57 @@ export default function Sidebar({
             aria-expanded={menuOpen}
             aria-haspopup="menu"
             aria-label={serverMenuLabel}
-            className="flex min-h-[44px] min-w-0 flex-1 items-center justify-between gap-2 rounded-lg px-2 text-left hover:bg-edge focus-visible:outline-2 focus-visible:outline-brand"
+            title={collapsed ? guildName : undefined}
+            className="flex min-h-[44px] min-w-[44px] flex-1 items-center gap-2 rounded-lg px-1.5 hover:bg-edge focus-visible:outline-2 focus-visible:outline-brand"
           >
-            <span className="truncate text-sm font-semibold text-fg">{guildName}</span>
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-              className={`h-4 w-4 shrink-0 text-muted transition-transform ${menuOpen ? "rotate-180" : ""}`}
-            >
-              <path d="M6 9l6 6 6-6" />
-            </svg>
+            {guildIconUrl ? (
+              <Image
+                // unoptimized: ikon langsung dari CDN Discord, tanpa lewat
+                // Image Optimization (lihat alasan di GuildCard)
+                src={guildIconUrl}
+                alt=""
+                width={40}
+                height={40}
+                className="h-10 w-10 shrink-0 rounded-full"
+                unoptimized
+              />
+            ) : (
+              <span
+                aria-hidden="true"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-edge text-base font-bold text-fg"
+              >
+                {guildName.slice(0, 1).toUpperCase()}
+              </span>
+            )}
+            {!collapsed && (
+              <>
+                <span className="min-w-0 flex-1 truncate text-left text-sm font-semibold text-fg">
+                  {guildName}
+                </span>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                  className={`h-4 w-4 shrink-0 text-muted transition-transform ${menuOpen ? "rotate-180" : ""}`}
+                >
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
+              </>
+            )}
+            {collapsed && <span className="sr-only">{guildName}</span>}
           </button>
         </div>
         {menuOpen && (
           <div
             role="menu"
             aria-label={serverMenuLabel}
-            className="absolute inset-x-3 top-full z-10 mt-1 rounded-lg border border-edge bg-panel p-1 shadow-lg"
+            className={`absolute top-full z-10 mt-1 rounded-lg border border-edge bg-panel p-1 shadow-lg ${
+              collapsed ? "left-3 w-56" : "inset-x-3"
+            }`}
           >
             <Link
               role="menuitem"
@@ -392,71 +461,65 @@ export default function Sidebar({
       </div>
 
       <nav aria-label={sectionLabel} className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-1">
-        <ul className="flex flex-col gap-1">
-          {topItems.map((entry) => (
-            <li key={entryKey(entry)}>
-              <EntryLink entry={entry} pathname={pathname} currentTab={currentTab} onNavigate={onNavigate} />
-            </li>
-          ))}
-        </ul>
-
-        {sections.map((section) => {
-          const isCollapsed = collapsed[section.id] === true;
-          const sectionListId = `sidebar-section-${section.id}`;
-          return (
-            <div key={section.id} className="mt-4">
-              <button
-                type="button"
-                aria-expanded={!isCollapsed}
-                aria-controls={sectionListId}
-                aria-label={fmt(isCollapsed ? expandSectionLabel : collapseSectionLabel, {
-                  name: section.title,
-                })}
-                onClick={() =>
-                  setCollapsed((prev) => ({ ...prev, [section.id]: !isCollapsed }))
-                }
-                className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-wider text-muted hover:bg-edge hover:text-fg focus-visible:outline-2 focus-visible:outline-brand"
-              >
-                <span className="truncate">{section.title}</span>
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                  className={`h-4 w-4 shrink-0 transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
-                >
-                  <path d="M6 9l6 6 6-6" />
-                </svg>
-              </button>
-              {!isCollapsed && (
-                <ul id={sectionListId} className="flex flex-col gap-1">
-                  {section.items.map((entry) => (
-                    <li key={entryKey(entry)}>
-                      <EntryLink entry={entry} pathname={pathname} currentTab={currentTab} onNavigate={onNavigate} sub />
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          );
-        })}
-
-        <ul className="mt-4 flex flex-col gap-1 border-t border-edge pt-4">
-          {bottomItems.map((entry) => (
-            <li key={entryKey(entry)}>
-              <EntryLink entry={entry} pathname={pathname} currentTab={currentTab} onNavigate={onNavigate} />
-            </li>
-          ))}
-        </ul>
+        {groups.map((group, gi) => (
+          <div key={group.id} className={gi === 0 ? "" : "mt-5"}>
+            {collapsed ? (
+              <>
+                <h2 className="sr-only">{group.title}</h2>
+                {gi > 0 && <div aria-hidden="true" className="mb-2 border-t border-edge" />}
+              </>
+            ) : (
+              <h2 className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wider text-muted">
+                {group.title}
+              </h2>
+            )}
+            {renderItems(group.items)}
+            {group.sections?.map(renderSection)}
+          </div>
+        ))}
       </nav>
-      {/* Footer: tema + bahasa. Sebelumnya pengguna di dashboard guild tidak
-          bisa mengganti keduanya tanpa kembali ke halaman selector. */}
-      <div className="flex items-center gap-2 border-t border-edge px-3 py-3">
+
+      {/* Footer: tema + bahasa, dan (desktop saja) tombol ciutkan/lebar. */}
+      <div
+        className={`flex items-center gap-2 border-t border-edge px-3 py-3 ${
+          collapsed ? "flex-col" : ""
+        }`}
+      >
         <ThemeToggle />
         <LangSwitcher />
+        {collapseToggle && (
+          <button
+            type="button"
+            onClick={collapseToggle.onToggle}
+            aria-expanded={!collapseToggle.collapsed}
+            aria-label={
+              collapseToggle.collapsed ? collapseToggle.expandLabel : collapseToggle.collapseLabel
+            }
+            title={
+              collapseToggle.collapsed ? collapseToggle.expandLabel : collapseToggle.collapseLabel
+            }
+            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-edge hover:text-fg focus-visible:outline-2 focus-visible:outline-brand ${
+              collapsed ? "" : "ml-auto"
+            }`}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+              className="h-5 w-5"
+            >
+              {collapseToggle.collapsed ? (
+                <path d="M9 5l7 7-7 7" />
+              ) : (
+                <path d="M15 5l-7 7 7 7" />
+              )}
+            </svg>
+          </button>
+        )}
       </div>
     </div>
   );

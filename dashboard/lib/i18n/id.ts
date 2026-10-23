@@ -11,6 +11,7 @@ export const id = {
     logoAlt: "Logo Finch",
     back: "Kembali ke daftar server",
     features: "Fitur",
+    pricing: "Harga",
   },
   auth: {
     signIn: "Masuk dengan Discord",
@@ -183,6 +184,14 @@ export const id = {
       dbTitle: "Database belum dikonfigurasi",
       waitingTitle: "Menunggu data dari bot",
       backToGuilds: "Kembali ke daftar server",
+      quota: {
+        title: "Kuota paket tercapai",
+        body: "{feature} di server ini sudah memakai {used} dari batas {limit} untuk paket {tier}. Penambahan baru ditolak sampai ada resource yang dihapus atau paket ditingkatkan.",
+        vipHint: "Batas VIP untuk fitur ini: {vipLimit}.",
+        upgradeCta: "Upgrade ke VIP",
+        downgradeNote:
+          "Jumlah resource yang tersimpan melebihi batas paket saat ini. Resource lama tetap tampil dan bisa dihapus, tetapi penambahan baru ditolak selama pemakaian masih di atas batas.",
+      },
     },
     subnav: {
       sectionLabel: "Bagian server",
@@ -200,6 +209,17 @@ export const id = {
       pengumuman: "Pengumuman",
       modlog: "Mod Log",
       modul: "Modul",
+      groups: {
+        overview: "Ringkasan",
+        features: "Modul & Fitur",
+        content: "Konten & Komunitas",
+        settings: "Pengaturan",
+        billing: "Billing VIP",
+      },
+      openMenu: "Buka menu",
+      closeMenu: "Tutup menu",
+      collapseSidebar: "Ciutkan sidebar",
+      expandSidebar: "Lebarkan sidebar",
     },
     overview: {
       metaTitle: "Ringkasan Server",
@@ -675,7 +695,7 @@ export const id = {
     },
     upgradeTitle: "Upgrade ke VIP",
     upgradeBody:
-      "Aktivasi VIP dilakukan manual oleh owner bot. Hubungi owner bot untuk mengaktifkan VIP di server ini, sebutkan nama atau ID servermu.",
+      "VIP dibeli dari halaman Billing VIP server ini. Pembayaran diproses payment gateway dan VIP aktif otomatis setelah pembayaran terverifikasi, tanpa perlu menghubungi owner.",
     admin: {
       metaTitle: "Admin Premium",
       title: "Panel Premium",
@@ -780,6 +800,12 @@ export const id = {
       selfrole_panels: "Panel Self-Role",
       announcements_active: "Pengumuman Terjadwal Aktif",
     },
+    usage: {
+      title: "Pemakaian kuota",
+      note: "Dihitung dari data yang disimpan dashboard untuk server ini. Perintah kustom dan giveaway yang sedang berjalan dihitung bot dari data Discord, jadi tidak tampil di tabel ini.",
+      usedOf: "{used} dari {limit}",
+      pendingNote: "{n} menunggu eksekusi bot",
+    },
     ordersTitle: "Riwayat pesanan",
     ordersEmpty: "Belum ada pesanan untuk server ini.",
     colOrder: "Pesanan",
@@ -847,6 +873,46 @@ export const id = {
           "Pembayaran pesanan ini sedang disengketakan, jadi status VIP ditahan. Hubungi owner bot atau dukungan Finch untuk tindak lanjut.",
       },
     },
+  },
+  pricing: {
+    metaTitle: "Harga",
+    title: "Harga Finch",
+    subtitle:
+      "Paket Free tetap gratis untuk fitur inti, moderasi, dan keamanan server. VIP menaikkan batas resource untuk satu server.",
+    freeName: "Free",
+    vipName: "VIP",
+    freePrice: "Gratis",
+    freeDesc:
+      "Untuk server yang baru mulai. Semua fitur inti tetap aktif dengan batas resource yang transparan.",
+    vipDesc:
+      "Untuk server aktif yang mencapai batas Free. Fitur yang sama, kapasitas yang jauh lebih besar.",
+    perThirtyDays: "per 30 hari",
+    perServer: "untuk satu server",
+    limitsTitle: "Batas fitur per paket",
+    colFeature: "Fitur",
+    colFree: "Free",
+    colVip: "VIP",
+    features: {
+      custom_commands: "Perintah Kustom",
+      autoresponders: "Autoresponder",
+      giveaways_active: "Giveaway Aktif",
+      selfrole_panels: "Panel Self-Role",
+      announcements_active: "Pengumuman Terjadwal Aktif",
+    },
+    ctaFree: "Masuk dan pilih server",
+    ctaVip: "Upgrade server ke VIP",
+    ctaVipNote:
+      "Kamu akan diminta masuk, memilih server yang kamu kelola, lalu membayar dari halaman billing server itu.",
+    expiryTitle: "Kedaluwarsa dan perpanjangan",
+    expiryBody:
+      "VIP berlaku 30 hari sejak pembayaran terverifikasi. Perpanjangan dilakukan lewat pembelian baru: bila VIP masih aktif, masa baru ditambahkan dari tanggal berakhir saat ini; bila sudah kedaluwarsa, masa baru mulai dari pembayaran yang baru. Setelah kedaluwarsa, tier kembali ke Free dan resource lama tetap tersimpan.",
+    refundTitle: "Pengembalian dana",
+    refundBody:
+      "Ketentuan pengembalian dana mengikuti Syarat Layanan. Pembayaran yang dikembalikan mencabut hak VIP yang berasal dari pembayaran tersebut.",
+    termsLink: "Syarat Layanan",
+    privacyLink: "Kebijakan Privasi",
+    noteBody:
+      "Harga dalam rupiah (IDR). Pembayaran diproses penyedia gerbang pembayaran lewat halaman pembayaran resmi mereka; Finch tidak menyimpan data kartu.",
   },
   terms: {
     metaTitle: "Syarat Layanan",

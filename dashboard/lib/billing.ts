@@ -1,6 +1,7 @@
 // lib/billing.ts — konfigurasi billing Finch Premium (murni env, tanpa DB).
-// Harga TIDAK PERNAH datang dari client: satu-satunya sumber harga plan
-// adalah env BILLING_VIP_30D_PRICE_IDR di server. Plan lain belum dijual.
+// Harga TIDAK PERNAH datang dari client: sumber harga plan adalah harga
+// default katalog di file ini, yang bisa dioverride oleh env
+// BILLING_VIP_PRICE_IDR di server. Plan lain belum dijual.
 
 export interface BillingPlan {
   id: string;
@@ -8,8 +9,12 @@ export interface BillingPlan {
   currency: "IDR";
 }
 
+/** Harga default katalog plan VIP (rupiah) bila env override tidak diisi. */
+export const DEFAULT_VIP_PRICE_IDR = 65000;
+
 export const PLANS: BillingPlan[] = [
-  { id: "vip_30d", durationDays: 30, currency: "IDR" },
+  // "vip_monthly": 1 bulan didefinisikan resmi sebagai 30 hari.
+  { id: "vip_monthly", durationDays: 30, currency: "IDR" },
 ];
 
 export function getPlan(id: unknown): BillingPlan | null {
@@ -18,16 +23,56 @@ export function getPlan(id: unknown): BillingPlan | null {
 }
 
 /**
- * Harga VIP 30 hari dalam rupiah dari env BILLING_VIP_30D_PRICE_IDR.
- * WAJIB string digit murni (integer > 0, tanpa pemisah ribuan/desimal/
- * spasi). Nilai apa pun selain itu = plan tidak dijual (null), supaya
- * salah konfigurasi tidak pernah berubah jadi harga 0 / harga karangan.
+ * Harga VIP bulanan (30 hari) dalam rupiah.
+ * - env BILLING_VIP_PRICE_IDR tidak terisi / string kosong -> harga
+ *   default katalog (DEFAULT_VIP_PRICE_IDR = 65000).
+ * - env terisi string digit murni (integer > 0, tanpa pemisah ribuan/
+ *   desimal/spasi) -> harga adalah nilai env itu (override).
+ * - env terisi tetapi INVALID (non-digit, 0, negatif, desimal) -> null
+ *   (billing nonaktif, fail-closed) dan dicatat lewat console.error:
+ *   salah konfigurasi tidak pernah diam-diam jatuh ke harga default,
+ *   harga 0, atau harga karangan.
  */
-export function getVip30dPriceIdr(): number | null {
-  const raw = process.env.BILLING_VIP_30D_PRICE_IDR;
-  if (!raw || !/^\d+$/.test(raw)) return null;
+let defaultPriceWarningLogged = false;
+const invalidPriceReasonsLogged = new Set<string>();
+
+/**
+ * Error harga invalid dicatat sekali per alasan per proses: env tidak
+ * berubah antar-request, jadi alasan yang sama berulang adalah banjir
+ * log yang sama; alasan berbeda tetap masing-masing tercatat.
+ */
+function logInvalidPrice(reason: string): void {
+  if (invalidPriceReasonsLogged.has(reason)) return;
+  invalidPriceReasonsLogged.add(reason);
+  console.error(`BILLING_VIP_PRICE_IDR invalid (${reason}); billing dinonaktifkan (fail-closed).`);
+}
+
+export function getVipPriceIdr(): number | null {
+  const raw = process.env.BILLING_VIP_PRICE_IDR;
+  if (raw === undefined || raw === "") {
+    // Harga default adalah keputusan produk yang sah, tetapi JANGAN
+    // diam-diam: operator harus bisa melihat di log bahwa harga yang
+    // ditagih berasal dari default katalog, bukan env eksplisit.
+    // Diperingatkan sekali per proses agar tidak membanjiri log.
+    if (!defaultPriceWarningLogged) {
+      defaultPriceWarningLogged = true;
+      console.warn(
+        "BILLING_VIP_PRICE_IDR tidak diisi; memakai harga default katalog Rp65000 untuk plan vip_monthly.",
+      );
+    }
+    return DEFAULT_VIP_PRICE_IDR;
+  }
+  if (!/^\d+$/.test(raw)) {
+    // Nilai mentah TIDAK dicetak: env yang salah isi bisa memuat
+    // karakter kontrol/newline yang menyuntik baris log palsu.
+    logInvalidPrice(`panjang ${raw.length}, bukan digit murni > 0`);
+    return null;
+  }
   const n = Number(raw);
-  if (!Number.isSafeInteger(n) || n <= 0) return null;
+  if (!Number.isSafeInteger(n) || n <= 0) {
+    logInvalidPrice(`panjang ${raw.length}, bukan integer aman > 0`);
+    return null;
+  }
   return n;
 }
 
@@ -61,7 +106,7 @@ export function isBillingConfigured(): boolean {
   const provider = getActiveProviderId();
   if (!provider) return false;
   if (!providerCredentialsComplete(provider)) return false;
-  return getVip30dPriceIdr() !== null;
+  return getVipPriceIdr() !== null;
 }
 
 // ---------------------------------------------------------------------------

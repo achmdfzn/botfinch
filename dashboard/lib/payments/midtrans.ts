@@ -141,7 +141,7 @@ export class MidtransProvider implements PaymentProvider {
         },
         item_details: [
           {
-            id: "vip_30d",
+            id: "vip_monthly",
             price: input.amountIdr,
             quantity: 1,
             name: input.description.slice(0, 50),

@@ -1,9 +1,38 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import type { SnapshotChannel } from "@/lib/db";
 import { useI18n } from "@/components/I18nProvider";
 import { fmt } from "@/lib/i18n/client";
+
+interface QuotaInfo {
+  feature: string;
+  used: number;
+  limit: number;
+  vipLimit: number;
+  tier: string;
+}
+
+/** Parse badan 409 { error: "quota_exceeded", feature, used, limit, vip_limit, tier }. */
+function parseQuotaPayload(data: unknown): QuotaInfo | null {
+  if (!data || typeof data !== "object") return null;
+  const d = data as Record<string, unknown>;
+  if (d.error !== "quota_exceeded") return null;
+  const used = Number(d.used);
+  const limit = Number(d.limit);
+  const vipLimit = Number(d.vip_limit);
+  if (!Number.isFinite(used) || !Number.isFinite(limit) || !Number.isFinite(vipLimit)) {
+    return null;
+  }
+  return {
+    feature: typeof d.feature === "string" ? d.feature : "giveaways_active",
+    used,
+    limit,
+    vipLimit,
+    tier: typeof d.tier === "string" ? d.tier : "free",
+  };
+}
 
 interface Active {
   id: number;
@@ -38,14 +67,21 @@ export default function GiveawayManager({
   channels,
   initialActive,
   initialRequests,
+  tier,
+  limit,
+  vipLimit,
 }: {
   guildId: string;
   channels: SnapshotChannel[];
   initialActive: Active[];
   initialRequests: ReqRow[];
+  tier: "free" | "vip";
+  limit: number;
+  vipLimit: number;
 }) {
   const { lang, dict } = useI18n();
   const g = dict.guild.giveaway;
+  const q = dict.guild.common.quota;
   const locale = lang === "en" ? "en-US" : "id-ID";
 
   const [active, setActive] = useState<Active[]>(initialActive);
@@ -59,6 +95,56 @@ export default function GiveawayManager({
   const [status, setStatus] = useState<"idle" | "ok" | "error">("idle");
   // Guard klik ganda: satu request buat-giveaway dalam satu waktu.
   const [saving, setSaving] = useState(false);
+  // Kuota otoritatif dari respons 409 terakhir (mengalahkan hitungan lokal).
+  const [serverQuota, setServerQuota] = useState<QuotaInfo | null>(null);
+
+  // used giveaway = request pending + giveaway aktif, persis seperti
+  // hitungan GET/POST route giveaways (pending dashboard + aktif snapshot).
+  const used =
+    requests.filter((r) => r.status === "pending").length + active.length;
+  const displayQuota: QuotaInfo | null =
+    serverQuota ??
+    (used >= limit
+      ? { feature: "giveaways_active", used, limit, vipLimit, tier }
+      : null);
+  const quotaReached = displayQuota !== null;
+
+  const tierLabel = (t: string) =>
+    t === "vip" ? dict.billing.tierVip : dict.billing.tierFree;
+  const featureLabel = (code: string) =>
+    (dict.billing.features as Record<string, string>)[code] ??
+    dict.billing.features.giveaways_active;
+
+  function renderQuotaBox(info: QuotaInfo) {
+    return (
+      <div
+        role="alert"
+        className="mb-4 rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-4"
+      >
+        <p className="text-sm font-semibold text-fg">{q.title}</p>
+        <p className="mt-1 text-sm text-muted">
+          {fmt(q.body, {
+            feature: featureLabel(info.feature),
+            used: info.used,
+            limit: info.limit,
+            tier: tierLabel(info.tier),
+          })}
+        </p>
+        <p className="mt-1 text-sm text-muted">
+          {fmt(q.vipHint, { vipLimit: info.vipLimit })}
+        </p>
+        {info.used > info.limit && (
+          <p className="mt-1 text-sm text-muted">{q.downgradeNote}</p>
+        )}
+        <Link
+          href={`/dashboard/${guildId}/billing`}
+          className="mt-3 inline-flex min-h-[44px] items-center rounded-lg bg-brand px-4 text-sm font-semibold text-ink hover:bg-brand-deep focus-visible:outline-2 focus-visible:outline-brand"
+        >
+          {q.upgradeCta}
+        </Link>
+      </div>
+    );
+  }
 
   const textChannels = channels.filter((c) => c.type === 0 || c.type === 5);
 
@@ -72,6 +158,7 @@ export default function GiveawayManager({
       const data = await res.json();
       setActive(data.active ?? []);
       setRequests(data.requests ?? []);
+      setServerQuota(null);
     } catch {
       setRefreshError(true);
     }
@@ -98,6 +185,14 @@ export default function GiveawayManager({
         setPrize("");
         setStatus("ok");
         reload();
+      } else if (res.status === 409) {
+        const quota = parseQuotaPayload(await res.json().catch(() => null));
+        if (quota) {
+          setServerQuota(quota);
+          setStatus("idle");
+        } else {
+          setStatus("error");
+        }
       } else {
         setStatus("error");
       }
@@ -110,12 +205,16 @@ export default function GiveawayManager({
 
   return (
     <div>
-      <div className="rounded-xl border border-edge bg-panel p-5">
+      {displayQuota && renderQuotaBox(displayQuota)}
+      <div
+        className={`rounded-xl border border-edge bg-panel p-5 ${quotaReached ? "opacity-60" : ""}`}
+        aria-disabled={quotaReached || undefined}
+      >
         <h2 className="text-sm font-semibold text-fg">{g.formTitle}</h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <div>
             <label htmlFor="gw-channel" className="text-xs font-medium text-muted">{g.channelLabel}</label>
-            <select id="gw-channel" value={channelId} onChange={(e) => setChannelId(e.target.value)} className={`${inputCls} mt-1 w-full`}>
+            <select id="gw-channel" value={channelId} onChange={(e) => setChannelId(e.target.value)} disabled={quotaReached} className={`${inputCls} mt-1 w-full disabled:opacity-60`}>
               <option value="">{g.selectChannel}</option>
               {textChannels.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -132,7 +231,8 @@ export default function GiveawayManager({
               onChange={(e) => setPrize(e.target.value)}
               placeholder={g.prizePlaceholder}
               maxLength={100}
-              className={`${inputCls} mt-1 w-full`}
+              disabled={quotaReached}
+              className={`${inputCls} mt-1 w-full disabled:opacity-60`}
             />
           </div>
           <div>
@@ -144,7 +244,8 @@ export default function GiveawayManager({
               max={25}
               value={winners}
               onChange={(e) => setWinners(Number(e.target.value))}
-              className={`${inputCls} mt-1 w-full`}
+              disabled={quotaReached}
+              className={`${inputCls} mt-1 w-full disabled:opacity-60`}
             />
           </div>
           <div>
@@ -156,13 +257,14 @@ export default function GiveawayManager({
               max={10080}
               value={duration}
               onChange={(e) => setDuration(Number(e.target.value))}
-              className={`${inputCls} mt-1 w-full`}
+              disabled={quotaReached}
+              className={`${inputCls} mt-1 w-full disabled:opacity-60`}
             />
           </div>
         </div>
         <button
           onClick={create}
-          disabled={!channelId || !prize.trim() || saving}
+          disabled={!channelId || !prize.trim() || saving || quotaReached}
           className="mt-4 rounded-lg bg-brand px-6 py-2.5 text-sm font-semibold text-ink hover:bg-brand-deep disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand min-h-[44px]"
         >
           {saving ? dict.settings.saving : g.create}

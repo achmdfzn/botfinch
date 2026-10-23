@@ -12,6 +12,7 @@ export const en: Dict = {
     logoAlt: "Finch logo",
     back: "Back to server list",
     features: "Features",
+    pricing: "Pricing",
   },
   auth: {
     signIn: "Sign in with Discord",
@@ -184,6 +185,14 @@ export const en: Dict = {
       dbTitle: "Database not configured",
       waitingTitle: "Waiting for bot data",
       backToGuilds: "Back to server list",
+      quota: {
+        title: "Plan quota reached",
+        body: "{feature} on this server already uses {used} of the {limit} limit for the {tier} plan. New additions are rejected until a resource is removed or the plan is upgraded.",
+        vipHint: "The VIP limit for this feature is {vipLimit}.",
+        upgradeCta: "Upgrade to VIP",
+        downgradeNote:
+          "Stored resources exceed the current plan limit. Existing resources stay visible and can be removed, but new additions are rejected while usage stays above the limit.",
+      },
     },
     subnav: {
       sectionLabel: "Server sections",
@@ -201,6 +210,17 @@ export const en: Dict = {
       pengumuman: "Announcements",
       modlog: "Mod Log",
       modul: "Modules",
+      groups: {
+        overview: "Overview",
+        features: "Modules & Features",
+        content: "Content & Community",
+        settings: "Settings",
+        billing: "VIP Billing",
+      },
+      openMenu: "Open menu",
+      closeMenu: "Close menu",
+      collapseSidebar: "Collapse sidebar",
+      expandSidebar: "Expand sidebar",
     },
     overview: {
       metaTitle: "Server Overview",
@@ -676,7 +696,7 @@ export const en: Dict = {
     },
     upgradeTitle: "Upgrade to VIP",
     upgradeBody:
-      "VIP activation is handled manually by the bot owner. Contact the bot owner to activate VIP on this server, and mention your server name or ID.",
+      "VIP is purchased from this server's VIP Billing page. Payment is processed by the payment gateway and VIP activates automatically once payment is verified, no need to contact the owner.",
     admin: {
       metaTitle: "Premium Admin",
       title: "Premium Panel",
@@ -781,6 +801,12 @@ export const en: Dict = {
       selfrole_panels: "Self-Role Panels",
       announcements_active: "Active Scheduled Announcements",
     },
+    usage: {
+      title: "Quota usage",
+      note: "Counted from data the dashboard stores for this server. Custom commands and giveaways currently running are counted by the bot from Discord data, so they are not shown in this table.",
+      usedOf: "{used} of {limit}",
+      pendingNote: "{n} waiting for the bot to run them",
+    },
     ordersTitle: "Order history",
     ordersEmpty: "No orders for this server yet.",
     colOrder: "Order",
@@ -848,6 +874,46 @@ export const en: Dict = {
           "This order's payment is under dispute, so the VIP status is on hold. Contact the bot owner or Finch support for follow-up.",
       },
     },
+  },
+  pricing: {
+    metaTitle: "Pricing",
+    title: "Finch pricing",
+    subtitle:
+      "The Free plan stays free for core features, moderation, and server safety. VIP raises resource limits for one server.",
+    freeName: "Free",
+    vipName: "VIP",
+    freePrice: "Free",
+    freeDesc:
+      "For servers that are just getting started. Every core feature stays on with transparent resource limits.",
+    vipDesc:
+      "For active servers that hit the Free limits. The same features, much larger capacity.",
+    perThirtyDays: "per 30 days",
+    perServer: "for one server",
+    limitsTitle: "Feature limits per plan",
+    colFeature: "Feature",
+    colFree: "Free",
+    colVip: "VIP",
+    features: {
+      custom_commands: "Custom Commands",
+      autoresponders: "Autoresponders",
+      giveaways_active: "Active Giveaways",
+      selfrole_panels: "Self-Role Panels",
+      announcements_active: "Active Scheduled Announcements",
+    },
+    ctaFree: "Sign in and pick a server",
+    ctaVip: "Upgrade a server to VIP",
+    ctaVipNote:
+      "You will be asked to sign in, pick a server you manage, then pay from that server's billing page.",
+    expiryTitle: "Expiry and renewal",
+    expiryBody:
+      "VIP runs for 30 days from the verified payment. Renewal is a new purchase: while VIP is still active, the new period is added on top of the current expiry date; once expired, the new period starts from the new payment. After expiry the tier returns to Free and existing resources stay stored.",
+    refundTitle: "Refunds",
+    refundBody:
+      "Refund terms follow the Terms of Service. A refunded payment revokes the VIP granted by that payment.",
+    termsLink: "Terms of Service",
+    privacyLink: "Privacy Policy",
+    noteBody:
+      "Prices are in Indonesian rupiah (IDR). Payments are processed by the payment gateway provider on their official payment pages; Finch does not store card data.",
   },
   terms: {
     metaTitle: "Terms of Service",

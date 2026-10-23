@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createAnnouncementWithQuota, getEntitlement, getSnapshotChannel, listAnnouncements, withDbError } from "@/lib/db";
+import { countEnabledAnnouncements, createAnnouncementWithQuota, getEntitlement, getSnapshotChannel, listAnnouncements, withDbError } from "@/lib/db";
 import { requireManager } from "@/lib/access";
 import { discordId, intervalMinutes, isoDateTime, parseJsonBody, str } from "@/lib/validate";
 import { FEATURE_LIMITS, getEffectiveTierFromRow } from "@/lib/premium";
@@ -63,7 +63,14 @@ async function postImpl(
   );
   if (annId === null) {
     return NextResponse.json(
-      { error: "announcement_quota_exceeded", limit },
+      {
+        error: "quota_exceeded",
+        feature: "announcements_active",
+        used: await countEnabledAnnouncements(id),
+        limit,
+        vip_limit: FEATURE_LIMITS.announcements_active.vip,
+        tier,
+      },
       { status: 409 },
     );
   }

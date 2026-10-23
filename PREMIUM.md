@@ -59,9 +59,13 @@ Alasan tiap limit:
   VIP sepuluh kali lipat atau lebih untuk server besar, jadi upgrade
   terasa sebagai kenaikan kapasitas, bukan pembukaan fitur.
 - **Request embed TIDAK dibatasi.** Membuat embed lewat Embed Builder
-  adalah request sekali jalan: bot mengirim pesan lalu selesai, tidak
-  ada resource yang tersimpan dan terus dipelihara. Karena yang dibatasi
-  sistem ini adalah resource tersimpan, embed tidak masuk katalog kuota.
+  adalah request sekali jalan: bot mengirim pesan lalu selesai. Baris
+  request-nya memang tersimpan di Postgres sebagai antrean/log
+  (`embed_requests`), tetapi tidak ada resource yang terus dipelihara
+  atau dijadwalkan, jadi embed tidak masuk katalog kuota.
+- **Perintah kustom tidak punya jalur mutasi dashboard.** Angka
+  `custom_commands` di dashboard hanya katalog perbandingan; penegakan
+  kuotanya 100% di bot pada titik pembuatan lewat Discord.
 - **Fitur keselamatan dan fitur inti TIDAK digate.** Moderasi, AutoMod,
   log, dan perintah inti lain tidak ada di katalog kuota dan tidak
   dikurangi untuk server Free. Keamanan server tidak pernah dijadikan
@@ -157,9 +161,11 @@ Selain grant manual owner, VIP juga bisa dibeli sendiri oleh pengelola
 server lewat dashboard. Alurnya:
 
 1. **Checkout di dashboard.** Pengelola server membuka halaman billing
-   guild, memilih paket (saat ini satu paket: VIP 30 hari), dan membuat
-   order. Harga selalu diambil dari konfigurasi server
-   (`BILLING_VIP_30D_PRICE_IDR`), tidak pernah dari client. Order
+   guild, memilih paket (saat ini satu paket: VIP bulanan
+   `vip_monthly` — 1 bulan didefinisikan sebagai 30 hari), dan membuat
+   order. Harga selalu diambil dari server, tidak pernah dari client:
+   harga default katalog Rp65.000, yang bisa dioverride lewat env
+   `BILLING_VIP_PRICE_IDR` (lihat ringkasan env di bawah). Order
    tersimpan di tabel `billing_orders` dengan status `created` dan batas
    waktu pembayaran (`expires_at` order). Bila masih ada order aktif
    (`created`/`pending` yang belum kedaluwarsa) untuk paket yang sama,
@@ -170,9 +176,11 @@ server lewat dashboard. Alurnya:
 3. **Webhook terverifikasi.** Provider mengirim webhook; signature/token
    diverifikasi lebih dulu — webhook yang gagal verifikasi ditolak tanpa
    menyentuh data apa pun. Setiap event dicatat di
-   `billing_webhook_events` dengan `event_key` unik: event yang sama
-   diterima ulang (retry provider) terdeteksi sebagai duplikat dan tidak
-   diproses dua kali. Status pembayaran juga bisa dipastikan lewat
+   `billing_webhook_events` dengan `event_key` unik. Log ini adalah
+   catatan audit, BUKAN gerbang dedupe: event yang sama diterima ulang
+   (retry provider) tetap diproses, dan jaminan tidak diterapkan dua
+   kali berasal dari klaim atomik order di langkah 4. Status pembayaran
+   juga bisa dipastikan lewat
    rekonsiliasi (pengecekan status ke provider saat halaman order
    dibuka); kedua jalur memakai logika pemrosesan yang sama.
 4. **Entitlement diterapkan sekali.** Order diklaim sebagai lunas lewat
@@ -184,6 +192,13 @@ server lewat dashboard. Alurnya:
    berlaku **diperpanjang dari tanggal berakhir saat ini**, bukan dari
    sekarang. Semua penerapan, penolakan, dan pencabutan ini menulis
    audit log seperti mutasi owner.
+
+> **Catatan migrasi nama plan:** plan yang dulu bernama `vip_30d`
+> kini bernama `vip_monthly` (durasi tidak berubah: 1 bulan = 30
+> hari), dan env harga `BILLING_VIP_30D_PRICE_IDR` diganti nama menjadi
+> `BILLING_VIP_PRICE_IDR`. Order lama yang tersimpan dengan
+> `plan_id = vip_30d` tetap terbaca normal di dashboard; id lama hanya
+> tidak lagi dijual untuk checkout baru.
 
 ### State machine order
 
@@ -265,6 +280,59 @@ Status order di `billing_orders` bergerak hanya lewat transisi yang sah:
   resource baru di atas batas tier efektif akan ditolak sampai VIP aktif
   lagi, atau sampai jumlah resource diturunkan ke dalam batas.
 
+## Gate kuota di dashboard (putaran final)
+
+Sejak putaran final, semua jalur pembuatan resource terhitung di
+dashboard digate di server (bukan hanya disembunyikan di UI), memakai
+tier efektif dari `guild_entitlements` dan limit `FEATURE_LIMITS`:
+
+| Jalur | Yang dihitung | Mekanisme |
+| --- | --- | --- |
+| `POST /api/guilds/[id]/autoresponses` | Rule per guild | Satu statement: trigger lama = update (selalu boleh); trigger baru hanya bila hitungan < limit |
+| `POST /api/guilds/[id]/selfroles` | Panel = `COUNT(DISTINCT message_id)` | Satu statement: panel lama selalu boleh; panel baru hanya bila hitungan panel < limit |
+| `POST /api/guilds/[id]/giveaways` | Request `pending` + giveaway aktif dari snapshot bot | Pre-check baca (lapisan pertama); bot tetap penegak akhir saat eksekusi dari hitungan lokalnya |
+| `POST /api/guilds/[id]/announcements` + Server Action template pengumuman | Pengumuman `enabled` | Satu statement bergate (`createAnnouncementWithQuota`); template juga memvalidasi channel snapshot bertipe teks/news |
+| `PUT /api/guilds/[id]/announcements/[annId]` (`enabled: true`) | Pengumuman `enabled` | Satu statement bergate untuk target yang masih disabled; target yang sudah enabled bersifat idempoten dan tidak dihitung sebagai penambahan |
+
+Penolakan di route API selalu berbentuk HTTP 409
+`{ "error": "quota_exceeded", "feature", "used", "limit", "vip_limit", "tier" }`.
+Pengecualian bentuk (bukan mekanisme): Server Action template adalah
+submit form, jadi penolakannya berupa redirect kembali ke tab template
+dengan `status=error` generik — pengguna template tidak dibedakan
+penyebabnya (kuota penuh vs channel tidak valid), tetapi gate atomik
+yang menolaknya sama.
+Otorisasi tidak berubah: pengguna web wajib `requireManager`; khusus
+route autoresponses, POST/DELETE juga menerima autentikasi bot
+(`DASHBOARD_SECRET`) agar mirror perubahan dari Discord tidak ditolak —
+gate kuota tetap berlaku untuk kedua jalur. Halaman terkait menampilkan
+kotak kuota (fitur, pemakaian, limit Free & VIP, tombol Upgrade ke
+billing) dan tetap mengizinkan melihat/menghapus resource lama; pada
+keadaan downgrade (pemakaian di atas limit Free) penambahan baru ditolak
+sementara data lama tetap tampil. Halaman billing menampilkan pemakaian
+per fitur dari data yang benar-benar dimiliki dashboard (tabel
+autoresponses, panel selfroles, pengumuman enabled, request giveaway
+pending) — perintah kustom dan giveaway yang sedang berjalan di Discord
+dihitung bot dan tidak dikarang angkanya di dashboard.
+
+## Struktur navigasi dashboard (putaran final)
+
+Sidebar per-server dikelompokkan menjadi lima grup logis dan hanya
+memuat route yang benar-benar ada, masing-masing tepat satu kali:
+**Ringkasan** (Plugins, Overview, Leaderboard) • **Modul & Fitur**
+(halaman Modul + seksi plugin yang tidak menduplikasi route Konten) •
+**Konten & Komunitas** (Template, Embed, Self-roles, Auto-responder,
+Giveaway, Pengumuman) • **Pengaturan** (Pengaturan, Mod Log) •
+**Billing VIP** (Billing). Route aktif ditandai visual dan
+`aria-current="page"` (termasuk subroute seperti detail order billing).
+Desktop: sidebar bisa diciutkan ke mode ikon (preferensi tersimpan di
+localStorage). Mobile: navigasi menjadi drawer dengan tombol buka/tutup
+eksplisit, overlay, penutupan via tombol X/klik overlay/Escape/otomatis
+saat route berubah, kunci scroll body, dan pengelolaan fokus
+(ke drawer saat dibuka, kembali ke tombol hamburger saat ditutup
+manual). Halaman publik **Harga** (`/pricing`) menampilkan perbandingan
+Free vs VIP dari katalog yang sama, ditautkan dari navigasi dan footer
+landing.
+
 ## Skema database baru
 
 `dashboard/schema.sql` menambah tabel-tabel berikut (additive, memakai
@@ -273,9 +341,11 @@ Status order di `billing_orders` bergerak hanya lewat transisi yang sah:
 - `guild_entitlements`: satu baris per guild. Kolom utama: `guild_id`
   (primary key), `tier` (default `free`), `status` (default `active`),
   `source`, `starts_at`, `expires_at` (keduanya `TIMESTAMPTZ`, kosong
-  berarti tanpa batas), `provider_entitlement_id` dan
-  `provider_subscription_id` (disiapkan untuk integrasi pembayaran
-  Discord di masa depan, sekarang kosong), `granted_by`, `note`,
+  berarti tanpa batas), `provider_entitlement_id` (diisi order_ref
+  pembayaran yang mendanai entitlement — dipakai pemulihan klaim yatim
+  dan atribusi refund) dan `provider_subscription_id` (masih kosong;
+  disiapkan untuk integrasi pembayaran Discord di masa depan),
+  `granted_by`, `note`,
   `bot_present`, serta cap waktu `first_seen_at`, `last_seen_at`,
   `created_at`, `updated_at`.
 - `entitlement_audit_log`: log tiap mutasi. Kolom: `id`, `guild_id`,
@@ -327,7 +397,7 @@ Bot (`.env` bot):
 | ---- | ----- | ---------- |
 | `BOT_OWNER_IDS` | Ya, untuk fitur owner | Daftar ID Discord owner bot, dipisah koma. |
 | `ENTITLEMENT_CACHE_MAX_AGE_SECONDS` | Tidak | Umur maksimal cache entitlement bot dalam detik. Default 3600. |
-| `PREMIUM_UPGRADE_URL` | Tidak | URL info upgrade yang ditampilkan bot pada pesan kuota penuh dan status premium. Kosong berarti bot hanya menampilkan teks hubungi owner. |
+| `PREMIUM_UPGRADE_URL` | Tidak | URL info upgrade yang ditampilkan perintah `/premium` di bot. Pesan kuota penuh memakai teks ajakan statis tanpa URL. Kosong berarti bagian URL tidak ditampilkan. |
 
 Dashboard (Vercel Environment Variables, server-side):
 
@@ -335,9 +405,9 @@ Dashboard (Vercel Environment Variables, server-side):
 | ---- | ----- | ---------- |
 | `BOT_OWNER_IDS` | Ya, untuk panel dan API admin | Nilai yang sama persis dengan di bot. Tanpa awalan `NEXT_PUBLIC_`. |
 | `PAYMENT_PROVIDER` | Ya, untuk billing otomatis | Provider pembayaran aktif (`midtrans` atau `xendit`). Nilai lain berarti billing tidak terkonfigurasi. |
-| `BILLING_VIP_30D_PRICE_IDR` | Ya, untuk billing otomatis | Harga paket VIP 30 hari dalam rupiah (digit murni, lebih dari 0). Satu-satunya sumber harga; harga tidak pernah datang dari client. |
+| `BILLING_VIP_PRICE_IDR` | Tidak | Override harga paket VIP bulanan (`vip_monthly`, 1 bulan = 30 hari) dalam rupiah. Kosong = harga default katalog Rp65.000. Bila diisi, wajib digit murni lebih dari 0; nilai invalid (non-digit, 0, negatif, desimal) membuat billing nonaktif (fail-closed), bukan kembali ke default. Harga tidak pernah datang dari client. |
 | `MIDTRANS_SERVER_KEY` | Wajib bila provider `midtrans` | Kredensial server Midtrans untuk membuat checkout dan memverifikasi webhook. |
-| `MIDTRANS_CLIENT_KEY` | Wajib bila provider `midtrans` | Client key Midtrans (sisi publik Snap); kelengkapan konfigurasi provider memeriksanya. |
+| `MIDTRANS_CLIENT_KEY` | Tidak | Client key Midtrans (sisi publik Snap). Alur redirect yang dipakai sekarang TIDAK memeriksanya — kelengkapan provider Midtrans hanya mewajibkan `MIDTRANS_SERVER_KEY`. Isi bila nanti memakai snap.js di browser. |
 | `MIDTRANS_IS_PRODUCTION` | Tidak | `true` = host produksi Midtrans; selain itu sandbox. Hanya dari env, tidak pernah dari request. |
 | `XENDIT_SECRET_KEY` + `XENDIT_CALLBACK_TOKEN` | Wajib bila provider `xendit` | Kredensial API Xendit dan token verifikasi callback webhook; keduanya wajib. |
 | `XENDIT_IS_PRODUCTION` | Tidak | Saat ini hanya dokumenter — belum dibaca kode. Mode sandbox/produksi Xendit mengikuti jenis API key (test/live) yang dipakai. |
@@ -408,9 +478,31 @@ Kesimpulan riset dari dokumentasi resmi Discord:
 - **Hitungan panel self-role berbasis panel dashboard.** Panel self-role
   yang dibuat murni lokal di bot tidak persisten, jadi pemakaian
   `selfrole_panels` dihitung dari panel yang tercatat lewat dashboard.
-- **Jalur mirror dashboard untuk autoresponder tidak melewati gate
-  bot.** Kuota autoresponder ditegakkan di titik pembuatan lewat Discord
-  (perintah bot). Baris yang tersinkron dari dashboard tidak dicek ulang
-  oleh gate bot, jadi penegakan untuk jalur itu bergantung pada
-  pembuatan di Discord. Sebaliknya, pengumuman terjadwal dari dashboard
-  ditegakkan langsung di API dashboard saat pembuatan.
+- **Gate satu statement masih punya celah balapan teoretis.** Pola
+  `INSERT/UPDATE … WHERE COUNT < limit` menutup celah check-then-act
+  antar-request berurutan, tetapi pada isolasi default Postgres
+  (READ COMMITTED) dua statement yang benar-benar bersamaan dan
+  menyisipkan baris berbeda masih bisa sama-sama membaca hitungan lama
+  (phantom race) dan meloloskan overshoot terbatas. Penutupan tuntas
+  membutuhkan kunci per-guild di dalam transaksi (advisory lock) yang
+  belum dimiliki `lib/db.ts`. Untuk giveaway, penegak akhir tetap gate
+  eksekusi di bot, jadi overshoot di dashboard tidak menjadi giveaway
+  tayang berlebih.
+- **Antrean giveaway pending tidak punya TTL.** Gate dashboard menghitung
+  request `pending` sebagai pemakaian. Bila bot offline lama, request
+  pending menumpuk dan kuota dashboard bisa terkunci sampai bot kembali
+  dan mengakui request sebagai `done`/`failed`.
+- **Jendela refund tanpa pemulihan otomatis.** Service menandai order
+  `refunded` lebih dulu, lalu mencabut durasi entitlement sebagai
+  statement terpisah. Crash persis di antara keduanya menyisakan order
+  refunded dengan entitlement belum berkurang, dan belum ada jalur
+  rekonsiliasi yang memperbaikinya — tangani manual lewat panel owner.
+  Selain itu, refund yang sangat terlambat untuk order lama dapat
+  mengurangi periode yang didanai order lain (atribusi refund belum
+  berbasis ledger per-order).
+- **Panjang respons autoresponder belum selaras penuh.** Dashboard
+  menerima respons sampai 500 karakter; bot mengizinkan sampai 1500
+  karakter di Discord. Respons bot yang lebih panjang dari 500 karakter
+  gagal dimirror ke dashboard (HTTP 400) dan bisa terpotong/hilang pada
+  sinkronisasi dashboard berikutnya. Samakan batas ini sebelum
+  mengandalkan mirror untuk respons panjang.

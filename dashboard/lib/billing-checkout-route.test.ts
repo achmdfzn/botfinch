@@ -1,8 +1,9 @@
 /**
  * Route checkout billing:
  * - non-manager ditolak sebelum apa pun dibuat.
- * - billing tak terkonfigurasi -> 503 billing_not_configured.
- * - harga order SELALU dari env, field harga jahat di body diabaikan.
+ * - billing tak terkonfigurasi (termasuk harga env invalid) -> 503.
+ * - harga order SELALU dari server (default katalog 65000 / override env
+ *   valid), field harga jahat di body diabaikan.
  * - order aktif yang sudah ada dipakai ulang (reused) tanpa order/fetch baru.
  * - order aktif menggantung TANPA tautan bayar -> ditutup failed, order
  *   baru dibuat (pembeli tidak terjebak). Order basi di-expire dulu.
@@ -46,7 +47,7 @@ const transition = vi.mocked(db.transitionBillingOrder);
 const GUILD = "111111111111111111";
 const ctx = { params: Promise.resolve({ id: GUILD }) };
 
-const ENV_KEYS = ["PAYMENT_PROVIDER", "MIDTRANS_SERVER_KEY", "BILLING_VIP_30D_PRICE_IDR", "APP_BASE_URL"] as const;
+const ENV_KEYS = ["PAYMENT_PROVIDER", "MIDTRANS_SERVER_KEY", "BILLING_VIP_PRICE_IDR", "APP_BASE_URL"] as const;
 const savedEnv: Record<string, string | undefined> = {};
 for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
 
@@ -72,7 +73,7 @@ beforeEach(() => {
   }) as unknown as Awaited<ReturnType<typeof db.createBillingOrder>>);
   process.env.PAYMENT_PROVIDER = "midtrans";
   process.env.MIDTRANS_SERVER_KEY = "sk-test-server";
-  process.env.BILLING_VIP_30D_PRICE_IDR = "50000";
+  process.env.BILLING_VIP_PRICE_IDR = "50000";
   delete process.env.APP_BASE_URL;
   fetchMock.mockResolvedValue({
     ok: true,
@@ -97,19 +98,56 @@ describe("POST billing/checkout", () => {
     manager.mockResolvedValue(
       NextResponse.json({ error: "forbidden" }, { status: 403 }),
     );
-    const res = await POST(reqJson({ plan_id: "vip_30d" }), ctx);
+    const res = await POST(reqJson({ plan_id: "vip_monthly" }), ctx);
     expect(res.status).toBe(403);
     expect(createOrder).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("billing tak terkonfigurasi (harga env kosong) -> 503 billing_not_configured", async () => {
-    delete process.env.BILLING_VIP_30D_PRICE_IDR;
-    const res = await POST(reqJson({ plan_id: "vip_30d" }), ctx);
-    expect(res.status).toBe(503);
-    const json = (await res.json()) as { error: string };
-    expect(json.error).toBe("billing_not_configured");
-    expect(createOrder).not.toHaveBeenCalled();
+  it("(a) harga env ABSEN -> checkout memakai harga default katalog 65000 (BUKAN nonaktif)", async () => {
+    delete process.env.BILLING_VIP_PRICE_IDR;
+    const res = await POST(reqJson({ plan_id: "vip_monthly" }), ctx);
+    expect(res.status).toBe(200);
+    expect(createOrder).toHaveBeenCalledTimes(1);
+    const arg = createOrder.mock.calls[0][0] as unknown as Record<string, unknown>;
+    expect(arg.amountIdr).toBe(65000);
+    expect(arg.planId).toBe("vip_monthly");
+    const fetchBody = JSON.parse((fetchMock.mock.calls[0][1] as { body: string }).body) as {
+      transaction_details: { gross_amount: number };
+      item_details: { id: string }[];
+    };
+    expect(fetchBody.transaction_details.gross_amount).toBe(65000);
+    expect(fetchBody.item_details[0].id).toBe("vip_monthly");
+  });
+
+  it("(a2) harga env string kosong -> checkout memakai harga default katalog 65000", async () => {
+    process.env.BILLING_VIP_PRICE_IDR = "";
+    const res = await POST(reqJson({ plan_id: "vip_monthly" }), ctx);
+    expect(res.status).toBe(200);
+    const arg = createOrder.mock.calls[0][0] as unknown as Record<string, unknown>;
+    expect(arg.amountIdr).toBe(65000);
+  });
+
+  it("(c) harga env INVALID -> 503 billing_not_configured, tidak ada order", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      for (const bad of ["65.000", "abc", "0", "-5"]) {
+        vi.clearAllMocks();
+        manager.mockResolvedValue(null);
+        sessionId.mockResolvedValue("333333333333333333");
+        findActive.mockResolvedValue(null);
+        process.env.BILLING_VIP_PRICE_IDR = bad;
+        const res = await POST(reqJson({ plan_id: "vip_monthly" }), ctx);
+        expect(res.status).toBe(503);
+        const json = (await res.json()) as { error: string };
+        expect(json.error).toBe("billing_not_configured");
+        expect(createOrder).not.toHaveBeenCalled();
+        expect(fetchMock).not.toHaveBeenCalled();
+      }
+      expect(String(errSpy.mock.calls[0][0])).toContain("BILLING_VIP_PRICE_IDR");
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 
   it("plan asing -> 400, tidak ada order", async () => {
@@ -118,9 +156,9 @@ describe("POST billing/checkout", () => {
     expect(createOrder).not.toHaveBeenCalled();
   });
 
-  it("harga dari env, BUKAN body (amount jahat diabaikan total)", async () => {
+  it("(b) harga override env valid dipakai, BUKAN body (amount jahat diabaikan total)", async () => {
     const res = await POST(
-      reqJson({ plan_id: "vip_30d", amount_idr: 1, price: 1, amount: 1, tier: "vip" }),
+      reqJson({ plan_id: "vip_monthly", amount_idr: 1, price: 1, amount: 1, tier: "vip" }),
       ctx,
     );
     expect(res.status).toBe(200);
@@ -132,7 +170,7 @@ describe("POST billing/checkout", () => {
     expect(createOrder).toHaveBeenCalledTimes(1);
     const arg = createOrder.mock.calls[0][0] as unknown as Record<string, unknown>;
     expect(arg.amountIdr).toBe(50000);
-    expect(arg.planId).toBe("vip_30d");
+    expect(arg.planId).toBe("vip_monthly");
     expect(arg.durationDays).toBe(30);
     expect(arg.provider).toBe("midtrans");
     expect(arg.buyerUserId).toBe("333333333333333333");
@@ -142,6 +180,10 @@ describe("POST billing/checkout", () => {
     };
     expect(fetchBody.transaction_details.gross_amount).toBe(50000);
     expect(fetchBody.transaction_details.order_id).toBe(json.order_ref);
+    const fetchItems = (JSON.parse((fetchMock.mock.calls[0][1] as { body: string }).body) as {
+      item_details: { id: string }[];
+    }).item_details;
+    expect(fetchItems[0].id).toBe("vip_monthly");
     expect(setProviderInfo).toHaveBeenCalledWith(
       json.order_ref,
       "snap-token-1",
@@ -155,7 +197,7 @@ describe("POST billing/checkout", () => {
       provider_redirect_url: "https://app.sandbox.midtrans.com/snap/v2/vtweb/lama",
       status: "pending",
     } as never);
-    const res = await POST(reqJson({ plan_id: "vip_30d" }), ctx);
+    const res = await POST(reqJson({ plan_id: "vip_monthly" }), ctx);
     expect(res.status).toBe(200);
     const json = (await res.json()) as { order_ref: string; reused: boolean; redirect_url: string };
     expect(json).toEqual({
@@ -170,7 +212,7 @@ describe("POST billing/checkout", () => {
 
   it("provider error -> order ditutup failed + 502 tanpa detail internal", async () => {
     fetchMock.mockResolvedValue({ ok: false, json: async () => ({ error_messages: ["kredensial salah"] }) });
-    const res = await POST(reqJson({ plan_id: "vip_30d" }), ctx);
+    const res = await POST(reqJson({ plan_id: "vip_monthly" }), ctx);
     expect(res.status).toBe(502);
     const json = (await res.json()) as { error: string };
     expect(json).toEqual({ error: "provider_error" });
@@ -184,7 +226,7 @@ describe("POST billing/checkout", () => {
       provider_redirect_url: null,
       status: "created",
     } as never);
-    const res = await POST(reqJson({ plan_id: "vip_30d" }), ctx);
+    const res = await POST(reqJson({ plan_id: "vip_monthly" }), ctx);
     expect(res.status).toBe(200);
     const json = (await res.json()) as { order_ref: string; reused?: boolean };
     expect(json.order_ref).not.toBe("FINCH-GANTUNG");
@@ -205,19 +247,19 @@ describe("POST billing/checkout", () => {
         provider_redirect_url: "https://app.sandbox.midtrans.com/snap/v2/vtweb/pemenang",
         status: "pending",
       } as never);
-    const res = await POST(reqJson({ plan_id: "vip_30d" }), ctx);
+    const res = await POST(reqJson({ plan_id: "vip_monthly" }), ctx);
     expect(res.status).toBe(200);
     const json = (await res.json()) as { order_ref: string; reused: boolean };
     expect(json.order_ref).toBe("FINCH-PEMENANG");
     expect(json.reused).toBe(true);
     expect(fetchMock).not.toHaveBeenCalled();
     // Order basi selalu di-expire sebelum pencarian order aktif.
-    expect(expireStale).toHaveBeenCalledWith(GUILD, "vip_30d");
+    expect(expireStale).toHaveBeenCalledWith(GUILD, "vip_monthly");
   });
 
   it("tanpa sesi (buyer null) -> 401", async () => {
     sessionId.mockResolvedValue(null);
-    const res = await POST(reqJson({ plan_id: "vip_30d" }), ctx);
+    const res = await POST(reqJson({ plan_id: "vip_monthly" }), ctx);
     expect(res.status).toBe(401);
     expect(createOrder).not.toHaveBeenCalled();
   });

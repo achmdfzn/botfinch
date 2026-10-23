@@ -100,7 +100,7 @@ hanya untuk UX), dan pola Basic auth server-key.
 UI (worker lain) ──POST /api/guilds/[id]/billing/checkout──▶ route checkout
                                                               │ harga dari env, BUKAN body
                                                               ▼
-lib/billing.ts ── plan vip_30d, parser harga, provider aktif, state machine
+lib/billing.ts ── plan vip_monthly, parser harga, provider aktif, state machine
 lib/payments/
   types.ts    ── kontrak PaymentProvider (createCheckout/fetchStatus/verifyWebhook)
   midtrans.ts ── Snap + signature SHA512 + GET status
@@ -108,13 +108,17 @@ lib/payments/
   index.ts    ── getProviderById / getActiveProvider (null bila credential tak lengkap)
   service.ts  ── processProviderStatus = JALUR TUNGGAL pemrosesan status
                  + handleProviderWebhook (dipakai kedua route webhook)
-lib/db.ts (worker lain) ── billing_orders, webhook events, entitlement
+lib/db.ts ── billing_orders, webhook events, entitlement
 ```
 
 Prinsip:
 
-1. **Harga hanya dari env server** (`BILLING_VIP_30D_PRICE_IDR`, digit
-   murni > 0). Field harga/tier apa pun dari body checkout diabaikan.
+1. **Harga hanya dari server**: harga default katalog Rp65.000,
+   dioverride oleh env `BILLING_VIP_PRICE_IDR` bila diisi digit murni
+   > 0. Env kosong = harga default; env terisi tapi invalid
+   (non-digit, 0, negatif, desimal) = billing nonaktif fail-closed
+   (bukan diam-diam kembali ke default). Field harga/tier apa pun dari
+   body checkout diabaikan.
 2. **Satu jalur pemrosesan status** (`processProviderStatus`): webhook dan
    rekonsiliasi malas (GET detail order memicu `fetchStatus` bila data
    basi > 30 detik) memanggil fungsi yang sama — tidak ada logika ganda.
@@ -151,6 +155,22 @@ Prinsip:
    indeks unik parsial di DB menjamin satu order aktif per (guild,
    plan) walau dua checkout berjalan bersamaan.
 
+> **Catatan migrasi:** plan `vip_30d` diganti nama menjadi
+> `vip_monthly` (durasi tetap 30 hari; 1 bulan = 30 hari) dan env
+> `BILLING_VIP_30D_PRICE_IDR` diganti nama menjadi
+> `BILLING_VIP_PRICE_IDR`. Order lama ber-`plan_id vip_30d` tetap
+> terbaca di dashboard; checkout baru hanya memakai `vip_monthly`.
+> **Jendela cutover:** pencarian order aktif dan indeks unik order
+> aktif sama-sama per plan, jadi order `vip_30d` yang masih aktif
+> (`created`/`pending`, berlaku ±60 menit sejak dibuat) tidak terlihat
+> oleh checkout baru — guild yang sama sesaat bisa memegang satu order
+> aktif dari tiap plan. Tangani saat deployment (lihat §6): deploy
+> ketika tidak ada order `vip_30d` aktif, atau tutup paksa HANYA baris
+> aktif plan lama. Order `paid`/terminal jangan pernah diubah
+> `plan_id`-nya: riwayat dan snapshot order adalah jejak audit, dan
+> settlement/refund order lama tetap bekerja dari snapshot
+> `amount_idr`/`duration_days`-nya sendiri.
+
 ### Kontrak service (`processProviderStatus(order, status, { source })`)
 
 | `status.kind` | Perilaku | Outcome |
@@ -185,8 +205,11 @@ Sumber kebenaran transisi adalah `ORDER_TRANSITIONS` di `lib/billing.ts`
 (helper `transitionSources(to)` menurunkan daftar status asal yang sah,
 dan `canTransitionOrder` memvalidasi pasangan) — service memakainya untuk
 `transitionBillingOrder`; jalur lunas dijaga klaim atomik
-(`claimBillingOrderPaid`: satu UPDATE bersyarat dari status
-created/pending/expired dengan penanda klaim & penerapan masih kosong).
+(`claimBillingOrderPaid`: satu statement CTE yang hanya menang bila
+penanda klaim `paid_at` dan penanda penerapan `entitlement_applied_at`
+masih kosong dan status bukan terminal
+`failed`/`cancelled`/`refunded`/`disputed` — status `expired` termasuk
+yang boleh menang, sebagai late settlement).
 
 Kebijakan:
 
@@ -252,8 +275,10 @@ URL webhook yang **wajib didaftarkan**:
 
 ### Env bersama
 
-- `BILLING_VIP_30D_PRICE_IDR=<integer rupiah, mis. 50000>` — tanpa ini
-  checkout menjawab 503 `billing_not_configured`.
+- `BILLING_VIP_PRICE_IDR` — opsional: kosong = harga default katalog
+  Rp65.000 untuk plan `vip_monthly` (1 bulan = 30 hari); isi
+  `<integer rupiah digit murni, mis. 50000>` untuk mengoverride. Nilai
+  invalid membuat checkout menjawab 503 `billing_not_configured`.
 - `APP_BASE_URL=https://<domain>` — basis URL kembali setelah bayar
   (`/dashboard/<guildId>/billing/orders/<orderRef>`).
 
@@ -266,21 +291,39 @@ Semua secret server-side: **tanpa** prefix `NEXT_PUBLIC_`.
 1. Jalankan `dashboard/schema.sql` di Postgres (membuat tabel billing &
    webhook events + entitlement) — sekali.
 2. Setel env di atas di platform deploy (Vercel) untuk provider pilihan.
-3. Deploy dashboard.
-4. Daftarkan URL webhook di dashboard provider (§5) — sesudah deploy,
+   **Migrasi env harga:** hapus `BILLING_VIP_30D_PRICE_IDR` (nama lama
+   diabaikan total oleh kode baru) dan, bila ingin override, isi
+   `BILLING_VIP_PRICE_IDR`. Perilaku berubah secara sadar: env harga
+   kosong sekarang berarti harga default katalog **Rp65.000**, BUKAN
+   billing nonaktif — deployment yang dulu "mematikan" billing dengan
+   membiarkan env harga kosong akan mulai menjual seharga Rp65.000
+   begitu `PAYMENT_PROVIDER` + credential terisi. Untuk menonaktifkan
+   billing, kosongkan `PAYMENT_PROVIDER`. Pemakaian harga default
+   dicatat sekali per proses sebagai `console.warn` di log server.
+3. **Tutup jendela cutover rename plan:** pastikan tidak ada order
+   `vip_30d` berstatus `created`/`pending` yang masih berlaku. Bila
+   ada dan tidak bisa menunggu kedaluwarsa alaminya (±60 menit), tutup
+   paksa HANYA baris aktif plan lama:
+   `UPDATE billing_orders SET status = 'expired', updated_at = NOW() WHERE plan_id = 'vip_30d' AND status IN ('created', 'pending');`
+   Jangan mengubah `plan_id` baris mana pun dan jangan menyentuh order
+   `paid`/terminal.
+4. Deploy dashboard.
+5. Daftarkan URL webhook di dashboard provider (§5) — sesudah deploy,
    karena URL harus live saat provider memverifikasi/mengirim tes.
-5. **Uji sandbox** (belum pernah diuji live dari lingkungan dev):
+6. **Uji sandbox** (belum pernah diuji live dari lingkungan dev):
    checkout dari UI → bayar dengan instrumen tes sandbox provider →
    pastikan order menjadi `paid`, entitlement guild aktif 30 hari,
    webhook tercatat; uji juga skenario kedaluwarsa & nominal.
-6. Baru kemudian ganti credential ke production + aktifkan mode
+7. Baru kemudian ganti credential ke production + aktifkan mode
    production (`MIDTRANS_IS_PRODUCTION=true` untuk Midtrans).
 
 Rollback / recovery:
 
-- **Matikan billing seketika**: kosongkan `PAYMENT_PROVIDER` (atau
-  `BILLING_VIP_30D_PRICE_IDR`) lalu redeploy — checkout menjawab 503,
-  order & entitlement yang sudah ada tidak berubah.
+- **Matikan billing seketika**: kosongkan `PAYMENT_PROVIDER` lalu
+  redeploy — checkout menjawab 503, order & entitlement yang sudah
+  ada tidak berubah. (Mengosongkan `BILLING_VIP_PRICE_IDR` TIDAK
+  mematikan billing: env kosong berarti harga default katalog
+  Rp65.000.)
 - **Ganti provider**: ubah `PAYMENT_PROVIDER` + credential; order lama
   tetap diproses provider asalnya (rekonsiliasi & webhook memvalidasi
   `order.provider`), order baru memakai provider aktif.
@@ -303,8 +346,11 @@ Rollback / recovery:
       tertukar (Midtrans: `MIDTRANS_IS_PRODUCTION=true`).
 - [ ] URL webhook production terdaftar & menerima event tes dari
       dashboard provider.
-- [ ] `BILLING_VIP_30D_PRICE_IDR` = harga jual final yang disetujui owner.
-- [ ] Uji sandbox end-to-end lulus (§6 langkah 5) sebelum go-live.
+- [ ] Harga jual final terkonfirmasi: default katalog Rp65.000, atau
+      `BILLING_VIP_PRICE_IDR` terisi nilai override yang disetujui owner.
+- [ ] Uji sandbox end-to-end lulus (§6 langkah 6) sebelum go-live.
+- [ ] Tidak ada order aktif `vip_30d` yang tertinggal dari versi lama
+      (§6 langkah 3), atau jendela cutovernya sudah ditutup.
 - [ ] Halaman legal siap: syarat & ketentuan pembelian, kebijakan refund,
       dan info kontak penjual dapat dijangkau pembeli.
 - [ ] Kewajiban pajak & pencatatan penjualan ditangani owner (di luar
