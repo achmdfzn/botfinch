@@ -725,4 +725,208 @@ export const en: Dict = {
       auditReason: "Reason: {reason}",
     },
   },
+  billing: {
+    metaTitle: "VIP Billing",
+    title: "VIP Billing",
+    subtitle: "This server's plan status, the 30-day VIP purchase, and order history.",
+    signinBody: "Sign in with Discord to view this server's billing.",
+    dbBody: "This feature needs Vercel Postgres to store orders. See the Deploy section of the README.",
+    backToBilling: "Back to billing",
+    backToDashboard: "Back to server dashboard",
+    currentPlanTitle: "Current plan",
+    currentTierLabel: "Plan",
+    statusLabel: "Status",
+    expiresLabel: "Expires",
+    expiresAt: "Expires on {date}",
+    permanent: "Permanent",
+    noExpiry: "No expiry date",
+    tierFree: "Free",
+    tierVip: "VIP",
+    entitlementStatusActive: "Active",
+    entitlementStatusExpired: "Expired",
+    entitlementStatusRevoked: "Revoked",
+    entitlementStatusNone: "No active VIP",
+    planTitle: "VIP 30 days",
+    planDesc:
+      "VIP for one server for 30 days. Feature limits increase as shown in the comparison table below.",
+    planDurationLabel: "Duration",
+    planDurationValue: "30 days",
+    planPerServerNote: "Applies to this one server only, not to your account or other servers.",
+    priceUnavailable: "Price is not available right now.",
+    providerNote:
+      "Payment is processed on the provider's official payment page. Finch does not store card data.",
+    providerLabel: "Payment provider: {provider}",
+    notConfiguredTitle: "Billing is not configured yet",
+    notConfiguredBody:
+      "Purchases cannot be made yet because billing has not been configured by the bot owner. You can still view the plan and feature limits below.",
+    checkoutButton: "Buy VIP 30 days",
+    checkoutLoading: "Creating order...",
+    checkoutError: "Failed to create the order. Try again.",
+    checkoutErrorNotConfigured: "Billing is not configured yet, so an order cannot be created.",
+    checkoutErrorProvider: "The payment provider is having trouble. Try again later.",
+    activeOrderTitle: "Unfinished order",
+    activeOrderBody:
+      "You have an order that is still waiting for payment. Finish it before it expires so you do not need to create a new order.",
+    activeOrderExpires: "Order is valid until {date}",
+    continuePayment: "Continue payment",
+    viewOrderStatus: "View order status",
+    comparisonTitle: "Feature limit comparison",
+    colFeature: "Feature",
+    colFree: "Free",
+    colVip: "VIP",
+    features: {
+      custom_commands: "Custom Commands",
+      autoresponders: "Autoresponders",
+      giveaways_active: "Active Giveaways",
+      selfrole_panels: "Self-Role Panels",
+      announcements_active: "Active Scheduled Announcements",
+    },
+    ordersTitle: "Order history",
+    ordersEmpty: "No orders for this server yet.",
+    colOrder: "Order",
+    colPlan: "Plan",
+    colAmount: "Amount",
+    colStatus: "Status",
+    colDate: "Date",
+    colDetail: "Details",
+    viewDetail: "Details",
+    planVip30d: "VIP 30 days",
+    orderStatus: {
+      created: "Created",
+      pending: "Waiting for payment",
+      paid: "Paid",
+      failed: "Failed",
+      expired: "Expired",
+      cancelled: "Cancelled",
+      refunded: "Refunded",
+      disputed: "Disputed",
+      unknown: "Unknown",
+    },
+    orderDetail: {
+      metaTitle: "Order Status",
+      title: "Order status",
+      subtitle: "Order summary and its latest status.",
+      notFoundTitle: "Order not found",
+      notFoundBody: "This order does not exist, or it does not belong to this server.",
+      orderRefLabel: "Order reference",
+      planLabel: "Plan",
+      amountLabel: "Amount",
+      statusLabel: "Status",
+      createdLabel: "Created",
+      paidLabel: "Paid",
+      expiresLabel: "Valid until",
+      appliedLabel: "VIP applied",
+      providerLabel: "Provider",
+      autoUpdateNote:
+        "This page checks the status automatically every few seconds while payment is unfinished.",
+      lastChecked: "Last checked {time}",
+      checkError: "Failed to check the latest status. Automatic checking will try again.",
+      newTransaction: "Start a new transaction",
+      instructions: {
+        pendingTitle: "Finish your payment",
+        pendingBody:
+          "This order has not been paid yet. Finish the payment on the provider's page, or come back later: the status here updates automatically. VIP is not active until the payment is verified.",
+        paidTitle: "Payment verified, VIP is active",
+        paidBody:
+          "This order's payment has been verified and VIP for this server is now active.",
+        paidSyncNote:
+          "Syncing to the bot can take a few minutes. If VIP features have not changed in Discord yet, wait a few minutes and check again.",
+        failedTitle: "Payment failed",
+        failedBody:
+          "The payment for this order failed, so VIP was not activated. You can start a new transaction from the billing page.",
+        expiredTitle: "Order expired",
+        expiredBody:
+          "This order's payment window has ended, so VIP was not activated. You can start a new transaction from the billing page.",
+        cancelledTitle: "Order cancelled",
+        cancelledBody:
+          "This order was cancelled, so VIP was not activated. You can start a new transaction from the billing page.",
+        refundedTitle: "Payment refunded",
+        refundedBody:
+          "This order's payment has been refunded and the VIP granted by this payment was revoked. If you believe this is a mistake, contact the bot owner or Finch support.",
+        disputedTitle: "Payment disputed",
+        disputedBody:
+          "This order's payment is under dispute, so the VIP status is on hold. Contact the bot owner or Finch support for follow-up.",
+      },
+    },
+  },
+  terms: {
+    metaTitle: "Terms of Service",
+    title: "Finch Terms of Service",
+    lastUpdated: "Last updated: October 23, 2026",
+    intro:
+      "These terms apply to using the Finch bot and buying the VIP plan through the Finch dashboard. By buying VIP, you agree to the terms below.",
+    sections: [
+      {
+        heading: "1. VIP is per server",
+        body: "VIP is a paid plan that applies to one Discord server (one guild) chosen at purchase. VIP does not apply to a personal account and does not move automatically to another server. Features and usage limits follow the plan catalog shown on the billing page at the time of purchase.",
+      },
+      {
+        heading: "2. 30-day duration",
+        body: "The plan currently sold is VIP for 30 days. The active period starts when activation succeeds and ends automatically after 30 days, unless renewed with a new purchase. After it ends, the server returns to the Free plan with Free feature limits.",
+      },
+      {
+        heading: "3. Payment",
+        body: "Payments are processed by an official payment gateway provider through the provider's hosted checkout page. Finch never sees, receives, or stores your card number or payment credentials. Complete payment only on the provider's official page opened from the dashboard billing page.",
+      },
+      {
+        heading: "4. Activation after verification",
+        body: "VIP is activated only after the payment has been verified by Finch's backend, not at the moment you press the pay button. Verification and syncing to the bot can take a few minutes. Order status can be tracked on the order status page in the dashboard.",
+      },
+      {
+        heading: "5. Refunds",
+        body: "When a payment is fully refunded and the refund is verified (a full refund), the VIP granted by that payment is revoked. Other cases, including partial refunds and payment disputes, are reviewed manually by the bot owner before a decision is made.",
+      },
+      {
+        heading: "6. Service availability",
+        body: "Finch is provided as is, without an absolute uptime guarantee. Outages can happen because of maintenance, Discord outages, or payment provider outages, which are beyond the full control of the Finch operator.",
+      },
+      {
+        heading: "7. Pricing",
+        body: "The price that applies is the price shown on the billing page when the order is created. Price changes apply only to new purchases and do not change orders that were already created or already paid.",
+      },
+      {
+        heading: "8. Changes to these terms",
+        body: "These terms may be updated from time to time. The latest version always appears on this page, and continuing to use the service after a change means you accept the latest version.",
+      },
+    ],
+    backHome: "Back to home",
+  },
+  privacy: {
+    metaTitle: "Privacy Policy",
+    title: "Finch Privacy Policy",
+    lastUpdated: "Last updated: October 23, 2026",
+    intro:
+      "This policy explains what data Finch stores, including billing order records, and what that data is used for.",
+    sections: [
+      {
+        heading: "1. Data we store",
+        body: "Finch stores Discord user IDs, server (guild) IDs, and channel IDs to run commands and store server settings. Finch also stores bot progress data (XP, levels, coin balances, inventory), server settings (welcome and log channels, role rewards, AutoMod rules, self-roles, auto-responders), moderation logs, and participation data (giveaways, polls, suggestions). For VIP purchases, Finch stores a billing order record: the order reference, server ID, buyer ID, plan, amount, payment status, and the times the order was created, paid, and applied.",
+      },
+      {
+        heading: "2. Data we do not store",
+        body: "Finch does not store card data or payment credentials. Payments are processed entirely by the payment gateway provider on its hosted page. Finch also does not collect private DM content beyond commands you invoke, email addresses, phone numbers, or location data.",
+      },
+      {
+        heading: "3. How data is used",
+        body: "Data is used only to run bot and dashboard features: levels, economy, moderation, giveaways, per-server settings, and VIP activation and record keeping. There is no advertising profile and no third-party analytics.",
+      },
+      {
+        heading: "4. Storage",
+        body: "Dashboard data and order records are stored in the Finch operator's Postgres database, while bot operational data is stored in the bot's SQLite database. Database access is limited to operational and maintenance needs.",
+      },
+      {
+        heading: "5. Sharing data",
+        body: "We do not sell, rent, or share your data with third parties. The only outside party that processes payment data is the payment gateway provider, and that processing is subject to that provider's privacy policy.",
+      },
+      {
+        heading: "6. Your rights and data deletion",
+        body: "You can request deletion of all your data, or your server's data, at any time by contacting the bot owner through the Finch support server. Deletion requests are processed within 7 days at most. Order records needed for bookkeeping and dispute resolution may be kept longer where required.",
+      },
+      {
+        heading: "7. Children and policy changes",
+        body: "Finch follows Discord's Terms of Service and is not intended for children under 13. Material changes to this policy will be announced in the Finch support server before they take effect.",
+      },
+    ],
+    backHome: "Back to home",
+  },
 };

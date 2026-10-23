@@ -681,3 +681,553 @@ export async function applyEntitlementMutation(
   `;
   return after;
 }
+
+// ---------------------------------------------------------------------------
+// Billing otomatis (billing_orders + billing_webhook_events)
+// ---------------------------------------------------------------------------
+// Alur: checkout membuat order (status 'created' -> 'pending' setelah info
+// provider terpasang), webhook provider yang terverifikasi mengklaim order
+// sebagai 'paid' lewat claimBillingOrderPaid (satu statement atomik), lalu
+// applyPaymentToEntitlement mengaktifkan / memperpanjang VIP guild.
+// Semua SQL parameterized via template `sql`; tidak ada helper transaksi
+// di file ini, jadi fungsi multi-statement (order -> audit, entitlement ->
+// audit) mengikuti keterbatasan yang sama seperti applyEntitlementMutation:
+// statement dijalankan berurutan, BUKAN atomik penuh.
+
+export type BillingOrder = {
+  id: number;
+  order_ref: string;
+  buyer_user_id: string;
+  guild_id: string;
+  plan_id: string;
+  amount_idr: number;
+  currency: string;
+  duration_days: number;
+  status: string;
+  provider: string;
+  provider_txn_id: string | null;
+  provider_redirect_url: string | null;
+  created_at: string | null;
+  expires_at: string | null;
+  paid_at: string | null;
+  entitlement_applied_at: string | null;
+  updated_at: string | null;
+};
+
+// `type` (bukan interface) agar punya implicit index signature — mock dan
+// pemanggil generik yang mengetik parameter sebagai Record<string, unknown>
+// tetap kompatibel dengan input ini.
+export type CreateBillingOrderInput = {
+  orderRef: string;
+  buyerUserId: string;
+  guildId: string;
+  planId: string;
+  amountIdr: number;
+  currency?: string;
+  durationDays: number;
+  provider: string;
+  expiresAt: string;
+};
+
+/** Petakan baris mentah billing_orders ke objek bertanggal ISO. */
+function mapBillingOrderRow(r: Record<string, unknown>): BillingOrder {
+  return {
+    id: Number(r.id),
+    order_ref: r.order_ref as string,
+    buyer_user_id: r.buyer_user_id as string,
+    guild_id: r.guild_id as string,
+    plan_id: r.plan_id as string,
+    amount_idr: Number(r.amount_idr),
+    currency: r.currency as string,
+    duration_days: Number(r.duration_days),
+    status: r.status as string,
+    provider: r.provider as string,
+    provider_txn_id: (r.provider_txn_id as string | null) ?? null,
+    provider_redirect_url: (r.provider_redirect_url as string | null) ?? null,
+    created_at: toIso(r.created_at),
+    expires_at: toIso(r.expires_at),
+    paid_at: toIso(r.paid_at),
+    entitlement_applied_at: toIso(r.entitlement_applied_at),
+    updated_at: toIso(r.updated_at),
+  };
+}
+
+/** Buat order billing baru dengan status 'created' dan kembalikan barisnya. */
+export async function createBillingOrder(
+  input: CreateBillingOrderInput,
+): Promise<BillingOrder> {
+  const currency = input.currency ?? "IDR";
+  const { rows } = await sql`
+    INSERT INTO billing_orders
+      (order_ref, buyer_user_id, guild_id, plan_id, amount_idr, currency,
+       duration_days, status, provider, expires_at)
+    VALUES (${input.orderRef}, ${input.buyerUserId}, ${input.guildId},
+      ${input.planId}, ${input.amountIdr}, ${currency},
+      ${input.durationDays}, 'created', ${input.provider}, ${input.expiresAt})
+    RETURNING *
+  `;
+  return mapBillingOrderRow(rows[0] as Record<string, unknown>);
+}
+
+export async function getBillingOrderByRef(
+  orderRef: string,
+): Promise<BillingOrder | null> {
+  if (!dbConfigured()) return null;
+  const { rows } = await sql`SELECT * FROM billing_orders WHERE order_ref = ${orderRef} LIMIT 1`;
+  return rows[0] ? mapBillingOrderRow(rows[0] as Record<string, unknown>) : null;
+}
+
+/**
+ * Order aktif terbaru untuk (guild, plan): status 'created'/'pending' dan
+ * belum melewati expires_at order-nya. Dipakai mencegah checkout ganda
+ * untuk paket yang sama selama order sebelumnya masih bisa dibayar.
+ */
+export async function findActiveBillingOrder(
+  guildId: string,
+  planId: string,
+): Promise<BillingOrder | null> {
+  if (!dbConfigured()) return null;
+  const { rows } = await sql`
+    SELECT * FROM billing_orders
+    WHERE guild_id = ${guildId} AND plan_id = ${planId}
+      AND status IN ('created', 'pending')
+      AND expires_at > NOW()
+    ORDER BY id DESC
+    LIMIT 1
+  `;
+  return rows[0] ? mapBillingOrderRow(rows[0] as Record<string, unknown>) : null;
+}
+
+/** Riwayat order sebuah guild, terbaru dulu. */
+export async function listBillingOrders(
+  guildId: string,
+  limit = 20,
+): Promise<BillingOrder[]> {
+  if (!dbConfigured()) return [];
+  const { rows } = await sql`
+    SELECT * FROM billing_orders
+    WHERE guild_id = ${guildId}
+    ORDER BY id DESC
+    LIMIT ${limit}
+  `;
+  return rows.map((r) => mapBillingOrderRow(r as Record<string, unknown>));
+}
+
+/**
+ * Pasang info provider (id transaksi + URL redirect pembayaran) ke order.
+ * Status hanya maju 'created' -> 'pending' (kondisional via CASE); order
+ * yang sudah di status lain tidak diturunkan. Return true bila baris ada.
+ */
+export async function setBillingOrderProviderInfo(
+  orderRef: string,
+  providerTxnId: string | null,
+  redirectUrl: string | null,
+): Promise<boolean> {
+  const { rows } = await sql`
+    UPDATE billing_orders
+    SET provider_txn_id = ${providerTxnId},
+        provider_redirect_url = ${redirectUrl},
+        status = CASE WHEN status = 'created' THEN 'pending' ELSE status END,
+        updated_at = NOW()
+    WHERE order_ref = ${orderRef}
+    RETURNING id
+  `;
+  return rows.length > 0;
+}
+
+/**
+ * Transisi status order yang dijaga daftar status asal yang diizinkan:
+ * UPDATE hanya menyentuh baris bila status saat ini ada di `fromAllowed`.
+ * Return false (tanpa perubahan) bila transisi tidak diizinkan / order
+ * tidak ada / `fromAllowed` kosong. Inilah penjaga state machine order:
+ * status terminal ('failed'/'cancelled') tidak pernah ada di fromAllowed
+ * untuk transisi pengaktifan, jadi settlement yang datang sesudahnya
+ * tidak bisa mengaktifkan order terminal.
+ */
+export async function transitionBillingOrder(
+  orderRef: string,
+  to: string,
+  fromAllowed: string[],
+): Promise<boolean> {
+  if (fromAllowed.length === 0) return false;
+  // Template `sql` hanya menerima nilai Primitive (bukan array), jadi
+  // daftar status dikirim sebagai SATU parameter string berisi literal
+  // array Postgres lalu di-cast ke text[] di SQL. Tiap elemen dikutip
+  // dan di-escape mengikuti aturan literal array Postgres.
+  const fromArrayLiteral = `{${fromAllowed
+    .map((s) => `"${s.replace(/(["\\])/g, "\\$1")}"`)
+    .join(",")}}`;
+  const { rows } = await sql`
+    UPDATE billing_orders
+    SET status = ${to}, updated_at = NOW()
+    WHERE order_ref = ${orderRef}
+      AND status = ANY(${fromArrayLiteral}::text[])
+    RETURNING id
+  `;
+  return rows.length > 0;
+}
+
+/**
+ * Catat penerimaan webhook provider ke log audit. Return true hanya
+ * untuk event yang BARU tercatat; event_key yang sama diterima ulang
+ * (retry provider) menghasilkan false lewat ON CONFLICT DO NOTHING.
+ * PENTING: log ini BUKAN gerbang dedupe — pemanggil tetap memproses
+ * event (retry yang sah bisa membawa status yang lebih baru), dan
+ * idempotensi hasil akhir dijamin oleh klaim atomik
+ * claimBillingOrderPaid, bukan oleh tabel ini.
+ */
+export async function recordWebhookEvent(
+  provider: string,
+  eventKey: string,
+  orderRef: string | null,
+  providerStatus: string | null,
+): Promise<boolean> {
+  const { rows } = await sql`
+    INSERT INTO billing_webhook_events (provider, event_key, order_ref, provider_status)
+    VALUES (${provider}, ${eventKey}, ${orderRef}, ${providerStatus})
+    ON CONFLICT (event_key) DO NOTHING
+    RETURNING id
+  `;
+  return rows.length > 0;
+}
+
+/**
+ * Klaim order sebagai lunas dalam SATU statement atomik: CTE `prev`
+ * membaca status lama dari snapshot statement yang sama, lalu UPDATE
+ * hanya menang bila paid_at masih NULL (penanda klaim), status bukan
+ * terminal ('failed'/'cancelled'/'refunded'/'disputed'), dan penerapan
+ * entitlement belum ditandai selesai. Status 'expired' SENGAJA
+ * diizinkan: settlement yang terlambat tetap mengaktifkan (late
+ * settlement) dan status lamanya ('expired') terbaca di previousStatus
+ * untuk diaudit pemanggil.
+ *
+ * Penanda klaim (paid_at) SENGAJA dipisah dari penanda penerapan
+ * (entitlement_applied_at): klaim di-set di sini, sedangkan
+ * entitlement_applied_at hanya di-set markBillingOrderApplied SETELAH
+ * applyPaymentToEntitlement berhasil. Bila proses mati di antaranya,
+ * order berstatus 'paid' dengan entitlement_applied_at NULL — keadaan
+ * yang dapat dideteksi dan dipulihkan service pada webhook retry /
+ * rekonsiliasi berikutnya (bukan 'already_applied' selamanya).
+ * Return null bila klaim kalah: order tidak ada, sudah pernah diklaim,
+ * atau status terminal. provider_txn_id tidak menimpa nilai yang sudah
+ * terpasang (COALESCE).
+ */
+export async function claimBillingOrderPaid(
+  orderRef: string,
+  providerTxnId: string | null,
+): Promise<{ order: BillingOrder; previousStatus: string } | null> {
+  const { rows } = await sql`
+    WITH prev AS (
+      SELECT status AS previous_status
+      FROM billing_orders
+      WHERE order_ref = ${orderRef}
+    ),
+    updated AS (
+      UPDATE billing_orders b
+      SET status = 'paid',
+          paid_at = NOW(),
+          provider_txn_id = COALESCE(b.provider_txn_id, ${providerTxnId}),
+          updated_at = NOW()
+      FROM prev
+      WHERE b.order_ref = ${orderRef}
+        AND b.paid_at IS NULL
+        AND b.entitlement_applied_at IS NULL
+        AND b.status NOT IN ('failed', 'cancelled', 'refunded', 'disputed')
+      RETURNING b.*
+    )
+    SELECT u.*, p.previous_status
+    FROM updated u, prev p
+  `;
+  const row = rows[0] as Record<string, unknown> | undefined;
+  if (!row) return null;
+  return {
+    order: mapBillingOrderRow(row),
+    previousStatus: row.previous_status as string,
+  };
+}
+
+/**
+ * Tandai penerapan entitlement order SELESAI — dipanggil service hanya
+ * SETELAH applyPaymentToEntitlement berhasil (termasuk outcome
+ * noop_permanent / blocked_suspended: keputusan penerapannya final).
+ * Kondisional pada entitlement_applied_at yang masih NULL agar retry
+ * tidak menimpa penanda pertama. Return true bila baris ditandai.
+ */
+export async function markBillingOrderApplied(
+  orderRef: string,
+  providerTxnId: string | null,
+): Promise<boolean> {
+  const { rows } = await sql`
+    UPDATE billing_orders
+    SET entitlement_applied_at = NOW(),
+        provider_txn_id = COALESCE(provider_txn_id, ${providerTxnId}),
+        updated_at = NOW()
+    WHERE order_ref = ${orderRef} AND entitlement_applied_at IS NULL
+    RETURNING id
+  `;
+  return rows.length > 0;
+}
+
+/**
+ * Tutup order aktif yang sudah lewat expires_at menurut jam server
+ * tetapi statusnya masih 'created'/'pending' (tidak ada cron di repo
+ * ini). Dipakai route checkout sebelum membuat order baru: indeks unik
+ * parsial idx_billing_orders_one_active melihat status, bukan waktu,
+ * jadi order basi harus di-expire eksplisit agar tidak memblokir
+ * pembelian berikutnya selamanya. Return jumlah order yang ditutup.
+ */
+export async function expireStaleBillingOrders(
+  guildId: string,
+  planId: string,
+): Promise<number> {
+  const { rows } = await sql`
+    UPDATE billing_orders
+    SET status = 'expired', updated_at = NOW()
+    WHERE guild_id = ${guildId} AND plan_id = ${planId}
+      AND status IN ('created', 'pending') AND expires_at <= NOW()
+    RETURNING id
+  `;
+  return rows.length;
+}
+
+/**
+ * Perbarui updated_at order non-terminal TANPA mengubah status — dipakai
+ * jalur rekonsiliasi malas (GET detail order) untuk mencatat PERCOBAAN
+ * rekonsiliasi, agar throttle 30 detik di route benar-benar menahan
+ * panggilan fetchStatus berulang walau status provider tidak berubah
+ * (transisi pending->pending tidak menyentuh baris mana pun).
+ */
+export async function touchBillingOrderReconcile(orderRef: string): Promise<void> {
+  await sql`
+    UPDATE billing_orders
+    SET updated_at = NOW()
+    WHERE order_ref = ${orderRef} AND status IN ('created', 'pending')
+  `;
+}
+
+export type ApplyPaymentResult =
+  | "activated"
+  | "extended"
+  | "noop_permanent"
+  | "blocked_suspended";
+
+/** Audit saja: pembayaran masuk saat guild suspended — entitlement TIDAK diubah. */
+async function applyPaymentToEntitlementSuspendedAudit(
+  row: GuildEntitlement,
+  actor: string,
+  reason: string,
+): Promise<ApplyPaymentResult> {
+  await sql`
+    INSERT INTO entitlement_audit_log
+      (guild_id, actor_id, action, tier_before, tier_after, status_before, status_after, expires_before, expires_after, reason)
+    VALUES (${row.guild_id}, ${actor}, ${"payment_blocked_suspended"},
+      ${row.tier}, ${row.tier},
+      ${row.status}, ${row.status},
+      ${row.expires_at}, ${row.expires_at}, ${reason})
+  `;
+  return "blocked_suspended";
+}
+
+/** Audit saja: pembayaran masuk saat VIP permanen aktif — entitlement TIDAK diubah. */
+async function applyPaymentToEntitlementPermanentAudit(
+  row: GuildEntitlement,
+  actor: string,
+  reason: string,
+): Promise<ApplyPaymentResult> {
+  await sql`
+    INSERT INTO entitlement_audit_log
+      (guild_id, actor_id, action, tier_before, tier_after, status_before, status_after, expires_before, expires_after, reason)
+    VALUES (${row.guild_id}, ${actor}, ${"payment_noop_permanent"},
+      ${row.tier}, ${row.tier},
+      ${row.status}, ${row.status},
+      ${row.expires_at}, ${row.expires_at}, ${reason})
+  `;
+  return "noop_permanent";
+}
+
+/**
+ * Terapkan pembayaran yang sudah terverifikasi ke entitlement guild.
+ *
+ * Aturan (urutan penting):
+ * - status 'suspended' -> TIDAK diubah; audit 'payment_blocked_suspended',
+ *   return 'blocked_suspended'. Pembayaran tidak mengaktifkan guild yang
+ *   sedang disuspend — perlu keputusan owner.
+ * - VIP aktif permanen (expires_at NULL) -> TIDAK diubah; audit
+ *   'payment_noop_permanent', return 'noop_permanent'. Pembayaran tidak
+ *   pernah mengubah VIP permanen menjadi bertenggat.
+ * - Selain itu VIP diaktifkan/diperpanjang: base perpanjangan adalah
+ *   expires_at lama bila guild masih VIP aktif yang belum kedaluwarsa,
+ *   selain itu sekarang; expires baru = base + durationDays hari.
+ *   starts_at dipertahankan hanya bila sebelumnya VIP aktif itu, selain
+ *   itu starts_at = sekarang. source menjadi 'payment',
+ *   granted_by = 'system:' + provider. Audit mengikuti pola
+ *   applyEntitlementMutation (action 'extend' bila sebelumnya VIP aktif,
+ *   selain itu 'grant'; tier/status/expires before-after; reason memuat
+ *   'payment', provider, order_ref, dan note bila ada).
+ *
+ * Baris entitlement dibaca lewat getEntitlement dan dibuat lewat
+ * ensureEntitlement bila belum ada. Penulisan entitlement dan audit
+ * adalah dua statement berurutan (tidak atomik penuh, keterbatasan yang
+ * sama seperti applyEntitlementMutation). Melempar Error bila database
+ * tidak terkonfigurasi / baris entitlement tidak bisa dibuat, agar
+ * pemanggil tidak mengira pembayaran berhasil diterapkan.
+ */
+export async function applyPaymentToEntitlement(
+  guildId: string,
+  durationDays: number,
+  provider: string,
+  orderRef: string,
+  note?: string | null,
+): Promise<ApplyPaymentResult> {
+  const actor = `system:${provider}`;
+  const reason = (
+    `payment via ${provider} order_ref=${orderRef}` + (note ? ` note=${note}` : "")
+  ).slice(0, 500);
+
+  let before = await getEntitlement(guildId);
+  if (!before) before = await ensureEntitlement(guildId);
+  if (!before) {
+    throw new Error(
+      "applyPaymentToEntitlement: entitlement guild tidak ditemukan dan database tidak terkonfigurasi",
+    );
+  }
+
+  if (before.status === "suspended") {
+    return applyPaymentToEntitlementSuspendedAudit(before, actor, reason);
+  }
+
+  if (before.tier === "vip" && before.status === "active" && before.expires_at === null) {
+    return applyPaymentToEntitlementPermanentAudit(before, actor, reason);
+  }
+
+  const now = new Date();
+  const isActiveVip =
+    before.tier === "vip" &&
+    before.status === "active" &&
+    before.expires_at !== null &&
+    new Date(before.expires_at).getTime() > now.getTime();
+
+  // Perpanjangan dihitung DI DALAM SQL dari nilai baris yang terkunci
+  // saat UPDATE berjalan (bukan dari snapshot bacaan TS di atas): dua
+  // pembayaran berbeda untuk guild yang sama yang diproses bersamaan
+  // terserialisasi oleh kunci baris, dan CASE mengevaluasi expires_at
+  // versi terbaru — tidak ada lost update (dibayar 60 hari, diterima 30).
+  // provider_entitlement_id mencatat order pendana periode berjalan:
+  // dipakai service untuk memulihkan klaim yang penerapannya terputus
+  // dan oleh refund untuk memastikan atribusi. Syarat penjaga
+  // (bukan suspended, bukan VIP permanen) diulang di WHERE agar state
+  // yang berubah bersamaan tidak lolos.
+  const { rows } = await sql`
+    UPDATE guild_entitlements
+    SET tier = 'vip',
+        status = 'active',
+        source = 'payment',
+        starts_at = CASE
+          WHEN (tier = 'vip' AND status = 'active' AND expires_at IS NOT NULL AND expires_at > NOW())
+          THEN starts_at ELSE NOW() END,
+        expires_at = CASE
+          WHEN (tier = 'vip' AND status = 'active' AND expires_at IS NOT NULL AND expires_at > NOW())
+          THEN expires_at + make_interval(days => ${durationDays})
+          ELSE NOW() + make_interval(days => ${durationDays}) END,
+        provider_entitlement_id = ${orderRef},
+        granted_by = ${actor},
+        updated_at = NOW()
+    WHERE guild_id = ${guildId}
+      AND status <> 'suspended'
+      AND NOT (tier = 'vip' AND status = 'active' AND expires_at IS NULL)
+    RETURNING *
+  `;
+  if (rows.length === 0) {
+    // State berubah di antara bacaan awal dan UPDATE (balapan dengan
+    // operasi owner): evaluasi ulang sekali dari baris terbaru.
+    const fresh = await getEntitlement(guildId);
+    if (fresh && fresh.status === "suspended") {
+      return applyPaymentToEntitlementSuspendedAudit(fresh, actor, reason);
+    }
+    if (
+      fresh &&
+      fresh.tier === "vip" &&
+      fresh.status === "active" &&
+      fresh.expires_at === null
+    ) {
+      return applyPaymentToEntitlementPermanentAudit(fresh, actor, reason);
+    }
+    throw new Error(
+      "applyPaymentToEntitlement: UPDATE entitlement tidak menghasilkan baris",
+    );
+  }
+  const after = mapEntitlementRow(rows[0] as Record<string, unknown>);
+  await sql`
+    INSERT INTO entitlement_audit_log
+      (guild_id, actor_id, action, tier_before, tier_after, status_before, status_after, expires_before, expires_after, reason)
+    VALUES (${guildId}, ${actor}, ${isActiveVip ? "extend" : "grant"},
+      ${before.tier}, 'vip',
+      ${before.status}, 'active',
+      ${before.expires_at}, ${after.expires_at}, ${reason})
+  `;
+  return isActiveVip ? "extended" : "activated";
+}
+
+/**
+ * Kurangi / cabut entitlement akibat refund pembayaran yang
+ * terverifikasi, SEBESAR durasi order yang direfund — bukan seluruh
+ * masa aktif. Hanya menyentuh baris yang SAAT INI source-nya 'payment'
+ * DAN status-nya 'active' (kondisi diulang di WHERE UPDATE sebagai
+ * penjaga race):
+ * - expires_at ada: expires_at dikurangi durationDays hari di dalam
+ *   SQL; bila sisa masa habis (<= sekarang) status menjadi 'revoked',
+ *   selain itu entitlement tetap 'active' dengan masa yang lebih
+ *   pendek (masa dari order LAIN yang tidak direfund tetap utuh).
+ * - expires_at NULL (permanen dari payment — tidak terjadi lewat alur
+ *   apply saat ini, tetapi dijaga): dicabut penuh.
+ * Audit action 'refund' ditulis dengan expires/status before-after dari
+ * baris hasil UPDATE. Entitlement hasil grant owner (source
+ * 'owner_grant') TIDAK pernah tersentuh refund — return false tanpa
+ * perubahan apa pun, sama seperti baris yang tidak aktif / tidak ada.
+ * Return true hanya bila pengurangan/pencabutan benar-benar terjadi.
+ */
+export async function revokeEntitlementForRefund(
+  guildId: string,
+  provider: string,
+  orderRef: string,
+  durationDays: number,
+): Promise<boolean> {
+  if (!dbConfigured()) return false;
+  const before = await getEntitlement(guildId);
+  if (!before || before.source !== "payment" || before.status !== "active") {
+    return false;
+  }
+  const { rows } =
+    before.expires_at === null
+      ? await sql`
+          UPDATE guild_entitlements
+          SET status = 'revoked', updated_at = NOW()
+          WHERE guild_id = ${guildId} AND source = 'payment' AND status = 'active'
+          RETURNING *
+        `
+      : await sql`
+          UPDATE guild_entitlements
+          SET expires_at = expires_at - make_interval(days => ${durationDays}),
+              status = CASE
+                WHEN expires_at - make_interval(days => ${durationDays}) <= NOW()
+                THEN 'revoked' ELSE 'active' END,
+              updated_at = NOW()
+          WHERE guild_id = ${guildId} AND source = 'payment' AND status = 'active'
+            AND expires_at IS NOT NULL
+          RETURNING *
+        `;
+  if (rows.length === 0) return false;
+  const after = mapEntitlementRow(rows[0] as Record<string, unknown>);
+  const reason = (
+    `payment refund via ${provider} order_ref=${orderRef} durasi_dikurangi=${durationDays} hari`
+  ).slice(0, 500);
+  await sql`
+    INSERT INTO entitlement_audit_log
+      (guild_id, actor_id, action, tier_before, tier_after, status_before, status_after, expires_before, expires_after, reason)
+    VALUES (${guildId}, ${`system:${provider}`}, ${"refund"},
+      ${before.tier}, ${after.tier},
+      ${before.status}, ${after.status},
+      ${before.expires_at}, ${after.expires_at}, ${reason})
+  `;
+  return true;
+}

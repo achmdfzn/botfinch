@@ -4,8 +4,9 @@ Dokumen ini menjelaskan desain, pengoperasian, dan keterbatasan sistem
 paket Free/VIP Botfinch. Ringkasnya: setiap server (guild) punya satu
 entitlement yang menentukan tier efektifnya, `free` atau `vip`. Perbedaan
 kedua tier hanya pada batas jumlah resource yang bisa dibuat. Tidak ada
-fitur yang dikunci total, tidak ada harga, dan tidak ada checkout di
-dalam sistem ini.
+fitur yang dikunci total. VIP bisa didapat lewat grant manual owner, atau
+lewat pembelian otomatis di dashboard (checkout provider pembayaran
+eksternal, lihat bagian Billing otomatis).
 
 ## Ringkasan desain
 
@@ -13,8 +14,8 @@ dalam sistem ini.
   Tier tidak menempel ke user: member biasa di server VIP menikmati batas
   VIP selama mereka memakai fitur di server itu, dan server Free tetap
   Free walaupun ada member yang punya akses VIP di server lain.
-- **Postgres adalah sumber kebenaran.** Dashboard (Vercel Postgres /
-  Neon) menyimpan entitlement di tabel `guild_entitlements`. Semua
+- **Postgres adalah sumber kebenaran.** Dashboard (Vercel Postgres)
+  menyimpan entitlement di tabel `guild_entitlements`. Semua
   keputusan mutasi (grant, extend, revoke) dan perhitungan tier efektif
   di dashboard membaca dan menulis tabel ini.
 - **Bot menyimpan cache di SQLite.** Bot menyalin entitlement dari
@@ -150,6 +151,103 @@ Setiap mutasi menulis satu baris ke `entitlement_audit_log` berisi aktor,
 aksi, nilai sebelum dan sesudah (tier, status, tanggal berakhir), alasan,
 dan waktu.
 
+## Billing otomatis (checkout dan pembayaran)
+
+Selain grant manual owner, VIP juga bisa dibeli sendiri oleh pengelola
+server lewat dashboard. Alurnya:
+
+1. **Checkout di dashboard.** Pengelola server membuka halaman billing
+   guild, memilih paket (saat ini satu paket: VIP 30 hari), dan membuat
+   order. Harga selalu diambil dari konfigurasi server
+   (`BILLING_VIP_30D_PRICE_IDR`), tidak pernah dari client. Order
+   tersimpan di tabel `billing_orders` dengan status `created` dan batas
+   waktu pembayaran (`expires_at` order). Bila masih ada order aktif
+   (`created`/`pending` yang belum kedaluwarsa) untuk paket yang sama,
+   order itu dipakai ulang, bukan membuat tagihan baru.
+2. **Pembayaran di provider.** Dashboard memasang id transaksi dan URL
+   redirect provider ke order (status naik menjadi `pending`), lalu
+   pembeli menyelesaikan pembayaran di halaman provider.
+3. **Webhook terverifikasi.** Provider mengirim webhook; signature/token
+   diverifikasi lebih dulu — webhook yang gagal verifikasi ditolak tanpa
+   menyentuh data apa pun. Setiap event dicatat di
+   `billing_webhook_events` dengan `event_key` unik: event yang sama
+   diterima ulang (retry provider) terdeteksi sebagai duplikat dan tidak
+   diproses dua kali. Status pembayaran juga bisa dipastikan lewat
+   rekonsiliasi (pengecekan status ke provider saat halaman order
+   dibuka); kedua jalur memakai logika pemrosesan yang sama.
+4. **Entitlement diterapkan sekali.** Order diklaim sebagai lunas lewat
+   satu statement atomik yang hanya menang bila entitlement belum pernah
+   diterapkan dan status order bukan terminal. Hanya pemenang klaim yang
+   menjalankan penerapan: guild menjadi VIP dengan `source = 'payment'`
+   dan `granted_by = 'system:<provider>'`, selama durasi paket. Bila
+   guild sudah VIP aktif dari pembayaran dan belum kedaluwarsa, masa
+   berlaku **diperpanjang dari tanggal berakhir saat ini**, bukan dari
+   sekarang. Semua penerapan, penolakan, dan pencabutan ini menulis
+   audit log seperti mutasi owner.
+
+### State machine order
+
+Status order di `billing_orders` bergerak hanya lewat transisi yang sah:
+
+- `created` → `pending` → `paid` | `failed` | `expired` | `cancelled`.
+  (`created` juga bisa langsung ke status akhir pembayaran bila provider
+  tidak memakai tahap pending.)
+- `paid` → `refunded` | `disputed`. Order `paid` tidak pernah kembali ke
+  status pembayaran lain.
+- `expired` → `paid` adalah **late settlement**: pembeli membayar pas di
+  batas waktu kedaluwarsa order. Pembayaran tetap dihormati, entitlement
+  tetap diterapkan, dan kejadian ini ditandai di audit dengan catatan
+  `late_settlement`.
+- `failed` dan `cancelled` adalah **terminal**. Settlement (kabar lunas)
+  yang tiba sesudah order terminal tetap **dicatat** di log webhook,
+  tetapi **TIDAK mengaktifkan** entitlement — uang yang masuk pada order
+  yang sudah ditutup harus ditangani lewat review owner, bukan otomatis
+  menjadi VIP.
+- Klaim lunas yang kalah (event duplikat, atau balapan webhook dan
+  rekonsiliasi) tidak menerapkan apa pun lagi: durasi tidak pernah
+  ditambahkan dua kali untuk satu order.
+
+### Refund
+
+- Refund penuh yang terverifikasi dari provider menggerakkan order
+  `paid` → `refunded`, dan masa VIP **sebesar durasi order yang
+  direfund** dikurangkan dari entitlement hasil pembayaran:
+  `expires_at` dimundurkan sebesar durasi order itu. Bila sisa masa
+  habis, status entitlement menjadi `revoked` sehingga tier efektif
+  kembali ke Free; bila masih ada sisa masa dari pembayaran lain, VIP
+  tetap aktif dengan masa yang sudah dikurangi. (Kebijakan ini
+  menggantikan pencabutan penuh: refund satu order tidak lagi menghapus
+  masa yang dibayar oleh order lain.) Dicatat di audit log dengan aksi
+  `refund` dan referensi order-nya. Untuk entitlement permanen hasil
+  pembayaran (tanpa `expires_at`), refund tetap mencabut penuh karena
+  tidak ada masa yang bisa dikurangkan.
+- Pengurangan hanya menyentuh entitlement yang sumbernya pembayaran
+  (`source = 'payment'`). **Grant owner tidak tersentuh refund**: bila
+  VIP guild berasal dari grant owner, refund pembayaran tidak mengubah
+  entitlement itu sama sekali.
+
+### Dispute (chargeback)
+
+- Dispute dari provider menggerakkan order `paid` → `disputed`.
+- Entitlement **tidak otomatis berubah** saat dispute masuk — dispute
+  bisa saja dimenangkan merchant, jadi mencabut VIP seketika bisa keliru.
+  Order yang `disputed` menjadi penanda (flag) untuk **review owner**:
+  keputusan mencabut atau membiarkan VIP ada di owner, dijalankan lewat
+  jalur mutasi owner biasa dan tercatat di audit log.
+
+### Kasus khusus pembayaran
+
+- **VIP permanen tidak diubah pembayaran.** Bila guild sudah VIP aktif
+  permanen (`expires_at` kosong), pembayaran yang masuk tidak mengubah
+  apa pun — permanen tidak pernah berubah menjadi bertenggat gara-gara
+  pembayaran. Kejadiannya dicatat di audit log dengan aksi
+  `payment_noop_permanent`.
+- **Guild suspended tidak diaktifkan pembayaran.** Bila entitlement
+  guild berstatus `suspended`, pembayaran tidak mengaktifkannya kembali.
+  Kejadiannya dicatat di audit log dengan aksi
+  `payment_blocked_suspended`, dan pengaktifan kembali tetap keputusan
+  owner.
+
 ## Expiry dan downgrade
 
 - Semua waktu disimpan sebagai `TIMESTAMPTZ` di Postgres dan diproses
@@ -169,7 +267,7 @@ dan waktu.
 
 ## Skema database baru
 
-`dashboard/schema.sql` menambah dua tabel (additive, memakai
+`dashboard/schema.sql` menambah tabel-tabel berikut (additive, memakai
 `IF NOT EXISTS`, aman dijalankan berulang):
 
 - `guild_entitlements`: satu baris per guild. Kolom utama: `guild_id`
@@ -181,14 +279,34 @@ dan waktu.
   `bot_present`, serta cap waktu `first_seen_at`, `last_seen_at`,
   `created_at`, `updated_at`.
 - `entitlement_audit_log`: log tiap mutasi. Kolom: `id`, `guild_id`,
-  `actor_id`, `action` (grant/extend/revoke), `tier_before`,
-  `tier_after`, `status_before`, `status_after`, `expires_before`,
-  `expires_after`, `reason`, `created_at`, plus indeks per guild.
+  `actor_id`, `action` (grant/extend/revoke/refund dari mutasi owner &
+  refund; `payment_noop_permanent` dan `payment_blocked_suspended`
+  untuk pembayaran yang sengaja tidak mengubah entitlement),
+  `tier_before`, `tier_after`, `status_before`, `status_after`,
+  `expires_before`, `expires_after`, `reason`, `created_at`, plus
+  indeks per guild.
+- `billing_orders`: order pembayaran billing otomatis, satu baris per
+  checkout. Kolom utama: `id`, `order_ref` (unik), `buyer_user_id`,
+  `guild_id`, `plan_id`, `amount_idr`, `currency` (default `IDR`),
+  `duration_days`, `status` (default `created`, lihat state machine
+  order), `provider`, `provider_txn_id` (unik selama terisi, lewat
+  indeks unik parsial), `provider_redirect_url`, `expires_at` (batas
+  bayar order), `paid_at` (penanda klaim lunas — hanya pemenang klaim
+  yang boleh menerapkan), `entitlement_applied_at` (penanda penerapan
+  entitlement sudah selesai; di-set terpisah SETELAH penerapan berhasil
+  agar klaim yang terputus di tengah bisa dipulihkan), serta
+  `created_at`/`updated_at`. Ada indeks untuk `guild_id`,
+  `buyer_user_id`, dan `status`, plus indeks unik parsial satu order
+  aktif per (guild, plan).
+- `billing_webhook_events`: log audit penerimaan webhook provider
+  (bukan gerbang dedupe — jaminan tepat-satu-kali berasal dari klaim
+  atomik order, bukan dari tabel ini). Kolom: `id`, `provider`,
+  `event_key` (unik), `order_ref`, `provider_status`, `received_at`.
 
 Langkah manual menjalankan skema (dilakukan owner, sekali):
 
-1. Buka dashboard Neon, masuk ke proyek database dashboard, buka
-   **SQL Editor**.
+1. Buka konsol database Vercel Postgres dashboard, masuk ke proyek
+   database-nya, buka **SQL Editor**.
 2. Buka file `dashboard/schema.sql` dari repo, salin seluruh isinya.
 3. Tempel ke SQL Editor dan jalankan. Karena semua statement memakai
    `IF NOT EXISTS`, menjalankan ulang file yang sama aman dan tidak
@@ -216,8 +334,21 @@ Dashboard (Vercel Environment Variables, server-side):
 | Nama | Wajib | Keterangan |
 | ---- | ----- | ---------- |
 | `BOT_OWNER_IDS` | Ya, untuk panel dan API admin | Nilai yang sama persis dengan di bot. Tanpa awalan `NEXT_PUBLIC_`. |
+| `PAYMENT_PROVIDER` | Ya, untuk billing otomatis | Provider pembayaran aktif (`midtrans` atau `xendit`). Nilai lain berarti billing tidak terkonfigurasi. |
+| `BILLING_VIP_30D_PRICE_IDR` | Ya, untuk billing otomatis | Harga paket VIP 30 hari dalam rupiah (digit murni, lebih dari 0). Satu-satunya sumber harga; harga tidak pernah datang dari client. |
+| `MIDTRANS_SERVER_KEY` | Wajib bila provider `midtrans` | Kredensial server Midtrans untuk membuat checkout dan memverifikasi webhook. |
+| `MIDTRANS_CLIENT_KEY` | Wajib bila provider `midtrans` | Client key Midtrans (sisi publik Snap); kelengkapan konfigurasi provider memeriksanya. |
+| `MIDTRANS_IS_PRODUCTION` | Tidak | `true` = host produksi Midtrans; selain itu sandbox. Hanya dari env, tidak pernah dari request. |
+| `XENDIT_SECRET_KEY` + `XENDIT_CALLBACK_TOKEN` | Wajib bila provider `xendit` | Kredensial API Xendit dan token verifikasi callback webhook; keduanya wajib. |
+| `XENDIT_IS_PRODUCTION` | Tidak | Saat ini hanya dokumenter — belum dibaca kode. Mode sandbox/produksi Xendit mengikuti jenis API key (test/live) yang dipakai. |
+| `APP_BASE_URL` | Dianjurkan | Basis URL publik dashboard untuk URL kembali (success/failure) ke halaman status order. |
 
-## Pembayaran masa depan (belum diimplementasikan)
+## Pembayaran Discord native (masa depan, belum diimplementasikan)
+
+Bagian ini khusus membahas monetisasi native Discord, yang masih
+ditunda. Jalur pembayaran yang **sudah** berjalan adalah checkout
+provider eksternal pada bagian Billing otomatis di atas; grant manual
+owner juga tetap tersedia.
 
 Kesimpulan riset dari dokumentasi resmi Discord:
 
@@ -241,12 +372,27 @@ Kesimpulan riset dari dokumentasi resmi Discord:
   - Monetization Terms disetujui.
 - SKU juga harus dibuat lebih dulu di Developer Portal sebelum ada
   entitlement dari Discord yang bisa disinkronkan.
-- Sampai semua itu siap, **grant manual oleh owner adalah jalur resmi
-  satu-satunya**, dan memang itu yang diimplementasikan sekarang. Tidak
-  ada harga, tombol beli, atau checkout di bot maupun dashboard.
+- Sampai semua itu siap, jalur VIP yang berjalan adalah **grant manual
+  oleh owner** dan **checkout provider pembayaran eksternal** di
+  dashboard (lihat Billing otomatis). Yang belum ada adalah tombol beli
+  dan entitlement **native Discord** di dalam Discord itu sendiri.
 
 ## Keterbatasan yang diketahui
 
+- **Penerapan pembayaran tidak atomik penuh antar-tabel, tetapi bisa
+  dipulihkan.** Klaim order sebagai lunas adalah satu statement atomik
+  di `billing_orders` yang hanya menyetel penanda klaim (`paid_at`);
+  penanda penerapan (`entitlement_applied_at`) di-set terpisah SETELAH
+  penerapan entitlement berhasil. Crash persis di antara klaim dan
+  penerapan menyisakan order `paid` tanpa penanda penerapan — keadaan
+  ini dikenali dan **dipulihkan otomatis** pada event/rekonsiliasi
+  berikutnya (setelah klaim berumur > 60 detik): penerapan dijalankan
+  saat itu juga, atau hanya ditandai bila entitlement sudah teratribusi
+  ke order tersebut (`provider_entitlement_id`). Pemulihan butuh
+  pemicu (webhook retry dari provider atau kunjungan halaman status
+  order) — tidak ada cron latar di repo ini. Crash di antara UPDATE
+  entitlement dan audit-nya tetap bisa menghilangkan baris audit
+  (lihat butir berikut).
 - **Audit log tidak atomik penuh dengan mutasi.** Penulisan baris
   entitlement dan baris audit adalah dua statement terpisah, karena
   `lib/db.ts` tidak punya helper transaksi. Crash persis di antara

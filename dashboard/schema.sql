@@ -102,3 +102,48 @@ CREATE TABLE IF NOT EXISTS entitlement_audit_log (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_entitlement_audit_log_guild ON entitlement_audit_log (guild_id, id DESC);
+
+-- Billing otomatis (checkout provider eksternal -> webhook -> entitlement).
+-- Order pembayaran per guild; sumber kebenaran status order ada di sini,
+-- sedangkan hasil akhirnya (VIP aktif) tertulis di guild_entitlements.
+CREATE TABLE IF NOT EXISTS billing_orders (
+  id BIGSERIAL PRIMARY KEY,
+  order_ref TEXT UNIQUE NOT NULL,
+  buyer_user_id TEXT NOT NULL,
+  guild_id TEXT NOT NULL,
+  plan_id TEXT NOT NULL,
+  amount_idr BIGINT NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'IDR',
+  duration_days INT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'created',
+  provider TEXT NOT NULL,
+  provider_txn_id TEXT NULL,
+  provider_redirect_url TEXT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  paid_at TIMESTAMPTZ NULL,
+  entitlement_applied_at TIMESTAMPTZ NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_billing_orders_guild ON billing_orders (guild_id);
+CREATE INDEX IF NOT EXISTS idx_billing_orders_buyer ON billing_orders (buyer_user_id);
+CREATE INDEX IF NOT EXISTS idx_billing_orders_status ON billing_orders (status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_billing_orders_provider_txn
+  ON billing_orders (provider_txn_id) WHERE provider_txn_id IS NOT NULL;
+-- Satu order AKTIF per (guild, plan): menutup balapan dua POST checkout
+-- bersamaan yang sama-sama lolos cek findActiveBillingOrder. Order yang
+-- kedaluwarsa menurut waktu tetapi statusnya belum berubah ditutup
+-- lebih dulu oleh route checkout sebelum insert baru.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_billing_orders_one_active
+  ON billing_orders (guild_id, plan_id) WHERE status IN ('created', 'pending');
+
+-- Log penerimaan webhook provider untuk dedupe: event_key unik, webhook
+-- yang sama diterima ulang tidak diproses dua kali (INSERT ... DO NOTHING).
+CREATE TABLE IF NOT EXISTS billing_webhook_events (
+  id BIGSERIAL PRIMARY KEY,
+  provider TEXT NOT NULL,
+  event_key TEXT UNIQUE NOT NULL,
+  order_ref TEXT NULL,
+  provider_status TEXT NULL,
+  received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

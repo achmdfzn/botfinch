@@ -111,6 +111,7 @@ export default function DashboardShell({ guildName, guildIconUrl, navItems, chil
     { href: hrefFor("/overview"), label: sub.overview, icon: "overview" },
     { href: hrefFor("/leaderboard"), label: sub.leaderboard, icon: "leaderboard" },
     { href: hrefFor("/template"), label: dict.templates.navLabel, icon: "templates" },
+    { href: hrefFor("/billing"), label: dict.billing.title, icon: "economy" },
     { href: hrefFor("/settings"), label: sub.settings, icon: "settings" },
   ];
 
